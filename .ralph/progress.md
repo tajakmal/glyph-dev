@@ -1,36 +1,28 @@
 # Progress Log
 
-Task started: 2026-01-18 20:41:01
+Task started: 2026-01-18 20:46:01
 
-### 2026-01-18 20:41:01
+### 2026-01-18 20:46:02
 **Iteration 1 started**
 
-### 2026-01-18 20:42:XX
-**Task: PDF.js Setup and Configuration - COMPLETED**
+### 2026-01-18 - PDF Viewer Component Implementation
+**Iteration 1 completed**
 
-Completed all 13 success criteria:
+#### Created Files:
+1. **src/lib/storage.ts** - IndexedDB and localStorage utilities for storing/retrieving PDF documents and metadata
+2. **src/hooks/usePDF.ts** - Custom hook for loading PDF documents from storage with loading/error states
+3. **src/components/pdf/PDFPage.tsx** - Component for rendering a single PDF page to canvas with HiDPI support
+4. **src/components/pdf/PDFViewer.tsx** - Main PDF viewer with continuous scroll and page tracking
+5. **src/app/reader/[id]/page.tsx** - Reader route for viewing PDFs by document ID
 
-1. Verified pdfjs-dist was already installed (^5.4.530 in package.json)
-2. Installed uuid (^13.0.0) and @types/uuid (^10.0.0)
-3. Updated next.config.ts with webpack canvas alias and turbopack config
-4. Copied pdf.worker.min.mjs to public/
-5. Copied cmaps/ directory to public/
-6. Created src/lib/pdf-utils.ts with all utility functions:
-   - loadPDF
-   - renderPage (with HiDPI support)
-   - getTextContent
-   - extractPDFMetadata
-   - generateThumbnail
-   - getPDFOutline
-   - extractAllText
-7. Added type-check script to package.json
-8. Fixed TypeScript errors for pdfjs-dist v5.x API:
-   - TextContent import path changed
-   - render() now requires canvas parameter
-9. Added public/** to eslint ignores (pdf.worker.min.mjs was causing lint errors)
-10. Verified npm run type-check passes
-11. Verified npm run lint passes
-12. Verified npm run dev starts without errors
+#### Key Implementation Details:
+- Storage utilities handle both IndexedDB (for PDF binary data) and localStorage (for document metadata)
+- usePDF hook integrates with storage and pdf-utils from task 004
+- PDFPage uses renderPage utility which handles HiDPI displays correctly
+- PDFViewer tracks current page by calculating visibility of pages in viewport
+- Pages have 16px gap via .pdf-page class margin-bottom in globals.css
+- Loading spinner and error states implemented in PDFViewer
 
-### 2026-01-18 20:45:59
-**Iteration 1 ended** - TASK COMPLETE
+#### Verification:
+- `npm run type-check` passes (0 errors)
+- `npm run lint` passes (2 warnings for unused variables reserved for future zoom controls)

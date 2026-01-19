@@ -1,275 +1,305 @@
 ---
-task: PDF.js Setup and Configuration
-priority: 1
-depends_on: ["001-typescript-types"]
+task: PDF Viewer Component
+priority: 2
+depends_on: ["001-typescript-types", "003-global-css-setup", "004-pdf-js-setup"]
 ---
 
-# Task: PDF.js Setup and Configuration
+# Task: PDF Viewer Component
 
-Install and configure pdfjs-dist for PDF rendering in the Next.js application.
+Create the main PDFViewer component and PDFPage component for rendering PDFs with continuous scroll.
 
 ## Overview
 
-This task sets up Mozilla's PDF.js library (pdfjs-dist) for rendering PDFs in the browser. It includes installing the package, configuring the web worker, copying required static files, and creating utility functions for PDF operations.
+This task creates the core PDF viewing functionality. The PDFViewer component manages the overall PDF state and renders all pages in a continuous scroll layout. The PDFPage component handles rendering individual pages including the canvas and managing HiDPI displays.
 
 ## Context
 
-- Using pdfjs-dist ^4.0.0
-- PDF.js requires a web worker for performance
-- Character maps (cmaps) needed for international fonts
-- Next.js webpack config needs adjustment for PDF.js
-- Utility functions go in `src/lib/pdf-utils.ts`
+- PDFViewer is the main container for the reader route
+- PDFPage renders a single page with canvas
+- Uses PDF.js utilities from the previous task
+- Implements continuous scroll with 16px gaps between pages
+- Must handle HiDPI (retina) displays correctly
+- Components go in `src/components/pdf/`
 
 ## Requirements
 
-### Install Dependencies
+### usePDF Hook
 
-```bash
-npm install pdfjs-dist uuid
-npm install --save-dev @types/uuid
-```
-
-### Next.js Configuration
-
-**File:** `next.config.js` or `next.config.ts`
-
-```javascript
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  webpack: (config) => {
-    // Disable canvas for PDF.js (not needed in browser)
-    config.resolve.alias.canvas = false;
-    return config;
-  },
-};
-
-module.exports = nextConfig;
-```
-
-### Copy Static Files
-
-Create a script or manually copy these files from `node_modules/pdfjs-dist`:
-
-1. Copy `node_modules/pdfjs-dist/build/pdf.worker.min.mjs` to `public/pdf.worker.min.mjs`
-2. Copy `node_modules/pdfjs-dist/cmaps/` folder to `public/cmaps/`
-
-**Recommended:** Add a postinstall script to `package.json`:
-
-```json
-{
-  "scripts": {
-    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/ && cp -r node_modules/pdfjs-dist/cmaps public/"
-  }
-}
-```
-
-### PDF Utility Functions
-
-**File:** `src/lib/pdf-utils.ts`
+**File:** `src/hooks/usePDF.ts`
 
 ```typescript
-import * as pdfjsLib from 'pdfjs-dist';
-import type { PDFDocumentProxy, PDFPageProxy, TextContent } from 'pdfjs-dist';
+'use client';
 
-// Set worker path
-if (typeof window !== 'undefined') {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+import { useState, useEffect } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { DocumentMeta } from '@/types';
+import { loadPDF } from '@/lib/pdf-utils';
+import { getPDFFromStorage } from '@/lib/storage';
+
+interface UsePDFOptions {
+  documentId: string;
 }
 
-/**
- * Load a PDF document from an ArrayBuffer
- */
-export async function loadPDF(data: ArrayBuffer): Promise<PDFDocumentProxy> {
-  return pdfjsLib.getDocument({
-    data,
-    cMapUrl: '/cmaps/',
-    cMapPacked: true,
-  }).promise;
+interface UsePDFReturn {
+  /** PDF document proxy from pdfjs-dist */
+  pdf: PDFDocumentProxy | null;
+  /** Loading state */
+  isLoading: boolean;
+  /** Error if loading failed */
+  error: Error | null;
+  /** Document metadata */
+  meta: DocumentMeta | null;
+  /** Total page count */
+  pageCount: number;
+  /** Reload the PDF */
+  reload: () => Promise<void>;
 }
 
-/**
- * Render a PDF page to a canvas element
- * Handles HiDPI displays correctly
- */
-export async function renderPage(
-  page: PDFPageProxy,
-  canvas: HTMLCanvasElement,
-  scale: number
-): Promise<void> {
-  const dpr = window.devicePixelRatio || 1;
-  const viewport = page.getViewport({ scale: scale * dpr });
+export function usePDF(options: UsePDFOptions): UsePDFReturn {
+  // Implementation:
+  // 1. Load PDF ArrayBuffer from IndexedDB using documentId
+  // 2. Pass to loadPDF utility
+  // 3. Return PDFDocumentProxy and metadata
+  // 4. Handle errors gracefully
+}
+```
 
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
-  canvas.style.width = `${viewport.width / dpr}px`;
-  canvas.style.height = `${viewport.height / dpr}px`;
+### PDFPage Component
 
-  const ctx = canvas.getContext('2d')!;
+**File:** `src/components/pdf/PDFPage.tsx`
 
-  await page.render({
-    canvasContext: ctx,
-    viewport,
-  }).promise;
+```typescript
+'use client';
+
+import React, { useRef, useEffect } from 'react';
+import type { PDFPageProxy } from 'pdfjs-dist';
+import { renderPage } from '@/lib/pdf-utils';
+
+interface PDFPageProps {
+  /** PDF page proxy */
+  page: PDFPageProxy;
+  /** Page number (1-based) */
+  pageNumber: number;
+  /** Zoom level (1 = 100%) */
+  zoom: number;
+  /** Optional: callback when rendered */
+  onRenderComplete?: () => void;
 }
 
-/**
- * Get text content from a PDF page
- */
-export async function getTextContent(page: PDFPageProxy): Promise<TextContent> {
-  return page.getTextContent();
+export function PDFPage({ page, pageNumber, zoom, onRenderComplete }: PDFPageProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+
+    renderPage(page, canvasRef.current, zoom).then(() => {
+      onRenderComplete?.();
+    });
+  }, [page, zoom, onRenderComplete]);
+
+  return (
+    <div
+      className="pdf-page"
+      data-page-number={pageNumber}
+      data-testid={`pdf-page-${pageNumber}`}
+    >
+      <canvas ref={canvasRef} className="pdf-canvas" />
+      {/* Text layer and highlight layer will be added in later tasks */}
+    </div>
+  );
+}
+```
+
+### PDFViewer Component
+
+**File:** `src/components/pdf/PDFViewer.tsx`
+
+```typescript
+'use client';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { PDFPageProxy } from 'pdfjs-dist';
+import { usePDF } from '@/hooks/usePDF';
+import { PDFPage } from './PDFPage';
+
+interface PDFViewerProps {
+  /** Document ID to load */
+  documentId: string;
+  /** Initial page to scroll to (1-based) */
+  initialPage?: number;
+  /** Initial zoom level (default: 1) */
+  initialZoom?: number;
+  /** Callback when page changes */
+  onPageChange?: (page: number) => void;
+  /** Callback when document loads */
+  onDocumentLoad?: (pageCount: number) => void;
 }
 
-/**
- * Extract PDF metadata (title, page count)
- */
-export async function extractPDFMetadata(
-  pdf: PDFDocumentProxy,
-  fileName: string
-): Promise<{ title: string; pageCount: number }> {
-  const metadata = await pdf.getMetadata();
-  const info = metadata.info as Record<string, unknown>;
+export function PDFViewer({
+  documentId,
+  initialPage = 1,
+  initialZoom = 1,
+  onPageChange,
+  onDocumentLoad,
+}: PDFViewerProps) {
+  const { pdf, isLoading, error, pageCount } = usePDF({ documentId });
+  const [zoom, setZoom] = useState(initialZoom);
+  const [pages, setPages] = useState<PDFPageProxy[]>([]);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Use PDF title if available, otherwise use filename
-  const title = (info?.Title as string) || fileName.replace(/\.pdf$/i, '');
+  // Load all page proxies when PDF is ready
+  useEffect(() => {
+    if (!pdf) return;
 
-  return {
-    title,
-    pageCount: pdf.numPages,
-  };
-}
-
-/**
- * Generate a thumbnail from the first page of a PDF
- * Returns a JPEG data URL
- */
-export async function generateThumbnail(
-  pdf: PDFDocumentProxy,
-  targetWidth: number = 200
-): Promise<string> {
-  const page = await pdf.getPage(1);
-  const viewport = page.getViewport({ scale: 1 });
-
-  // Calculate scale to fit target width
-  const scale = targetWidth / viewport.width;
-  const scaledViewport = page.getViewport({ scale });
-
-  // Create off-screen canvas
-  const canvas = document.createElement('canvas');
-  canvas.width = scaledViewport.width;
-  canvas.height = scaledViewport.height;
-
-  const ctx = canvas.getContext('2d')!;
-
-  await page.render({
-    canvasContext: ctx,
-    viewport: scaledViewport,
-  }).promise;
-
-  // Convert to JPEG data URL (quality 0.7)
-  return canvas.toDataURL('image/jpeg', 0.7);
-}
-
-/**
- * Get the outline (table of contents) from a PDF
- */
-export async function getPDFOutline(
-  pdf: PDFDocumentProxy
-): Promise<Array<{ title: string; page: number; items: Array<unknown> }>> {
-  const outline = await pdf.getOutline();
-
-  if (!outline) {
-    return [];
-  }
-
-  // Process outline items recursively
-  const processItems = async (items: typeof outline): Promise<Array<{ title: string; page: number; items: Array<unknown> }>> => {
-    const result = [];
-
-    for (const item of items) {
-      let page = 1;
-
-      if (item.dest) {
-        try {
-          // Resolve named destination to page number
-          const dest = typeof item.dest === 'string'
-            ? await pdf.getDestination(item.dest)
-            : item.dest;
-
-          if (dest) {
-            const pageIndex = await pdf.getPageIndex(dest[0]);
-            page = pageIndex + 1; // Convert to 1-based
-          }
-        } catch {
-          // Keep default page 1 if destination resolution fails
-        }
+    const loadPages = async () => {
+      const loadedPages: PDFPageProxy[] = [];
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        loadedPages.push(page);
       }
+      setPages(loadedPages);
+      onDocumentLoad?.(pdf.numPages);
+    };
 
-      result.push({
-        title: item.title,
-        page,
-        items: item.items ? await processItems(item.items) : [],
+    loadPages();
+  }, [pdf, onDocumentLoad]);
+
+  // Track current page on scroll
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      // Find the page that is most visible in the viewport
+      const pageElements = container.querySelectorAll('[data-page-number]');
+      let mostVisiblePage = 1;
+      let maxVisibility = 0;
+
+      pageElements.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        const visibleHeight = Math.min(rect.bottom, containerRect.bottom) -
+                             Math.max(rect.top, containerRect.top);
+        const visibility = Math.max(0, visibleHeight / rect.height);
+
+        if (visibility > maxVisibility) {
+          maxVisibility = visibility;
+          mostVisiblePage = parseInt(el.getAttribute('data-page-number') || '1');
+        }
       });
-    }
 
-    return result;
-  };
+      if (mostVisiblePage !== currentPage) {
+        setCurrentPage(mostVisiblePage);
+        onPageChange?.(mostVisiblePage);
+      }
+    };
 
-  return processItems(outline);
-}
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [currentPage, onPageChange]);
 
-/**
- * Extract all text from a PDF (for full-document speed reading)
- */
-export async function extractAllText(pdf: PDFDocumentProxy): Promise<string> {
-  const texts: string[] = [];
-
-  for (let i = 1; i <= pdf.numPages; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map(item => ('str' in item ? item.str : ''))
-      .join(' ');
-    texts.push(pageText);
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
+      </div>
+    );
   }
 
-  return texts.join('\n\n');
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-zinc-400">
+        <p>Failed to load PDF</p>
+        <p className="text-sm text-zinc-600">{error.message}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className="pdf-viewer overflow-auto h-full bg-zinc-900"
+      data-testid="pdf-viewer"
+    >
+      <div className="flex flex-col items-center py-4">
+        {pages.map((page, index) => (
+          <PDFPage
+            key={index + 1}
+            page={page}
+            pageNumber={index + 1}
+            zoom={zoom}
+          />
+        ))}
+      </div>
+    </div>
+  );
 }
 ```
 
-### Type Exports for PDF.js
+### Reader Route
 
-Add to `src/types/index.ts` or create `src/types/pdf.ts`:
+**File:** `src/app/reader/[id]/page.tsx`
 
 ```typescript
-// Re-export commonly used PDF.js types for convenience
-export type { PDFDocumentProxy, PDFPageProxy, TextContent } from 'pdfjs-dist';
+'use client';
+
+import { use } from 'react';
+import { PDFViewer } from '@/components/pdf/PDFViewer';
+
+interface ReaderPageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function ReaderPage({ params }: ReaderPageProps) {
+  const { id } = use(params);
+
+  return (
+    <main className="h-screen flex flex-col bg-zinc-950">
+      {/* Toolbar will be added in later task */}
+      <div className="flex-1 overflow-hidden">
+        <PDFViewer documentId={id} />
+      </div>
+    </main>
+  );
+}
 ```
+
+### Styling Requirements
+
+The PDFViewer should:
+- Fill the available height
+- Center pages horizontally
+- Have 16px vertical gap between pages
+- Have zinc-900 background
+- Show a shadow on each page (from globals.css)
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `package.json` | Modify | Add pdfjs-dist, uuid dependencies and postinstall script |
-| `next.config.js` | Modify | Add webpack canvas alias |
-| `public/pdf.worker.min.mjs` | Create | Copy from node_modules |
-| `public/cmaps/` | Create | Copy from node_modules |
-| `src/lib/pdf-utils.ts` | Create | PDF utility functions |
+| `src/hooks/usePDF.ts` | Create | Hook for loading and managing PDF state |
+| `src/components/pdf/PDFPage.tsx` | Create | Single page rendering component |
+| `src/components/pdf/PDFViewer.tsx` | Create | Main viewer container component |
+| `src/app/reader/[id]/page.tsx` | Create | Reader route page |
 
 ## Success Criteria
 
-1. [x] pdfjs-dist is installed (check package.json)
-2. [x] uuid is installed (check package.json)
-3. [x] next.config.js has webpack canvas alias configuration
-4. [x] `public/pdf.worker.min.mjs` exists
-5. [x] `public/cmaps/` directory exists with .bcmap files
-6. [x] `src/lib/pdf-utils.ts` exists with loadPDF function
-7. [x] `src/lib/pdf-utils.ts` has renderPage function with HiDPI support
-8. [x] `src/lib/pdf-utils.ts` has getTextContent function
-9. [x] `src/lib/pdf-utils.ts` has generateThumbnail function
-10. [x] `src/lib/pdf-utils.ts` has extractPDFMetadata function
-11. [x] `npm run type-check` passes
-12. [x] `npm run lint` passes
-13. [x] `npm run dev` starts without PDF.js errors
+1. [x] `src/hooks/usePDF.ts` exists with UsePDFReturn interface
+2. [x] usePDF hook loads PDF from storage and returns PDFDocumentProxy
+3. [x] usePDF hook handles loading and error states
+4. [x] `src/components/pdf/PDFPage.tsx` exists
+5. [x] PDFPage renders canvas with correct HiDPI scaling
+6. [x] PDFPage has data-page-number attribute for tracking
+7. [x] `src/components/pdf/PDFViewer.tsx` exists
+8. [x] PDFViewer renders all pages in continuous scroll
+9. [x] PDFViewer tracks current page on scroll
+10. [x] PDFViewer shows loading spinner during load
+11. [x] PDFViewer shows error message on failure
+12. [x] `src/app/reader/[id]/page.tsx` route exists
+13. [x] Pages have 16px gap between them
+14. [x] `npm run type-check` passes
+15. [x] `npm run lint` passes
 
 ---
 
