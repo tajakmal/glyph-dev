@@ -78,8 +78,11 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     // Read file as ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
 
+    // Clone buffer for pdfjs (it may detach the original)
+    const pdfBuffer = arrayBuffer.slice(0);
+
     // Load PDF to extract metadata
-    const pdf = await loadPDF(arrayBuffer);
+    const pdf = await loadPDF(pdfBuffer);
     const { title, pageCount } = await extractPDFMetadata(pdf, file.name);
 
     // Create document metadata
