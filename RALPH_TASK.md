@@ -1,238 +1,167 @@
 ---
-task: TypeScript Type Definitions
+task: Shared UI Components
 priority: 1
-depends_on: []
+depends_on: ["001-typescript-types"]
 ---
 
-# Task: TypeScript Type Definitions
+# Task: Shared UI Components
 
-Create all TypeScript interfaces and type definitions for the Glyph PDF Reader application.
+Create reusable UI components (Button, Popover, Modal) that will be used throughout the application.
 
 ## Overview
 
-This foundational task establishes the complete type system for the application. All subsequent tasks will depend on these type definitions. The types should be created in `src/types/index.ts` and cover documents, bookmarks, highlights, search, PDF viewer state, and storage configuration.
+These foundational UI components provide consistent styling and behavior across the application. They follow the design system defined in the PRD (Section 8.1) and use Tailwind CSS for styling. All components should be client components with proper TypeScript typing.
 
 ## Context
 
-- This is the first task that should be completed before any other implementation
-- Types are defined in the PRD Section 6 (Data Models)
-- All components and hooks will import from this central type file
-- Using UUID v4 for all entity IDs
-- Using Unix timestamps in milliseconds for dates
-- Highlight coordinates are normalized (0-1 range) for zoom independence
+- Components go in `src/components/ui/`
+- Use Tailwind CSS v4 for styling
+- Follow the color palette from the PRD design system
+- All components need `"use client"` directive
+- Components should be accessible (keyboard navigation, ARIA labels)
 
 ## Requirements
 
-### File Location
-`src/types/index.ts`
+### Button Component
 
-### Document & Library Types
+**File:** `src/components/ui/Button.tsx`
 
 ```typescript
-export interface DocumentMeta {
-  /** Unique identifier (UUID v4) */
-  id: string;
-  /** Display title (from PDF metadata or filename) */
-  title: string;
-  /** Original filename with extension */
-  fileName: string;
-  /** Total number of pages */
-  pageCount: number;
-  /** File size in bytes */
-  fileSize: number;
-  /** Unix timestamp (ms) when added to library */
-  addedAt: number;
-  /** Unix timestamp (ms) when last opened */
-  lastOpenedAt: number;
-  /** Last read page (1-based), for resume functionality */
-  lastReadPage: number;
-  /** Base64 JPEG data URL of first page thumbnail */
-  thumbnailDataUrl?: string;
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  isLoading?: boolean;
+  leftIcon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
 }
 ```
 
-### Bookmark Types
+**Variants:**
+- `primary`: Red background (#ef4444), white text
+- `secondary`: Zinc-800 background, zinc-100 text
+- `ghost`: Transparent background, zinc-400 text, hover shows background
+- `danger`: Red-600 background for destructive actions
+
+**Sizes:**
+- `sm`: h-8, px-3, text-sm
+- `md`: h-10, px-4, text-base
+- `lg`: h-12, px-6, text-lg
+
+**Features:**
+- Loading state with spinner
+- Disabled state styling
+- Icon support (left/right)
+- Focus ring for accessibility
+
+### Popover Component
+
+**File:** `src/components/ui/Popover.tsx`
 
 ```typescript
-export interface Bookmark {
-  /** Unique identifier (UUID v4) */
-  id: string;
-  /** Foreign key to DocumentMeta.id */
-  documentId: string;
-  /** Page number (1-based) */
-  page: number;
-  /** Optional user-defined label */
-  label?: string;
-  /** Unix timestamp (ms) when created */
-  createdAt: number;
+interface PopoverProps {
+  isOpen: boolean;
+  onClose: () => void;
+  anchorRect: DOMRect | null;
+  position?: 'top' | 'bottom' | 'left' | 'right';
+  offset?: number;
+  children: React.ReactNode;
 }
 ```
 
-### Highlight Types
+**Features:**
+- Positioned relative to anchor element
+- Auto-repositions if near viewport edge
+- Click outside to close
+- Escape key to close
+- Animation on open/close (fade + translate)
+- Arrow pointer to anchor
+
+**Styling:**
+- Background: bg-tertiary (#27272a)
+- Border: border-subtle (#3f3f46)
+- Shadow: elevated (lg)
+- Border radius: 8px
+- Padding: 8px
+
+### Modal Component
+
+**File:** `src/components/ui/Modal.tsx`
 
 ```typescript
-export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange';
-
-export interface HighlightRect {
-  /** X position as percentage of page width (0-1) */
-  x: number;
-  /** Y position as percentage of page height (0-1) */
-  y: number;
-  /** Width as percentage of page width (0-1) */
-  width: number;
-  /** Height as percentage of page height (0-1) */
-  height: number;
-}
-
-export interface Highlight {
-  /** Unique identifier (UUID v4) */
-  id: string;
-  /** Foreign key to DocumentMeta.id */
-  documentId: string;
-  /** Page number (1-based) */
-  page: number;
-  /** Highlight color */
-  color: HighlightColor;
-  /** The highlighted text content */
-  text: string;
-  /** Bounding rectangles for the highlight (normalized coordinates) */
-  rects: HighlightRect[];
-  /** Optional user note/annotation */
-  note?: string;
-  /** Unix timestamp (ms) when created */
-  createdAt: number;
-  /** Unix timestamp (ms) when last modified */
-  updatedAt?: number;
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title?: string;
+  size?: 'sm' | 'md' | 'lg';
+  children: React.ReactNode;
+  footer?: React.ReactNode;
 }
 ```
 
-### PDF Viewer State Types
+**Features:**
+- Centered overlay with backdrop
+- Click backdrop to close
+- Escape key to close
+- Focus trap (tab stays within modal)
+- Animation on open/close
+- Scrollable content area
 
-```typescript
-export interface PDFViewerState {
-  /** Current zoom level (1 = 100%) */
-  zoom: number;
-  /** Current scroll position (pixels from top) */
-  scrollTop: number;
-  /** Current page in view (1-based) */
-  currentPage: number;
-  /** Sidebar visibility */
-  sidebarOpen: boolean;
-  /** Active sidebar tab */
-  sidebarTab: 'contents' | 'bookmarks' | 'highlights';
-  /** Search bar visibility */
-  searchOpen: boolean;
-  /** Current search query */
-  searchQuery: string;
-  /** Current search match index (0-based) */
-  searchMatchIndex: number;
-}
-```
+**Sizes:**
+- `sm`: max-w-sm
+- `md`: max-w-md
+- `lg`: max-w-lg
 
-### Search Types
+**Styling:**
+- Backdrop: black/50 opacity
+- Background: bg-secondary (#18181b)
+- Border radius: 12px
+- Header with title and close button
+- Footer area for action buttons
 
-```typescript
-export interface SearchMatch {
-  /** Page index (0-based) */
-  pageIndex: number;
-  /** Match index within page */
-  matchIndex: number;
-  /** The matched text */
-  text: string;
-  /** Character start index in page text */
-  startIndex: number;
-  /** Character end index in page text */
-  endIndex: number;
-}
-```
+### Design System Colors (Reference)
 
-### PDF Outline Types
+```css
+/* Background */
+--bg-primary: #09090b;      /* zinc-950 */
+--bg-secondary: #18181b;    /* zinc-900 */
+--bg-tertiary: #27272a;     /* zinc-800 */
 
-```typescript
-export interface PDFOutlineItem {
-  /** Section title */
-  title: string;
-  /** Destination page (1-based) */
-  page: number;
-  /** Nested items (for sub-sections) */
-  items: PDFOutlineItem[];
-}
-```
+/* Text */
+--text-primary: #fafafa;    /* zinc-50 */
+--text-secondary: #a1a1aa;  /* zinc-400 */
+--text-muted: #52525b;      /* zinc-600 */
 
-### User Preferences Types
+/* Accent */
+--accent-primary: #ef4444;  /* red-500 */
+--accent-hover: #f87171;    /* red-400 */
 
-```typescript
-export interface UserPreferences {
-  /** Default zoom level */
-  defaultZoom: number;
-  /** Default sidebar state */
-  defaultSidebarOpen: boolean;
-  /** Show page numbers in viewer */
-  showPageNumbers: boolean;
-  /** Default WPM for speed reader */
-  defaultWpm: number;
-}
-```
-
-### Storage Constants
-
-```typescript
-export const STORAGE_KEYS = {
-  DOCUMENTS: 'glyph:documents',
-  BOOKMARKS: 'glyph:bookmarks',
-  HIGHLIGHTS: 'glyph:highlights',
-  PREFERENCES: 'glyph:preferences',
-  VIEWER_STATE: 'glyph:viewer-state',
-} as const;
-
-export const INDEXEDDB_CONFIG = {
-  DB_NAME: 'glyph-db',
-  DB_VERSION: 1,
-  STORE_PDFS: 'pdfs',
-} as const;
-```
-
-### Validation Constants
-
-```typescript
-export const VALIDATION = {
-  MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
-  MAX_NOTE_LENGTH: 2000,
-  MAX_LABEL_LENGTH: 100,
-  SUPPORTED_TYPES: ['application/pdf'],
-  MIN_ZOOM: 0.5,
-  MAX_ZOOM: 3.0,
-  ZOOM_STEP: 0.25,
-} as const;
-```
-
-### Highlight Color Map (for rendering)
-
-```typescript
-export const HIGHLIGHT_COLORS: Record<HighlightColor, { bg: string; hex: string }> = {
-  yellow: { bg: 'rgba(253, 224, 71, 0.4)', hex: '#fde047' },
-  green: { bg: 'rgba(134, 239, 172, 0.4)', hex: '#86efac' },
-  blue: { bg: 'rgba(147, 197, 253, 0.4)', hex: '#93c5fd' },
-  pink: { bg: 'rgba(249, 168, 212, 0.4)', hex: '#f9a8d4' },
-  orange: { bg: 'rgba(253, 186, 116, 0.4)', hex: '#fdba74' },
-};
+/* Border */
+--border-default: #27272a;  /* zinc-800 */
+--border-subtle: #3f3f46;   /* zinc-700 */
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/types/index.ts` | Create | All TypeScript type definitions |
+| `src/components/ui/Button.tsx` | Create | Reusable button component |
+| `src/components/ui/Popover.tsx` | Create | Popover/tooltip component |
+| `src/components/ui/Modal.tsx` | Create | Modal dialog component |
+| `src/components/ui/index.ts` | Create | Barrel export file |
 
 ## Success Criteria
 
-1. [x] File `src/types/index.ts` exists with all interfaces
-2. [x] All interfaces have JSDoc comments
-3. [x] Storage keys and IndexedDB config constants are exported
-4. [x] Validation constants are exported
-5. [x] Highlight color map is exported
-6. [x] `npm run type-check` passes with no errors
-7. [x] `npm run lint` passes with no errors
+1. [x] Button component exists with all variants (primary, secondary, ghost, danger)
+2. [x] Button component has all sizes (sm, md, lg)
+3. [x] Button supports loading state with spinner
+4. [x] Popover component positions correctly relative to anchor
+5. [x] Popover closes on click outside and Escape key
+6. [x] Modal component renders centered with backdrop
+7. [x] Modal closes on backdrop click and Escape key
+8. [x] All components have TypeScript interfaces
+9. [x] All components have `"use client"` directive
+10. [x] `npm run type-check` passes
+11. [x] `npm run lint` passes
 
 ---
 

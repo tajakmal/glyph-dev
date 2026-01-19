@@ -1,44 +1,46 @@
 # Progress Log
 
-Task started: 2026-01-18 20:31:21
+Task started: 2026-01-18 20:33:23
 
-### 2026-01-18 20:31:21
+### 2026-01-18 20:33:24
 **Iteration 1 started**
 
-### Iteration 1 Progress
+### 2026-01-18
+**Task: Shared UI Components - COMPLETED**
 
-**Task: TypeScript Type Definitions**
+Created three reusable UI components in `src/components/ui/`:
 
-Completed all success criteria:
+1. **Button.tsx** - Reusable button component with:
+   - 4 variants: primary, secondary, ghost, danger
+   - 3 sizes: sm, md, lg
+   - Loading state with spinner animation
+   - Icon support (leftIcon, rightIcon)
+   - Disabled state styling
+   - Focus ring for accessibility
 
-1. **Created `src/types/index.ts`** with all required interfaces:
-   - `DocumentMeta` - PDF document metadata for library
-   - `Bookmark` - User bookmarks within documents
-   - `HighlightColor` - Type for highlight colors
-   - `HighlightRect` - Normalized bounding rectangles
-   - `Highlight` - Text highlights with annotations
-   - `PDFViewerState` - Viewer UI state
-   - `SearchMatch` - Search result matches
-   - `PDFOutlineItem` - Table of contents structure
-   - `UserPreferences` - User settings
+2. **Popover.tsx** - Popover/tooltip component with:
+   - Positioning relative to anchor element (top, bottom, left, right)
+   - Auto-repositioning when near viewport edges
+   - Click outside to close
+   - Escape key to close
+   - Arrow pointer to anchor
+   - Fade + zoom animation on open
 
-2. **Added JSDoc comments** to all interfaces and types with clear descriptions
+3. **Modal.tsx** - Modal dialog component with:
+   - Centered overlay with backdrop (black/50)
+   - 3 sizes: sm, md, lg
+   - Click backdrop to close
+   - Escape key to close
+   - Focus trap (tab stays within modal)
+   - Fade + zoom animation on open
+   - Scrollable content area
+   - Header with title and close button
+   - Footer area for action buttons
 
-3. **Exported storage constants:**
-   - `STORAGE_KEYS` - LocalStorage keys with 'glyph:' prefix
-   - `INDEXEDDB_CONFIG` - IndexedDB database configuration
+4. **index.ts** - Barrel export file for all components
 
-4. **Exported validation constants:**
-   - `VALIDATION` - File size limits, zoom bounds, supported types
-
-5. **Exported highlight color map:**
-   - `HIGHLIGHT_COLORS` - RGB/hex color definitions for highlights
-
-6. **Verified TypeScript compilation:** `npx tsc --noEmit` passes with no errors
-
-7. **Verified linting:** `npm run lint` passes with no errors
-
-**Status: COMPLETE**
-
-### 2026-01-18 20:33:21
-**Iteration 1 ended** - TASK COMPLETE
+All components:
+- Have `"use client"` directive
+- Have TypeScript interfaces
+- Pass `npm run lint`
+- Pass `npx tsc --noEmit`
