@@ -416,24 +416,24 @@ function createHighlightFromSelection(
 
 ## Success Criteria
 
-1. [ ] `src/hooks/useHighlights.ts` exists
-2. [ ] useHighlights loads highlights from localStorage
-3. [ ] addHighlight creates highlight with UUID and timestamp
-4. [ ] removeHighlight removes from localStorage and state
-5. [ ] updateHighlightNote allows note editing (max 2000 chars)
-6. [ ] updateHighlightColor changes highlight color
-7. [ ] highlightsByPage groups highlights correctly
-8. [ ] `src/lib/highlight-utils.ts` exists
-9. [ ] normalizeRects converts to 0-1 range
-10. [ ] denormalizeRects converts back to pixels
-11. [ ] `src/components/pdf/PDFHighlightLayer.tsx` exists
-12. [ ] Highlights render with correct colors
-13. [ ] Highlights are clickable
-14. [ ] Note indicator shows when highlight has note
-15. [ ] Highlights render correctly at different zoom levels
-16. [ ] PDFPage integrates highlight layer
-17. [ ] `npm run type-check` passes
-18. [ ] `npm run lint` passes
+1. [x] `src/hooks/useHighlights.ts` exists
+2. [x] useHighlights loads highlights from localStorage
+3. [x] addHighlight creates highlight with UUID and timestamp
+4. [x] removeHighlight removes from localStorage and state
+5. [x] updateHighlightNote allows note editing (max 2000 chars)
+6. [x] updateHighlightColor changes highlight color
+7. [x] highlightsByPage groups highlights correctly
+8. [x] `src/lib/highlight-utils.ts` exists
+9. [x] normalizeRects converts to 0-1 range
+10. [x] denormalizeRects converts back to pixels
+11. [x] `src/components/pdf/PDFHighlightLayer.tsx` exists
+12. [x] Highlights render with correct colors
+13. [x] Highlights are clickable
+14. [x] Note indicator shows when highlight has note
+15. [x] Highlights render correctly at different zoom levels
+16. [x] PDFPage integrates highlight layer
+17. [x] `npm run type-check` passes
+18. [x] `npm run lint` passes
 
 ---
 
