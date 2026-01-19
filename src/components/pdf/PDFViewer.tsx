@@ -2,14 +2,17 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
+import type { Bookmark, Highlight } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
+import { usePDFOutline } from '@/hooks/usePDFOutline';
 import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { PDFPage } from './PDFPage';
 import { PDFControls } from './PDFControls';
 import { PDFSearch } from './PDFSearch';
+import { PDFSidebar } from './PDFSidebar';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -18,16 +21,12 @@ interface PDFViewerProps {
   initialPage?: number;
   /** Initial zoom level (default: 1) */
   initialZoom?: number;
-  /** Document title */
+  /** Document title (overrides PDF metadata) */
   title?: string;
   /** Callback when page changes */
   onPageChange?: (page: number) => void;
   /** Callback when document loads */
   onDocumentLoad?: (pageCount: number) => void;
-  /** Toggle sidebar */
-  onSidebarToggle?: () => void;
-  /** Is sidebar open */
-  isSidebarOpen?: boolean;
 }
 
 export function PDFViewer({
@@ -37,16 +36,34 @@ export function PDFViewer({
   title,
   onPageChange,
   onDocumentLoad,
-  onSidebarToggle,
-  isSidebarOpen,
 }: PDFViewerProps) {
-  const { pdf, isLoading, error } = usePDF({ documentId });
+  const { pdf, isLoading, error, meta } = usePDF({ documentId });
   const [zoom, setZoom] = useState(initialZoom);
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [pageCount, setPageCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Sidebar state with localStorage persistence
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const stored = localStorage.getItem('glyph:sidebar-open');
+    return stored !== null ? JSON.parse(stored) : true;
+  });
+
+  // Persist sidebar state
+  useEffect(() => {
+    localStorage.setItem('glyph:sidebar-open', JSON.stringify(sidebarOpen));
+  }, [sidebarOpen]);
+
+  // Toggle sidebar
+  const toggleSidebar = useCallback(() => {
+    setSidebarOpen((prev: boolean) => !prev);
+  }, []);
+
+  // Placeholder highlights (to be implemented in Task 014)
+  const [highlights] = useState<Highlight[]>([]);
 
   // PDF Search
   const {
@@ -64,9 +81,15 @@ export function PDFViewer({
 
   // Bookmarks
   const {
+    bookmarks,
     isPageBookmarked,
     toggleBookmark,
+    removeBookmark,
+    updateBookmark,
   } = useBookmarks({ documentId });
+
+  // PDF Outline (Table of Contents)
+  const { outline, isLoading: isOutlineLoading } = usePDFOutline({ pdf });
 
   // Preserve scroll position when zooming
   const handleZoomChange = useCallback((newZoom: number) => {
@@ -143,6 +166,23 @@ export function PDFViewer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentPage, toggleBookmark]);
 
+  // Handle S key to toggle sidebar
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.key === 's' || e.key === 'S') {
+        toggleSidebar();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [toggleSidebar]);
+
   // Close search handler
   const handleCloseSearch = useCallback(() => {
     setSearchOpen(false);
@@ -218,6 +258,23 @@ export function PDFViewer({
     return () => container.removeEventListener('scroll', handleScroll);
   }, [currentPage, onPageChange]);
 
+  // Sidebar handlers
+  const handleBookmarkClick = useCallback((bookmark: Bookmark) => {
+    handlePageChange(bookmark.page);
+  }, [handlePageChange]);
+
+  const handleHighlightClick = useCallback((highlight: Highlight) => {
+    handlePageChange(highlight.page);
+  }, [handlePageChange]);
+
+  const handleExport = useCallback(() => {
+    // Placeholder - will be implemented in a later task
+    console.log('Export annotations');
+  }, []);
+
+  // Get document title
+  const documentTitle = title || meta?.title || 'Untitled Document';
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -243,44 +300,62 @@ export function PDFViewer({
         currentPage={currentPage}
         pageCount={pageCount}
         onPageChange={handlePageChange}
-        title={title}
-        onSidebarToggle={onSidebarToggle}
-        isSidebarOpen={isSidebarOpen}
+        title={documentTitle}
+        onSidebarToggle={toggleSidebar}
+        isSidebarOpen={sidebarOpen}
         isBookmarked={isPageBookmarked(currentPage)}
         onBookmarkToggle={() => toggleBookmark(currentPage)}
       />
-      <div
-        ref={containerRef}
-        className="pdf-viewer overflow-auto flex-1 bg-zinc-900 relative"
-        data-testid="pdf-viewer"
-      >
-        {/* Search UI */}
-        {searchOpen && (
-          <PDFSearch
-            query={searchQuery}
-            onQueryChange={setSearchQuery}
-            currentMatch={currentMatchIndex}
-            totalMatches={matchCount}
-            isSearching={isSearching}
-            onNext={nextMatch}
-            onPrevious={previousMatch}
-            onClose={handleCloseSearch}
-          />
-        )}
-        <div className="flex flex-col items-center py-4">
-          {pages.map((page, index) => (
-            <PDFPage
-              key={index + 1}
-              page={page}
-              pageNumber={index + 1}
-              zoom={zoom}
-              searchMatches={getMatchesForPage(index)}
-              activeMatchIndex={currentMatchIndex}
-              allMatches={searchMatches}
-              isBookmarked={isPageBookmarked(index + 1)}
-              onBookmarkToggle={() => toggleBookmark(index + 1)}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <PDFSidebar
+          isOpen={sidebarOpen}
+          onToggle={toggleSidebar}
+          documentTitle={documentTitle}
+          outline={outline}
+          isOutlineLoading={isOutlineLoading}
+          bookmarks={bookmarks}
+          highlights={highlights}
+          onOutlineClick={handlePageChange}
+          onBookmarkClick={handleBookmarkClick}
+          onBookmarkDelete={removeBookmark}
+          onBookmarkRename={updateBookmark}
+          onHighlightClick={handleHighlightClick}
+          onExport={handleExport}
+        />
+        <div
+          ref={containerRef}
+          className="pdf-viewer overflow-auto flex-1 bg-zinc-900 relative"
+          data-testid="pdf-viewer"
+        >
+          {/* Search UI */}
+          {searchOpen && (
+            <PDFSearch
+              query={searchQuery}
+              onQueryChange={setSearchQuery}
+              currentMatch={currentMatchIndex}
+              totalMatches={matchCount}
+              isSearching={isSearching}
+              onNext={nextMatch}
+              onPrevious={previousMatch}
+              onClose={handleCloseSearch}
             />
-          ))}
+          )}
+          <div className="flex flex-col items-center py-4">
+            {pages.map((page, index) => (
+              <PDFPage
+                key={index + 1}
+                page={page}
+                pageNumber={index + 1}
+                zoom={zoom}
+                searchMatches={getMatchesForPage(index)}
+                activeMatchIndex={currentMatchIndex}
+                allMatches={searchMatches}
+                isBookmarked={isPageBookmarked(index + 1)}
+                onBookmarkToggle={() => toggleBookmark(index + 1)}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </div>

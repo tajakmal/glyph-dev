@@ -1,34 +1,37 @@
 # Progress Log
 
-Task started: 2026-01-18 21:10:53
+Task started: 2026-01-18 21:15:53
 
-### 2026-01-18 21:10:54
+### 2026-01-18 21:15:53
 **Iteration 1 started**
 
-### 2026-01-18 21:XX:XX
-**Bookmarks System Implementation Complete**
+### 2026-01-18
+**Completed all criteria for Sidebar and Table of Contents**
 
 Files created:
-- `src/hooks/useBookmarks.ts` - Hook for managing bookmarks with CRUD operations
-- `src/components/pdf/PDFBookmarks.tsx` - Bookmark list component with inline editing
+- `src/hooks/usePDFOutline.ts` - Hook for extracting PDF outline/TOC
+- `src/components/pdf/PDFOutline.tsx` - Collapsible tree component for TOC
+- `src/components/pdf/PDFSidebar.tsx` - Sidebar with 3 tabs (Contents, Bookmarks, Notes)
 
 Files modified:
-- `src/components/pdf/PDFControls.tsx` - Added bookmark button to toolbar
-- `src/components/pdf/PDFPage.tsx` - Added bookmark indicator on pages
-- `src/components/pdf/PDFViewer.tsx` - Integrated bookmarks hook and B key shortcut
+- `src/components/pdf/PDFViewer.tsx` - Integrated sidebar with:
+  - usePDFOutline hook
+  - Sidebar state with localStorage persistence (`glyph:sidebar-open`)
+  - S key toggle for sidebar
+  - Navigation callbacks for outline, bookmarks, and highlights
+  - Export button (placeholder implementation)
 
 Features implemented:
-- useBookmarks hook loads/saves bookmarks from localStorage
-- Bookmarks are sorted by page number
-- Toggle bookmark with B key or toolbar button
-- Visual indicator on bookmarked pages
-- PDFBookmarks component supports:
-  - Click to navigate to page
-  - Double-click to edit label inline
-  - Delete button on hover
-  - Empty state with helpful message
+- Table of Contents extraction from PDF outline metadata
+- Collapsible tree structure for TOC items
+- Three tabs: Contents, Bookmarks, Notes
+- Tab badges showing counts
+- Document title with truncation
+- Export button (disabled when no highlights)
+- S key toggles sidebar
+- Sidebar state persists in localStorage
+- Sidebar collapse button
 
-All 19 success criteria completed. Type-check and lint pass.
-
-### 2026-01-18 21:15:51
-**Iteration 1 ended** - TASK COMPLETE
+Verified:
+- `npm run type-check` passes
+- `npm run lint` passes
