@@ -1,8 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PDFPageProxy } from 'pdfjs-dist';
 import type { Bookmark, Highlight, HighlightColor } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
@@ -11,7 +10,7 @@ import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { useHighlights } from '@/hooks/useHighlights';
-import { PDFPage } from './PDFPage';
+import { VirtualizedPDFPage } from './VirtualizedPDFPage';
 import { PDFControls } from './PDFControls';
 import { PDFSearch } from './PDFSearch';
 import { PDFSidebar } from './PDFSidebar';
@@ -20,6 +19,15 @@ import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
 import { navigateToSpeedRead, navigateToDocumentSpeedRead } from '@/lib/speed-read';
+
+// Number of pages to render beyond the visible viewport
+const OVERSCAN_PAGES = 2;
+
+// Default estimated page height (used before actual dimensions are known)
+const DEFAULT_PAGE_HEIGHT = 800;
+
+// Gap between pages in pixels
+const PAGE_GAP = 16;
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -45,13 +53,17 @@ export function PDFViewer({
   onDocumentLoad,
 }: PDFViewerProps) {
   const router = useRouter();
-  const { pdf, isLoading, error, meta } = usePDF({ documentId });
+  const { pdf, isLoading, error, meta, pageCount } = usePDF({ documentId });
   const [zoom, setZoom] = useState(initialZoom);
-  const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [pageCount, setPageCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Virtualization state - which pages are currently visible
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 5 });
+
+  // Track actual page heights for accurate scrolling (keyed by page number)
+  const [pageHeights, setPageHeights] = useState<Map<number, number>>(new Map());
 
   // Track page dimensions for highlight normalization
   const [pageDimensions, setPageDimensions] = useState<Map<number, { width: number; height: number }>>(new Map());
@@ -236,28 +248,109 @@ export function PDFViewer({
     }
   }, [currentMatchIndex, searchMatches]);
 
-  // Load all page proxies when PDF is ready
-  useEffect(() => {
-    if (!pdf) return;
+  // Calculate estimated page height based on zoom
+  const estimatedPageHeight = useMemo(() => {
+    return DEFAULT_PAGE_HEIGHT * zoom;
+  }, [zoom]);
 
-    const loadPages = async () => {
-      const loadedPages: PDFPageProxy[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        loadedPages.push(page);
+  // Calculate total height of all pages for scroll container
+  const totalHeight = useMemo(() => {
+    let height = PAGE_GAP; // Initial padding
+    for (let i = 1; i <= pageCount; i++) {
+      const pageHeight = pageHeights.get(i) || estimatedPageHeight;
+      height += pageHeight + PAGE_GAP;
+    }
+    return height;
+  }, [pageCount, pageHeights, estimatedPageHeight]);
+
+  // Calculate page offset (top position) for a given page number
+  const getPageOffset = useCallback((pageNumber: number): number => {
+    let offset = PAGE_GAP;
+    for (let i = 1; i < pageNumber; i++) {
+      const pageHeight = pageHeights.get(i) || estimatedPageHeight;
+      offset += pageHeight + PAGE_GAP;
+    }
+    return offset;
+  }, [pageHeights, estimatedPageHeight]);
+
+  // Notify when document loads
+  useEffect(() => {
+    if (pageCount > 0) {
+      onDocumentLoad?.(pageCount);
+    }
+  }, [pageCount, onDocumentLoad]);
+
+  // Calculate visible range based on scroll position
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || pageCount === 0) return;
+
+    const updateVisibleRange = () => {
+      const scrollTop = container.scrollTop;
+      const viewportHeight = container.clientHeight;
+
+      // Find first visible page
+      let startPage = 1;
+      let accumulatedHeight = PAGE_GAP;
+      for (let i = 1; i <= pageCount; i++) {
+        const pageHeight = pageHeights.get(i) || estimatedPageHeight;
+        if (accumulatedHeight + pageHeight > scrollTop) {
+          startPage = i;
+          break;
+        }
+        accumulatedHeight += pageHeight + PAGE_GAP;
       }
-      setPages(loadedPages);
-      setPageCount(pdf.numPages);
-      onDocumentLoad?.(pdf.numPages);
+
+      // Find last visible page
+      let endPage = startPage;
+      accumulatedHeight = getPageOffset(startPage);
+      for (let i = startPage; i <= pageCount; i++) {
+        const pageHeight = pageHeights.get(i) || estimatedPageHeight;
+        accumulatedHeight += pageHeight + PAGE_GAP;
+        endPage = i;
+        if (accumulatedHeight > scrollTop + viewportHeight) {
+          break;
+        }
+      }
+
+      // Apply overscan
+      const overscanStart = Math.max(1, startPage - OVERSCAN_PAGES);
+      const overscanEnd = Math.min(pageCount, endPage + OVERSCAN_PAGES);
+
+      setVisibleRange(prev => {
+        if (prev.start !== overscanStart || prev.end !== overscanEnd) {
+          return { start: overscanStart, end: overscanEnd };
+        }
+        return prev;
+      });
     };
 
-    loadPages();
-  }, [pdf, onDocumentLoad]);
+    // Initial calculation
+    updateVisibleRange();
+
+    // Update on scroll (passive for performance)
+    container.addEventListener('scroll', updateVisibleRange, { passive: true });
+    return () => container.removeEventListener('scroll', updateVisibleRange);
+  }, [pageCount, pageHeights, estimatedPageHeight, getPageOffset]);
+
+  // Handle page dimensions update from VirtualizedPDFPage
+  const handlePageDimensionsReady = useCallback((pageNumber: number, width: number, height: number) => {
+    setPageHeights(prev => {
+      const next = new Map(prev);
+      next.set(pageNumber, height);
+      return next;
+    });
+    setPageDimensions(prev => {
+      const next = new Map(prev);
+      next.set(pageNumber, { width, height });
+      return next;
+    });
+  }, []);
 
   // Restore scroll position when returning from speed reader
   useEffect(() => {
     const saved = sessionStorage.getItem('glyph:reader-scroll');
-    if (saved && pages.length > 0) {
+    if (saved && pageCount > 0) {
       try {
         const { documentId: savedId, scrollTop } = JSON.parse(saved);
         if (savedId === documentId && containerRef.current) {
@@ -273,7 +366,7 @@ export function PDFViewer({
         sessionStorage.removeItem('glyph:reader-scroll');
       }
     }
-  }, [documentId, pages.length]);
+  }, [documentId, pageCount]);
 
   // Track current page on scroll
   useEffect(() => {
@@ -391,15 +484,6 @@ export function PDFViewer({
       });
     }
   }, [pageDimensions]);
-
-  // Handle page render to track dimensions
-  const handlePageRenderComplete = useCallback((pageNumber: number, width: number, height: number) => {
-    setPageDimensions(prev => {
-      const next = new Map(prev);
-      next.set(pageNumber, { width, height });
-      return next;
-    });
-  }, []);
 
   // Create highlight from selection
   const handleCreateHighlight = useCallback((color: HighlightColor, note?: string) => {
@@ -589,34 +673,64 @@ export function PDFViewer({
               onClose={handleCloseSearch}
             />
           )}
-          <div className="flex flex-col items-center py-4">
-            {pages.map((page, index) => (
-              <PDFPage
-                key={index + 1}
-                page={page}
-                pageNumber={index + 1}
-                zoom={zoom}
-                searchMatches={getMatchesForPage(index)}
-                activeMatchIndex={currentMatchIndex}
-                allMatches={searchMatches}
-                isBookmarked={isPageBookmarked(index + 1)}
-                onBookmarkToggle={() => toggleBookmark(index + 1)}
-                highlights={getHighlightsForPage(index + 1)}
-                onHighlightClick={handleHighlightClick}
-                selectedHighlightId={highlightPopover?.highlight.id}
-                onTextSelect={handleTextSelect}
-                onRenderComplete={() => {
-                  // Get dimensions from the page element
-                  const pageEl = containerRef.current?.querySelector(
-                    `[data-page-number="${index + 1}"]`
-                  );
-                  if (pageEl) {
-                    const rect = pageEl.getBoundingClientRect();
-                    handlePageRenderComplete(index + 1, rect.width, rect.height);
-                  }
-                }}
-              />
-            ))}
+          {/* Virtualized page container with total height for scrolling */}
+          <div
+            className="flex flex-col items-center relative"
+            style={{ minHeight: totalHeight }}
+          >
+            {pdf && Array.from({ length: pageCount }, (_, i) => {
+              const pageNumber = i + 1;
+              const isInRange = pageNumber >= visibleRange.start && pageNumber <= visibleRange.end;
+              const pageHeight = pageHeights.get(pageNumber) || estimatedPageHeight;
+              const topOffset = getPageOffset(pageNumber);
+
+              if (!isInRange) {
+                // Render placeholder for non-visible pages
+                return (
+                  <div
+                    key={pageNumber}
+                    className="pdf-page-placeholder"
+                    style={{
+                      position: 'absolute',
+                      top: topOffset,
+                      height: pageHeight,
+                      width: pageDimensions.get(pageNumber)?.width || 'auto',
+                    }}
+                    data-page-number={pageNumber}
+                    data-placeholder="true"
+                  />
+                );
+              }
+
+              // Render actual virtualized page
+              return (
+                <div
+                  key={pageNumber}
+                  style={{
+                    position: 'absolute',
+                    top: topOffset,
+                  }}
+                >
+                  <VirtualizedPDFPage
+                    pdf={pdf}
+                    pageNumber={pageNumber}
+                    zoom={zoom}
+                    searchMatches={getMatchesForPage(i)}
+                    activeMatchIndex={currentMatchIndex}
+                    allMatches={searchMatches}
+                    isBookmarked={isPageBookmarked(pageNumber)}
+                    onBookmarkToggle={() => toggleBookmark(pageNumber)}
+                    highlights={getHighlightsForPage(pageNumber)}
+                    onHighlightClick={handleHighlightClick}
+                    selectedHighlightId={highlightPopover?.highlight.id}
+                    onTextSelect={handleTextSelect}
+                    onDimensionsReady={(width, height) => {
+                      handlePageDimensionsReady(pageNumber, width, height);
+                    }}
+                  />
+                </div>
+              );
+            })}
           </div>
 
           {/* Selection Popover */}
