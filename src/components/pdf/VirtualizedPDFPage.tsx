@@ -1,0 +1,215 @@
+'use client';
+
+import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { SearchMatch, Highlight } from '@/types';
+import { renderPage } from '@/lib/pdf-utils';
+import { PDFTextLayer, TextSelection } from './PDFTextLayer';
+import { PDFHighlightLayer } from './PDFHighlightLayer';
+
+interface VirtualizedPDFPageProps {
+  /** PDF document proxy */
+  pdf: PDFDocumentProxy;
+  /** Page number (1-based) */
+  pageNumber: number;
+  /** Zoom level (1 = 100%) */
+  zoom: number;
+  /** Highlights for this page */
+  highlights?: Highlight[];
+  /** Callback when highlight is clicked */
+  onHighlightClick?: (highlight: Highlight) => void;
+  /** Currently selected highlight ID */
+  selectedHighlightId?: string;
+  /** Callback when text is selected */
+  onTextSelect?: (selection: TextSelection) => void;
+  /** Search matches for this page */
+  searchMatches?: SearchMatch[];
+  /** Index of the active match (global index) */
+  activeMatchIndex?: number;
+  /** All matches for active match calculation */
+  allMatches?: SearchMatch[];
+  /** Whether this page is bookmarked */
+  isBookmarked?: boolean;
+  /** Toggle bookmark callback */
+  onBookmarkToggle?: () => void;
+  /** Callback when page dimensions are known */
+  onDimensionsReady?: (width: number, height: number) => void;
+}
+
+export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageProps>(
+  function VirtualizedPDFPage(
+    {
+      pdf,
+      pageNumber,
+      zoom,
+      highlights,
+      onHighlightClick,
+      selectedHighlightId,
+      onTextSelect,
+      searchMatches = [],
+      activeMatchIndex = -1,
+      allMatches = [],
+      isBookmarked,
+      onBookmarkToggle,
+      onDimensionsReady,
+    },
+    ref
+  ) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [page, setPage] = useState<PDFPageProxy | null>(null);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [isRendered, setIsRendered] = useState(false);
+    const [renderError, setRenderError] = useState<string | null>(null);
+
+    // Forward ref
+    useImperativeHandle(ref, () => containerRef.current!, []);
+
+    // Load page
+    useEffect(() => {
+      let isMounted = true;
+
+      pdf.getPage(pageNumber).then((loadedPage) => {
+        if (isMounted) {
+          setPage(loadedPage);
+        }
+      }).catch((error) => {
+        if (isMounted) {
+          console.error(`Failed to load page ${pageNumber}:`, error);
+          setRenderError('Failed to load page');
+        }
+      });
+
+      return () => {
+        isMounted = false;
+      };
+    }, [pdf, pageNumber]);
+
+    // Render page
+    useEffect(() => {
+      const canvas = canvasRef.current;
+      if (!page || !canvas) return;
+
+      let isMounted = true;
+
+      const render = async () => {
+        try {
+          await renderPage(page, canvas, zoom);
+
+          if (!isMounted) return;
+
+          const dpr = window.devicePixelRatio || 1;
+          const viewport = page.getViewport({ scale: zoom * dpr });
+
+          const newDimensions = {
+            width: viewport.width / dpr,
+            height: viewport.height / dpr,
+          };
+
+          setDimensions(newDimensions);
+          setIsRendered(true);
+          setRenderError(null);
+          onDimensionsReady?.(newDimensions.width, newDimensions.height);
+        } catch (error) {
+          if (isMounted) {
+            console.error(`Failed to render page ${pageNumber}:`, error);
+            setRenderError('Failed to render page');
+          }
+        }
+      };
+
+      render();
+
+      // Cleanup canvas memory when unmounting
+      return () => {
+        isMounted = false;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+        // Release canvas memory by resetting dimensions
+        canvas.width = 0;
+        canvas.height = 0;
+      };
+    }, [page, zoom, pageNumber, onDimensionsReady]);
+
+    if (renderError) {
+      return (
+        <div
+          ref={containerRef}
+          className="pdf-page bg-zinc-800 flex items-center justify-center"
+          data-page-number={pageNumber}
+          data-testid={`pdf-page-${pageNumber}`}
+          style={{
+            width: dimensions.width || 'auto',
+            height: dimensions.height || 800 * zoom,
+            marginBottom: 16,
+          }}
+        >
+          <div className="text-zinc-500 text-sm text-center p-4">
+            <p>{renderError}</p>
+            <p className="text-xs text-zinc-600 mt-1">Page {pageNumber}</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        ref={containerRef}
+        className="pdf-page"
+        data-page-number={pageNumber}
+        data-testid={`pdf-page-${pageNumber}`}
+        style={{
+          width: dimensions.width || 'auto',
+          height: dimensions.height || 800 * zoom,
+        }}
+      >
+        <canvas ref={canvasRef} className="pdf-canvas" />
+
+        {isRendered && page && (
+          <>
+            <PDFTextLayer
+              page={page}
+              zoom={zoom}
+              onTextSelect={onTextSelect}
+              searchMatches={searchMatches}
+              activeMatchIndex={activeMatchIndex}
+              allMatches={allMatches}
+            />
+            <PDFHighlightLayer
+              highlights={highlights || []}
+              pageWidth={dimensions.width}
+              pageHeight={dimensions.height}
+              onHighlightClick={onHighlightClick}
+              selectedHighlightId={selectedHighlightId}
+            />
+          </>
+        )}
+
+        {/* Bookmark indicator */}
+        {isBookmarked && (
+          <div
+            className="absolute top-2 right-2 text-red-500 cursor-pointer hover:scale-110 transition-transform"
+            onClick={(e) => {
+              e.stopPropagation();
+              onBookmarkToggle?.();
+            }}
+            title="Remove bookmark"
+          >
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          </div>
+        )}
+
+        {/* Loading indicator */}
+        {!isRendered && !renderError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800 animate-pulse">
+            <div className="text-zinc-500 text-sm">Loading page {pageNumber}...</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+);

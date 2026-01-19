@@ -1,381 +1,570 @@
 ---
-task: Speed Reading Integration
+task: Performance Optimization
 priority: 5
-depends_on: ["005-pdf-viewer-component", "015-highlight-popover-notes"]
+depends_on: ["005-pdf-viewer-component", "009-text-layer-selection", "014-highlights-system"]
 ---
 
-# Task: Speed Reading Integration
+# Task: Performance Optimization
 
-Connect the PDF reader to the existing RSVP speed reading functionality, allowing users to speed-read selected text, highlights, or entire documents.
+Implement page virtualization and memory management to handle large PDFs efficiently.
 
 ## Overview
 
-This task integrates the existing SpritzReader component with the new PDF reader. Users can trigger speed reading from multiple entry points: selection popover, highlight popover, toolbar button, and library card context menu. The speed reader should accept text via URL parameters or sessionStorage, and provide navigation back to the reader.
+This task optimizes the PDF viewer for large documents. The key optimizations are: page virtualization (only rendering pages in/near the viewport), canvas memory cleanup (releasing off-screen canvases), lazy text extraction (only extracting text when needed), and proper loading states throughout.
 
 ## Context
 
-- Existing SpritzReader component in src/components/SpritzReader.tsx
-- Multiple entry points from PRD Section 4.8
-- Data passing via URL params (small text) or sessionStorage (large text)
-- Return navigation should restore scroll position
+- Performance targets from PRD Section 11
+- 100-page PDF should load in <2s
+- Memory should stay stable during scrolling
+- Search should still work with virtualization
+- Intersection Observer API for visibility detection
 
 ## Requirements
 
-### Update Speed Read Route
+### Page Virtualization
 
-**File:** `src/app/speed-read/page.tsx`
+**File:** `src/components/pdf/PDFViewer.tsx` (major update)
 
 ```typescript
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { SpritzReader } from '@/components/SpritzReader';
-import { getPDF } from '@/lib/storage';
-import { loadPDF, extractAllText } from '@/lib/pdf-utils';
-import { getDocuments } from '@/lib/storage';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import { usePDF } from '@/hooks/usePDF';
+import { PDFPage } from './PDFPage';
 
-function SpeedReadContent() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const [text, setText] = useState<string>('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [documentTitle, setDocumentTitle] = useState<string>('');
-  const [returnPath, setReturnPath] = useState<string | null>(null);
+interface VirtualizedPage {
+  pageNumber: number;
+  page: PDFPageProxy | null;
+  isVisible: boolean;
+  isLoading: boolean;
+}
 
+interface PDFViewerProps {
+  documentId: string;
+  initialPage?: number;
+  initialZoom?: number;
+  onPageChange?: (page: number) => void;
+  onDocumentLoad?: (pageCount: number) => void;
+}
+
+// Number of pages to render beyond viewport
+const OVERSCAN = 2;
+
+export function PDFViewer({
+  documentId,
+  initialPage = 1,
+  initialZoom = 1,
+  onPageChange,
+  onDocumentLoad,
+}: PDFViewerProps) {
+  const { pdf, isLoading, error, pageCount } = usePDF({ documentId });
+  const [zoom, setZoom] = useState(initialZoom);
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 5 });
+  const [pageHeights, setPageHeights] = useState<number[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  // Estimate page heights for scroll calculation
+  const estimatedPageHeight = useMemo(() => {
+    // Default estimate based on standard page ratio
+    return 800 * zoom;
+  }, [zoom]);
+
+  // Calculate which pages should be rendered
   useEffect(() => {
-    const loadText = async () => {
-      setIsLoading(true);
+    const container = containerRef.current;
+    if (!container || pageCount === 0) return;
 
-      try {
-        // Check for text in URL params (small text)
-        const urlText = searchParams.get('text');
-        if (urlText) {
-          setText(decodeURIComponent(urlText));
-          setIsLoading(false);
-          return;
-        }
+    const updateVisibleRange = () => {
+      const scrollTop = container.scrollTop;
+      const viewportHeight = container.clientHeight;
 
-        // Check for text in sessionStorage
-        const source = searchParams.get('source');
-        if (source === 'session') {
-          const sessionText = sessionStorage.getItem('glyph:speedread-text');
-          if (sessionText) {
-            setText(sessionText);
-            sessionStorage.removeItem('glyph:speedread-text');
-          }
-          setIsLoading(false);
-          return;
-        }
+      // Estimate which pages are visible based on scroll position
+      const pageHeight = estimatedPageHeight + 16; // Include gap
+      const startPage = Math.max(0, Math.floor(scrollTop / pageHeight) - OVERSCAN);
+      const endPage = Math.min(
+        pageCount - 1,
+        Math.ceil((scrollTop + viewportHeight) / pageHeight) + OVERSCAN
+      );
 
-        // Check for document ID (full document speed read)
-        const documentId = searchParams.get('documentId');
-        if (documentId) {
-          // Get document metadata
-          const documents = getDocuments();
-          const doc = documents.find(d => d.id === documentId);
-          if (doc) {
-            setDocumentTitle(doc.title);
-            setReturnPath(`/reader/${documentId}`);
-          }
-
-          // Load PDF and extract text
-          const pdfData = await getPDF(documentId);
-          if (pdfData) {
-            const pdf = await loadPDF(pdfData);
-            const extractedText = await extractAllText(pdf);
-            setText(extractedText);
-          }
-          setIsLoading(false);
-          return;
-        }
-
-        // No text source found
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Failed to load text:', error);
-        setIsLoading(false);
-      }
+      setVisibleRange({ start: startPage, end: endPage });
     };
 
-    // Get return path from sessionStorage
-    const storedReturnPath = sessionStorage.getItem('glyph:speedread-return');
-    if (storedReturnPath) {
-      setReturnPath(storedReturnPath);
-    }
+    // Initial calculation
+    updateVisibleRange();
 
-    loadText();
-  }, [searchParams]);
+    // Update on scroll
+    const handleScroll = () => {
+      updateVisibleRange();
+    };
 
-  const handleBack = () => {
-    if (returnPath) {
-      router.push(returnPath);
-    } else {
-      router.push('/');
-    }
-  };
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [pageCount, estimatedPageHeight]);
+
+  // Calculate total height for scroll area
+  const totalHeight = useMemo(() => {
+    return pageCount * (estimatedPageHeight + 16); // page height + gap
+  }, [pageCount, estimatedPageHeight]);
+
+  // Render loading placeholder
+  const renderPlaceholder = (pageNumber: number) => (
+    <div
+      key={pageNumber}
+      className="pdf-page-placeholder bg-zinc-800 animate-pulse"
+      style={{
+        height: estimatedPageHeight,
+        marginBottom: 16,
+      }}
+      data-page-number={pageNumber}
+    >
+      <div className="flex items-center justify-center h-full text-zinc-600">
+        Page {pageNumber}
+      </div>
+    </div>
+  );
 
   if (isLoading) {
     return (
-      <div className="h-screen flex items-center justify-center bg-zinc-950">
+      <div className="flex items-center justify-center h-full">
         <div className="flex flex-col items-center gap-4">
           <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
-          <p className="text-zinc-400">Loading text...</p>
+          <p className="text-zinc-400 text-sm">Loading PDF...</p>
         </div>
       </div>
     );
   }
 
-  if (!text) {
+  if (error) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-zinc-950">
-        <p className="text-zinc-400 mb-4">No text to speed read.</p>
-        <button
-          onClick={handleBack}
-          className="px-4 py-2 bg-zinc-800 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors"
-        >
-          Go Back
-        </button>
+      <div className="flex flex-col items-center justify-center h-full text-zinc-400">
+        <p>Failed to load PDF</p>
+        <p className="text-sm text-zinc-600">{error.message}</p>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950">
-      {/* Header with back button */}
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          <span>Back to Reader</span>
-        </button>
-        {documentTitle && (
-          <span className="text-zinc-500 text-sm truncate">
-            Reading: {documentTitle}
-          </span>
+    <div
+      ref={containerRef}
+      className="pdf-viewer overflow-auto h-full bg-zinc-900"
+      data-testid="pdf-viewer"
+    >
+      <div
+        className="flex flex-col items-center py-4"
+        style={{ minHeight: totalHeight }}
+      >
+        {Array.from({ length: pageCount }, (_, i) => {
+          const pageNumber = i + 1;
+          const isInRange = i >= visibleRange.start && i <= visibleRange.end;
+
+          // Calculate top position for absolute positioning
+          const topOffset = i * (estimatedPageHeight + 16) + 16;
+
+          if (!isInRange) {
+            // Render spacer for non-visible pages
+            return (
+              <div
+                key={pageNumber}
+                style={{
+                  height: estimatedPageHeight,
+                  marginBottom: 16,
+                }}
+                data-page-number={pageNumber}
+              />
+            );
+          }
+
+          return (
+            <VirtualizedPDFPage
+              key={pageNumber}
+              pdf={pdf!}
+              pageNumber={pageNumber}
+              zoom={zoom}
+              ref={(el) => {
+                if (el) pageRefs.current.set(pageNumber, el);
+                else pageRefs.current.delete(pageNumber);
+              }}
+            />
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+```
+
+### Virtualized PDF Page Component
+
+**File:** `src/components/pdf/VirtualizedPDFPage.tsx`
+
+```typescript
+'use client';
+
+import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
+import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import { renderPage } from '@/lib/pdf-utils';
+import { PDFTextLayer } from './PDFTextLayer';
+import { PDFHighlightLayer } from './PDFHighlightLayer';
+import type { Highlight } from '@/types';
+
+interface VirtualizedPDFPageProps {
+  pdf: PDFDocumentProxy;
+  pageNumber: number;
+  zoom: number;
+  highlights?: Highlight[];
+  onHighlightClick?: (highlight: Highlight) => void;
+  onTextSelect?: (selection: any) => void;
+}
+
+export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageProps>(
+  function VirtualizedPDFPage(
+    { pdf, pageNumber, zoom, highlights, onHighlightClick, onTextSelect },
+    ref
+  ) {
+    const containerRef = useRef<HTMLDivElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const [page, setPage] = useState<PDFPageProxy | null>(null);
+    const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+    const [isRendered, setIsRendered] = useState(false);
+
+    // Forward ref
+    useImperativeHandle(ref, () => containerRef.current!, []);
+
+    // Load page
+    useEffect(() => {
+      let isMounted = true;
+
+      pdf.getPage(pageNumber).then((loadedPage) => {
+        if (isMounted) {
+          setPage(loadedPage);
+        }
+      });
+
+      return () => {
+        isMounted = false;
+      };
+    }, [pdf, pageNumber]);
+
+    // Render page
+    useEffect(() => {
+      if (!page || !canvasRef.current) return;
+
+      const render = async () => {
+        try {
+          await renderPage(page, canvasRef.current!, zoom);
+
+          const dpr = window.devicePixelRatio || 1;
+          const viewport = page.getViewport({ scale: zoom * dpr });
+
+          setDimensions({
+            width: viewport.width / dpr,
+            height: viewport.height / dpr,
+          });
+          setIsRendered(true);
+        } catch (error) {
+          console.error(`Failed to render page ${pageNumber}:`, error);
+        }
+      };
+
+      render();
+
+      // Cleanup canvas memory when unmounting
+      return () => {
+        if (canvasRef.current) {
+          const ctx = canvasRef.current.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+          }
+          // Release canvas memory
+          canvasRef.current.width = 0;
+          canvasRef.current.height = 0;
+        }
+      };
+    }, [page, zoom, pageNumber]);
+
+    return (
+      <div
+        ref={containerRef}
+        className="pdf-page"
+        data-page-number={pageNumber}
+        data-testid={`pdf-page-${pageNumber}`}
+        style={{
+          width: dimensions.width || 'auto',
+          height: dimensions.height || 800 * zoom, // Default height
+        }}
+      >
+        <canvas ref={canvasRef} className="pdf-canvas" />
+
+        {isRendered && page && (
+          <>
+            <PDFTextLayer
+              page={page}
+              zoom={zoom}
+              onTextSelect={onTextSelect}
+            />
+            {highlights && (
+              <PDFHighlightLayer
+                highlights={highlights.filter(h => h.page === pageNumber)}
+                pageWidth={dimensions.width}
+                pageHeight={dimensions.height}
+                onHighlightClick={onHighlightClick}
+              />
+            )}
+          </>
+        )}
+
+        {/* Loading indicator */}
+        {!isRendered && (
+          <div className="absolute inset-0 flex items-center justify-center bg-zinc-800">
+            <div className="text-zinc-500 text-sm">Loading page {pageNumber}...</div>
+          </div>
         )}
       </div>
+    );
+  }
+);
+```
 
-      {/* Speed Reader */}
-      <div className="flex-1 overflow-hidden">
-        <SpritzReader initialText={text} />
+### Intersection Observer for Lazy Loading
+
+```typescript
+// Alternative approach using Intersection Observer
+
+function usePageVisibility(
+  containerRef: React.RefObject<HTMLElement>,
+  pageCount: number
+) {
+  const [visiblePages, setVisiblePages] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setVisiblePages(prev => {
+          const next = new Set(prev);
+          entries.forEach(entry => {
+            const pageNumber = parseInt(
+              entry.target.getAttribute('data-page-number') || '0'
+            );
+            if (entry.isIntersecting) {
+              // Add page and neighbors
+              next.add(pageNumber);
+              if (pageNumber > 1) next.add(pageNumber - 1);
+              if (pageNumber < pageCount) next.add(pageNumber + 1);
+            } else {
+              // Keep page in set for a bit to prevent flashing
+              // Could add debouncing here
+            }
+          });
+          return next;
+        });
+      },
+      {
+        root: container,
+        rootMargin: '200px 0px', // Load pages 200px before they're visible
+        threshold: 0,
+      }
+    );
+
+    // Observe all page placeholders
+    container.querySelectorAll('[data-page-placeholder]').forEach(el => {
+      observer.observe(el);
+    });
+
+    return () => observer.disconnect();
+  }, [containerRef, pageCount]);
+
+  return visiblePages;
+}
+```
+
+### Text Extraction Cache
+
+**File:** `src/hooks/useTextCache.ts`
+
+```typescript
+'use client';
+
+import { useRef, useCallback } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import { getTextContent } from '@/lib/pdf-utils';
+
+export function useTextCache(pdf: PDFDocumentProxy | null) {
+  const cache = useRef<Map<number, string>>(new Map());
+
+  const getPageText = useCallback(async (pageIndex: number): Promise<string> => {
+    // Check cache
+    if (cache.current.has(pageIndex)) {
+      return cache.current.get(pageIndex)!;
+    }
+
+    if (!pdf) return '';
+
+    // Extract and cache
+    const page = await pdf.getPage(pageIndex + 1);
+    const textContent = await getTextContent(page);
+    const text = textContent.items
+      .map(item => ('str' in item ? item.str : ''))
+      .join('');
+
+    cache.current.set(pageIndex, text);
+    return text;
+  }, [pdf]);
+
+  const clearCache = useCallback(() => {
+    cache.current.clear();
+  }, []);
+
+  return { getPageText, clearCache };
+}
+```
+
+### Memory Monitoring (Development)
+
+```typescript
+// Development utility for monitoring memory
+export function useMemoryMonitor(enabled = process.env.NODE_ENV === 'development') {
+  useEffect(() => {
+    if (!enabled) return;
+
+    const interval = setInterval(() => {
+      if ('memory' in performance) {
+        const memory = (performance as any).memory;
+        console.log('Memory:', {
+          used: `${(memory.usedJSHeapSize / 1024 / 1024).toFixed(2)} MB`,
+          total: `${(memory.totalJSHeapSize / 1024 / 1024).toFixed(2)} MB`,
+          limit: `${(memory.jsHeapSizeLimit / 1024 / 1024).toFixed(2)} MB`,
+        });
+      }
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [enabled]);
+}
+```
+
+### Loading States
+
+Add skeleton loaders for better UX:
+
+```typescript
+// Skeleton for document card
+export function DocumentCardSkeleton() {
+  return (
+    <div className="w-[200px] rounded-xl bg-zinc-900 border border-zinc-800 animate-pulse">
+      <div className="aspect-[0.714] bg-zinc-800 rounded-t-xl" />
+      <div className="p-3 space-y-2">
+        <div className="h-4 bg-zinc-800 rounded w-3/4" />
+        <div className="h-3 bg-zinc-800 rounded w-1/2" />
       </div>
     </div>
   );
 }
 
-export default function SpeedReadPage() {
+// Skeleton for sidebar content
+export function SidebarContentSkeleton() {
   return (
-    <Suspense fallback={
-      <div className="h-screen flex items-center justify-center bg-zinc-950">
-        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
-      </div>
-    }>
-      <SpeedReadContent />
-    </Suspense>
+    <div className="p-3 space-y-3 animate-pulse">
+      {[1, 2, 3, 4].map(i => (
+        <div key={i} className="flex gap-2">
+          <div className="w-4 h-4 bg-zinc-800 rounded" />
+          <div className="flex-1 h-4 bg-zinc-800 rounded" />
+        </div>
+      ))}
+    </div>
   );
 }
 ```
 
-### Update SpritzReader Component
+### Error Boundary
 
-**File:** `src/components/SpritzReader.tsx` (update)
-
-Add support for initialText prop:
+**File:** `src/components/ErrorBoundary.tsx`
 
 ```typescript
-interface SpritzReaderProps {
-  /** Initial text to speed read (optional) */
-  initialText?: string;
+'use client';
+
+import React, { Component, ReactNode } from 'react';
+
+interface Props {
+  children: ReactNode;
+  fallback?: ReactNode;
 }
 
-export function SpritzReader({ initialText }: SpritzReaderProps) {
-  const [text, setText] = useState(initialText || '');
-  // ... rest of existing implementation
+interface State {
+  hasError: boolean;
+  error?: Error;
+}
 
-  // If initialText is provided, skip the input UI
-  useEffect(() => {
-    if (initialText) {
-      setText(initialText);
-      // Optionally auto-start
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback || (
+        <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+          <h2 className="text-xl text-zinc-200 mb-2">Something went wrong</h2>
+          <p className="text-zinc-400 text-sm mb-4">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <button
+            onClick={() => this.setState({ hasError: false })}
+            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      );
     }
-  }, [initialText]);
 
-  // ... existing render
+    return this.props.children;
+  }
 }
-```
-
-### Navigation Helper Functions
-
-**File:** `src/lib/speed-read.ts`
-
-```typescript
-import { useRouter } from 'next/navigation';
-
-/**
- * Navigate to speed reader with text
- * Uses URL params for small text (<2000 chars), sessionStorage for larger
- */
-export function navigateToSpeedRead(
-  router: ReturnType<typeof useRouter>,
-  text: string,
-  options?: {
-    returnPath?: string;
-    documentId?: string;
-  }
-) {
-  // Store return path
-  if (options?.returnPath) {
-    sessionStorage.setItem('glyph:speedread-return', options.returnPath);
-  }
-
-  // Small text: use URL params
-  if (text.length < 2000) {
-    router.push(`/speed-read?text=${encodeURIComponent(text)}`);
-    return;
-  }
-
-  // Large text: use sessionStorage
-  sessionStorage.setItem('glyph:speedread-text', text);
-  router.push('/speed-read?source=session');
-}
-
-/**
- * Navigate to speed reader for full document
- */
-export function navigateToDocumentSpeedRead(
-  router: ReturnType<typeof useRouter>,
-  documentId: string,
-  returnPath?: string
-) {
-  if (returnPath) {
-    sessionStorage.setItem('glyph:speedread-return', returnPath);
-  }
-
-  router.push(`/speed-read?documentId=${documentId}`);
-}
-```
-
-### Add Speed Read Button to Toolbar
-
-**File:** `src/components/pdf/PDFControls.tsx` (update)
-
-```typescript
-interface PDFControlsProps {
-  // ... existing props
-  /** Callback for speed read entire document */
-  onSpeedReadDocument?: () => void;
-}
-
-// In the toolbar:
-<button
-  onClick={onSpeedReadDocument}
-  className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-  aria-label="Speed read entire document"
-  title="Speed read document"
->
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-  </svg>
-</button>
-```
-
-### Speed Read from Popovers
-
-In PDFHighlightPopover, the onSpeedRead callback should:
-
-```typescript
-// In selection popover
-const handleSpeedRead = () => {
-  navigateToSpeedRead(router, selection.text, {
-    returnPath: `/reader/${documentId}`,
-  });
-};
-
-// In highlight popover
-const handleSpeedRead = () => {
-  navigateToSpeedRead(router, highlight.text, {
-    returnPath: `/reader/${documentId}`,
-  });
-};
-```
-
-### Speed Read from Library Card
-
-In DocumentCard context menu, add Speed Read option that navigates:
-
-```typescript
-// In context menu
-<button
-  onClick={(e) => {
-    e.stopPropagation();
-    setShowContextMenu(false);
-    navigateToDocumentSpeedRead(router, document.id);
-  }}
->
-  Speed Read
-</button>
-```
-
-### Save and Restore Scroll Position
-
-When navigating to speed read from reader, save scroll position:
-
-```typescript
-// Before navigating to speed read
-sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
-  documentId,
-  scrollTop: containerRef.current?.scrollTop || 0,
-}));
-
-// On reader mount, restore if returning from speed read
-useEffect(() => {
-  const saved = sessionStorage.getItem('glyph:reader-scroll');
-  if (saved) {
-    const { documentId: savedId, scrollTop } = JSON.parse(saved);
-    if (savedId === documentId && containerRef.current) {
-      containerRef.current.scrollTop = scrollTop;
-    }
-    sessionStorage.removeItem('glyph:reader-scroll');
-  }
-}, [documentId]);
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/app/speed-read/page.tsx` | Modify | Update to accept text from multiple sources |
-| `src/components/SpritzReader.tsx` | Modify | Add initialText prop |
-| `src/lib/speed-read.ts` | Create | Navigation helper functions |
-| `src/components/pdf/PDFControls.tsx` | Modify | Add speed read button |
-| `src/components/pdf/PDFHighlightPopover.tsx` | Modify | Wire up speed read callback |
-| `src/components/library/DocumentCard.tsx` | Modify | Add speed read to context menu |
+| `src/components/pdf/PDFViewer.tsx` | Modify | Add page virtualization |
+| `src/components/pdf/VirtualizedPDFPage.tsx` | Create | Page with memory cleanup |
+| `src/hooks/useTextCache.ts` | Create | Text extraction cache |
+| `src/components/ErrorBoundary.tsx` | Create | Error boundary component |
+| `src/components/Skeletons.tsx` | Create | Skeleton loading components |
 
 ## Success Criteria
 
-1. [x] Speed read route accepts text via URL param
-2. [x] Speed read route accepts text via sessionStorage
-3. [x] Speed read route accepts documentId for full document
-4. [x] SpritzReader accepts initialText prop
-5. [x] `src/lib/speed-read.ts` exists with navigation helpers
-6. [x] Small text (<2000 chars) uses URL params
-7. [x] Large text uses sessionStorage
-8. [x] Speed read button in toolbar triggers document speed read
-9. [x] Speed read from selection popover works
-10. [x] Speed read from highlight popover works
-11. [x] Speed read from library card context menu works
-12. [x] Back button returns to reader
-13. [x] Scroll position is saved before navigating
-14. [x] Scroll position is restored when returning
-15. [x] Loading state shows while extracting document text
-16. [x] Error state shows when no text available
-17. [x] `npm run type-check` passes
-18. [x] `npm run lint` passes
+1. [x] Page virtualization only renders pages in/near viewport
+2. [x] Pages outside viewport show placeholder with correct height
+3. [x] Canvas memory is released when page is unmounted
+4. [x] Text extraction is cached per page
+5. [x] 100-page PDF loads in under 2 seconds
+6. [x] Memory stays stable when scrolling through large document
+7. [x] Search still works with virtualization
+8. [x] Highlights render correctly on virtualized pages
+9. [x] Smooth scrolling through large documents
+10. [x] Loading states show during page render
+11. [x] Error boundary catches and displays errors gracefully
+12. [x] Skeleton loaders show during initial load
+13. [x] Performance acceptable on mobile devices
+14. [x] No memory leaks detected during extended use
+15. [x] `npm run type-check` passes
+16. [x] `npm run lint` passes
 
 ---
 
