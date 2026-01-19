@@ -1,32 +1,3 @@
----
-task: Library Management Hook
-priority: 2
-depends_on: ["001-typescript-types", "004-pdf-js-setup", "006-indexeddb-storage"]
----
-
-# Task: Library Management Hook
-
-Create the useDocumentLibrary hook for managing the document library (add, remove, update documents).
-
-## Overview
-
-This hook provides a complete API for managing the PDF library. It handles adding new documents (with metadata extraction and thumbnail generation), removing documents (with cleanup), and updating metadata. The hook uses the storage layer and PDF utilities created in previous tasks.
-
-## Context
-
-- Hook goes in `src/hooks/useDocumentLibrary.ts`
-- Uses storage functions from `src/lib/storage.ts`
-- Uses PDF utilities from `src/lib/pdf-utils.ts`
-- Documents are sorted by lastOpenedAt (descending)
-- Thumbnail generation is async but non-blocking
-
-## Requirements
-
-### useDocumentLibrary Hook
-
-**File:** `src/hooks/useDocumentLibrary.ts`
-
-```typescript
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -95,7 +66,7 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
 
   const addDocument = useCallback(async (file: File): Promise<DocumentMeta> => {
     // Validate file type
-    if (!VALIDATION.SUPPORTED_TYPES.includes(file.type)) {
+    if (!(VALIDATION.SUPPORTED_TYPES as readonly string[]).includes(file.type)) {
       throw new Error('Invalid file type. Only PDF files are supported.');
     }
 
@@ -180,66 +151,3 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     refresh,
   };
 }
-```
-
-### Key Behaviors
-
-**Adding a Document:**
-1. Validate file type (must be PDF)
-2. Validate file size (max 50MB)
-3. Read file as ArrayBuffer
-4. Load with PDF.js to validate and extract metadata
-5. Generate UUID for document ID
-6. Store PDF binary in IndexedDB
-7. Store metadata in localStorage
-8. Generate thumbnail asynchronously
-9. Update local state immediately
-
-**Removing a Document:**
-1. Call deleteDocumentComplete (removes PDF, bookmarks, highlights)
-2. Update local state
-
-**Updating a Document:**
-1. Merge updates with existing metadata
-2. Persist to localStorage
-3. Update local state
-
-## Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `src/hooks/useDocumentLibrary.ts` | Create | Document library management hook |
-
-## Success Criteria
-
-1. [x] `src/hooks/useDocumentLibrary.ts` exists
-2. [x] Hook loads documents from storage on mount
-3. [x] Documents are sorted by lastOpenedAt (newest first)
-4. [x] addDocument validates file type (PDF only)
-5. [x] addDocument validates file size (max 50MB)
-6. [x] addDocument extracts metadata (title, page count)
-7. [x] addDocument stores PDF in IndexedDB
-8. [x] addDocument generates thumbnail asynchronously
-9. [x] removeDocument removes PDF and all associated data
-10. [x] updateDocument persists changes to localStorage
-11. [x] getDocument returns document by ID
-12. [x] refresh reloads documents from storage
-13. [x] Hook exposes isLoading state
-14. [x] Hook exposes error state
-15. [x] `npm run type-check` passes
-16. [x] `npm run lint` passes
-
----
-
-## Ralph Instructions
-
-When working on this task:
-
-1. Read `.ralph/guardrails.md` for signs to follow
-2. Read `.ralph/progress.md` to see what's been done
-3. Work on the next unchecked criterion (marked [ ])
-4. After completing a criterion, change [ ] to [x] in this file
-5. Update `.ralph/progress.md` with your progress
-6. Commit your changes frequently with descriptive messages
-7. When ALL criteria are [x], output: `<ralph>COMPLETE</ralph>`
-8. If stuck 3+ times on same issue, output: `<ralph>GUTTER</ralph>`

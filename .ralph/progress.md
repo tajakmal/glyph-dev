@@ -1,48 +1,23 @@
 # Progress Log
 
-Task started: 2026-01-18 20:49:18
+Task started: 2026-01-18 20:52:30
 
-### 2026-01-18 20:49:19
+### 2026-01-18 20:52:31
 **Iteration 1 started**
 
 ### 2026-01-18
-**Task 002: IndexedDB Storage Layer - COMPLETED**
+**Created useDocumentLibrary hook**
 
-Updated `src/lib/storage.ts` with the complete storage layer:
-
-**IndexedDB Operations:**
-- Added singleton `getDB()` function for database initialization
-- Renamed PDF functions to `storePDF`, `getPDF`, `deletePDF` (with backward-compatible aliases)
-- Added `checkStorageQuota()` for storage estimates
-
-**Generic localStorage Utilities:**
-- Added `getFromStorage<T>()` with type safety
-- Added `setToStorage<T>()` with quota error handling
-- Added `removeFromStorage()`
-
-**Document Storage:**
-- `getDocuments()` / `setDocuments()`
-- Existing `getDocument()`, `saveDocument()`, `deleteDocument()` updated to use new utilities
-
-**Bookmark Storage:**
-- `getBookmarks()` / `setBookmarks()`
-- `getBookmarksForDocument()`
-
-**Highlight Storage:**
-- `getHighlights()` / `setHighlights()`
-- `getHighlightsForDocument()`
-
-**Preferences Storage:**
-- `getPreferences()` with DEFAULT_PREFERENCES constant
-- `setPreferences()`
-
-**Composite Operations:**
-- `deleteDocumentComplete()` - removes PDF, metadata, bookmarks, and highlights
-- `updateLastOpened()` / `updateLastReadPage()` - already existed
-
-All 16 success criteria completed:
-- `npm run type-check` passes
-- `npm run lint` passes (0 errors, only warnings in unrelated file)
-
-### 2026-01-18 20:52:28
-**Iteration 1 ended** - TASK COMPLETE
+- Created `src/hooks/useDocumentLibrary.ts` with all required functionality:
+  - Loads documents from localStorage on mount
+  - Sorts documents by lastOpenedAt (descending)
+  - `addDocument`: validates file type/size, extracts PDF metadata, stores in IndexedDB, generates thumbnail asynchronously
+  - `removeDocument`: calls deleteDocumentComplete to remove PDF and associated data
+  - `updateDocument`: persists changes to localStorage
+  - `getDocument`: returns document by ID from local state
+  - `refresh`: reloads documents from storage
+  - Exposes `isLoading` and `error` states
+- Fixed TypeScript issue with readonly array type assertion for VALIDATION.SUPPORTED_TYPES
+- Verified: `npm run type-check` passes
+- Verified: `npm run lint` passes (only pre-existing warnings in other files)
+- All 16 success criteria completed
