@@ -1,34 +1,16 @@
----
-task: TypeScript Type Definitions
-priority: 1
-depends_on: []
----
+/**
+ * Type definitions for the Glyph PDF Reader application.
+ * This file contains all TypeScript interfaces and type definitions used throughout the app.
+ */
 
-# Task: TypeScript Type Definitions
+// =============================================================================
+// Document & Library Types
+// =============================================================================
 
-Create all TypeScript interfaces and type definitions for the Glyph PDF Reader application.
-
-## Overview
-
-This foundational task establishes the complete type system for the application. All subsequent tasks will depend on these type definitions. The types should be created in `src/types/index.ts` and cover documents, bookmarks, highlights, search, PDF viewer state, and storage configuration.
-
-## Context
-
-- This is the first task that should be completed before any other implementation
-- Types are defined in the PRD Section 6 (Data Models)
-- All components and hooks will import from this central type file
-- Using UUID v4 for all entity IDs
-- Using Unix timestamps in milliseconds for dates
-- Highlight coordinates are normalized (0-1 range) for zoom independence
-
-## Requirements
-
-### File Location
-`src/types/index.ts`
-
-### Document & Library Types
-
-```typescript
+/**
+ * Metadata for a PDF document in the library.
+ * Stores information about the document for display and resume functionality.
+ */
 export interface DocumentMeta {
   /** Unique identifier (UUID v4) */
   id: string;
@@ -49,11 +31,15 @@ export interface DocumentMeta {
   /** Base64 JPEG data URL of first page thumbnail */
   thumbnailDataUrl?: string;
 }
-```
 
-### Bookmark Types
+// =============================================================================
+// Bookmark Types
+// =============================================================================
 
-```typescript
+/**
+ * A bookmark within a PDF document.
+ * Allows users to save and quickly navigate to specific pages.
+ */
 export interface Bookmark {
   /** Unique identifier (UUID v4) */
   id: string;
@@ -66,13 +52,20 @@ export interface Bookmark {
   /** Unix timestamp (ms) when created */
   createdAt: number;
 }
-```
 
-### Highlight Types
+// =============================================================================
+// Highlight Types
+// =============================================================================
 
-```typescript
+/**
+ * Available colors for text highlights.
+ */
 export type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'orange';
 
+/**
+ * Bounding rectangle for a highlight, using normalized coordinates.
+ * All values are percentages (0-1) for zoom independence.
+ */
 export interface HighlightRect {
   /** X position as percentage of page width (0-1) */
   x: number;
@@ -84,6 +77,10 @@ export interface HighlightRect {
   height: number;
 }
 
+/**
+ * A text highlight within a PDF document.
+ * Includes the highlighted text, visual rectangles, and optional notes.
+ */
 export interface Highlight {
   /** Unique identifier (UUID v4) */
   id: string;
@@ -104,11 +101,15 @@ export interface Highlight {
   /** Unix timestamp (ms) when last modified */
   updatedAt?: number;
 }
-```
 
-### PDF Viewer State Types
+// =============================================================================
+// PDF Viewer State Types
+// =============================================================================
 
-```typescript
+/**
+ * Current state of the PDF viewer UI.
+ * Used to persist and restore viewer state between sessions.
+ */
 export interface PDFViewerState {
   /** Current zoom level (1 = 100%) */
   zoom: number;
@@ -127,11 +128,14 @@ export interface PDFViewerState {
   /** Current search match index (0-based) */
   searchMatchIndex: number;
 }
-```
 
-### Search Types
+// =============================================================================
+// Search Types
+// =============================================================================
 
-```typescript
+/**
+ * A single search match result within a PDF document.
+ */
 export interface SearchMatch {
   /** Page index (0-based) */
   pageIndex: number;
@@ -144,11 +148,15 @@ export interface SearchMatch {
   /** Character end index in page text */
   endIndex: number;
 }
-```
 
-### PDF Outline Types
+// =============================================================================
+// PDF Outline Types
+// =============================================================================
 
-```typescript
+/**
+ * An item in the PDF table of contents/outline.
+ * Supports nested structure for sub-sections.
+ */
 export interface PDFOutlineItem {
   /** Section title */
   title: string;
@@ -157,11 +165,15 @@ export interface PDFOutlineItem {
   /** Nested items (for sub-sections) */
   items: PDFOutlineItem[];
 }
-```
 
-### User Preferences Types
+// =============================================================================
+// User Preferences Types
+// =============================================================================
 
-```typescript
+/**
+ * User preferences for the application.
+ * Persisted to localStorage for consistent experience across sessions.
+ */
 export interface UserPreferences {
   /** Default zoom level */
   defaultZoom: number;
@@ -172,11 +184,15 @@ export interface UserPreferences {
   /** Default WPM for speed reader */
   defaultWpm: number;
 }
-```
 
-### Storage Constants
+// =============================================================================
+// Storage Constants
+// =============================================================================
 
-```typescript
+/**
+ * LocalStorage keys used by the application.
+ * All keys are prefixed with 'glyph:' to avoid collisions.
+ */
 export const STORAGE_KEYS = {
   DOCUMENTS: 'glyph:documents',
   BOOKMARKS: 'glyph:bookmarks',
@@ -185,30 +201,48 @@ export const STORAGE_KEYS = {
   VIEWER_STATE: 'glyph:viewer-state',
 } as const;
 
+/**
+ * IndexedDB configuration for storing PDF binary data.
+ * Separate from localStorage due to size constraints.
+ */
 export const INDEXEDDB_CONFIG = {
   DB_NAME: 'glyph-db',
   DB_VERSION: 1,
   STORE_PDFS: 'pdfs',
 } as const;
-```
 
-### Validation Constants
+// =============================================================================
+// Validation Constants
+// =============================================================================
 
-```typescript
+/**
+ * Validation rules and limits used throughout the application.
+ */
 export const VALIDATION = {
-  MAX_FILE_SIZE: 50 * 1024 * 1024, // 50MB
+  /** Maximum file size in bytes (50MB) */
+  MAX_FILE_SIZE: 50 * 1024 * 1024,
+  /** Maximum length for highlight notes */
   MAX_NOTE_LENGTH: 2000,
+  /** Maximum length for bookmark labels */
   MAX_LABEL_LENGTH: 100,
+  /** Supported MIME types for upload */
   SUPPORTED_TYPES: ['application/pdf'],
+  /** Minimum zoom level (50%) */
   MIN_ZOOM: 0.5,
+  /** Maximum zoom level (300%) */
   MAX_ZOOM: 3.0,
+  /** Zoom increment step */
   ZOOM_STEP: 0.25,
 } as const;
-```
 
-### Highlight Color Map (for rendering)
+// =============================================================================
+// Highlight Color Map
+// =============================================================================
 
-```typescript
+/**
+ * Color definitions for highlights.
+ * Includes both background color (with transparency) and solid hex color.
+ */
 export const HIGHLIGHT_COLORS: Record<HighlightColor, { bg: string; hex: string }> = {
   yellow: { bg: 'rgba(253, 224, 71, 0.4)', hex: '#fde047' },
   green: { bg: 'rgba(134, 239, 172, 0.4)', hex: '#86efac' },
@@ -216,35 +250,3 @@ export const HIGHLIGHT_COLORS: Record<HighlightColor, { bg: string; hex: string 
   pink: { bg: 'rgba(249, 168, 212, 0.4)', hex: '#f9a8d4' },
   orange: { bg: 'rgba(253, 186, 116, 0.4)', hex: '#fdba74' },
 };
-```
-
-## Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `src/types/index.ts` | Create | All TypeScript type definitions |
-
-## Success Criteria
-
-1. [x] File `src/types/index.ts` exists with all interfaces
-2. [x] All interfaces have JSDoc comments
-3. [x] Storage keys and IndexedDB config constants are exported
-4. [x] Validation constants are exported
-5. [x] Highlight color map is exported
-6. [x] `npm run type-check` passes with no errors
-7. [x] `npm run lint` passes with no errors
-
----
-
-## Ralph Instructions
-
-When working on this task:
-
-1. Read `.ralph/guardrails.md` for signs to follow
-2. Read `.ralph/progress.md` to see what's been done
-3. Work on the next unchecked criterion (marked [ ])
-4. After completing a criterion, change [ ] to [x] in this file
-5. Update `.ralph/progress.md` with your progress
-6. Commit your changes frequently with descriptive messages
-7. When ALL criteria are [x], output: `<ralph>COMPLETE</ralph>`
-8. If stuck 3+ times on same issue, output: `<ralph>GUTTER</ralph>`
