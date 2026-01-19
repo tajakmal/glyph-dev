@@ -1,475 +1,341 @@
 ---
-task: Highlight Popover and Notes
+task: Annotation Export
 priority: 4
-depends_on: ["002-shared-ui-components", "009-text-layer-selection", "014-highlights-system"]
+depends_on: ["014-highlights-system", "013-sidebar-toc"]
 ---
 
-# Task: Highlight Popover and Notes
+# Task: Annotation Export
 
-Implement the popover that appears when text is selected or a highlight is clicked, allowing users to choose colors, add notes, and trigger speed reading.
+Implement the export functionality that generates a Markdown file containing all highlights and notes for a document.
 
 ## Overview
 
-This task creates the highlight popover UI. When the user selects text, a popover appears with color options, a note button, and a speed-read button. Clicking a color creates the highlight. For existing highlights, the popover shows edit/delete options and the note editor.
+This task creates the export feature that allows users to download their annotations as a Markdown file. The export includes all highlights grouped by page, with their text, color, and any associated notes. The file is formatted for easy reading and import into note-taking apps.
 
 ## Context
 
-- Popover specs from PRD Section 8.3
-- Position 8px above selection, centered
-- Color options: yellow, green, blue, pink, orange
-- Note editor expands when clicking note button
-- Speed Read button navigates to /speed-read with text
+- Export format from PRD Section 4.7
+- Trigger: Button in sidebar or Ctrl+Shift+E
+- Output: Downloaded .md file
+- Filename: `{document-title}_annotations.md`
 
 ## Requirements
 
-### PDFHighlightPopover Component
+### Export Utility
 
-**File:** `src/components/pdf/PDFHighlightPopover.tsx`
+**File:** `src/lib/export.ts`
 
 ```typescript
-'use client';
+import type { Highlight, DocumentMeta } from '@/types';
 
-import React, { useState, useEffect, useRef } from 'react';
-import type { Highlight, HighlightColor } from '@/types';
-import { HIGHLIGHT_COLORS } from '@/types';
+/**
+ * Generate Markdown content from highlights
+ */
+export function generateAnnotationsMarkdown(
+  document: DocumentMeta,
+  highlights: Highlight[]
+): string {
+  const lines: string[] = [];
 
-interface SelectionPopoverProps {
-  /** The selected text */
-  text: string;
-  /** Page number */
-  page: number;
-  /** Anchor position (top-center of selection) */
-  anchorRect: { x: number; y: number };
-  /** Create highlight with color */
-  onCreateHighlight: (color: HighlightColor) => void;
-  /** Trigger speed reading */
-  onSpeedRead: () => void;
-  /** Close popover */
-  onClose: () => void;
+  // Title
+  lines.push(`# ${document.title}`);
+  lines.push('');
+  lines.push(`Exported from Glyph on ${formatDate(new Date())}`);
+  lines.push('');
+  lines.push('---');
+  lines.push('');
+
+  if (highlights.length === 0) {
+    lines.push('*No highlights in this document.*');
+    return lines.join('\n');
+  }
+
+  // Group highlights by page
+  const byPage = highlights.reduce((acc, h) => {
+    if (!acc[h.page]) acc[h.page] = [];
+    acc[h.page].push(h);
+    return acc;
+  }, {} as Record<number, Highlight[]>);
+
+  // Sort pages
+  const pages = Object.keys(byPage)
+    .map(Number)
+    .sort((a, b) => a - b);
+
+  let highlightCount = 0;
+
+  for (const page of pages) {
+    const pageHighlights = byPage[page];
+
+    // Sort by creation time within page
+    pageHighlights.sort((a, b) => a.createdAt - b.createdAt);
+
+    lines.push(`## Page ${page}`);
+    lines.push('');
+
+    for (const highlight of pageHighlights) {
+      highlightCount++;
+
+      // Format color label
+      const colorLabel = formatColorLabel(highlight.color);
+
+      // Quoted text
+      lines.push(`> "${escapeMarkdown(highlight.text)}" [${colorLabel}]`);
+      lines.push('');
+
+      // Note if present
+      if (highlight.note) {
+        lines.push(`**Note:** ${escapeMarkdown(highlight.note)}`);
+        lines.push('');
+      }
+
+      lines.push('---');
+      lines.push('');
+    }
+  }
+
+  // Summary
+  lines.push(`*Exported ${highlightCount} highlight${highlightCount !== 1 ? 's' : ''} from ${pages.length} page${pages.length !== 1 ? 's' : ''}*`);
+
+  return lines.join('\n');
 }
 
-interface HighlightPopoverProps {
-  /** The highlight being edited */
-  highlight: Highlight;
-  /** Anchor position */
-  anchorRect: { x: number; y: number };
-  /** Update note */
-  onUpdateNote: (note: string) => void;
-  /** Update color */
-  onUpdateColor: (color: HighlightColor) => void;
-  /** Delete highlight */
-  onDelete: () => void;
-  /** Trigger speed reading */
-  onSpeedRead: () => void;
-  /** Close popover */
-  onClose: () => void;
+/**
+ * Trigger download of the markdown file
+ */
+export function downloadAnnotations(
+  document: DocumentMeta,
+  highlights: Highlight[]
+): void {
+  const content = generateAnnotationsMarkdown(document, highlights);
+  const filename = sanitizeFilename(document.title) + '_annotations.md';
+
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+
+  document.body.appendChild(a);
+  a.click();
+
+  // Cleanup
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
-const COLOR_OPTIONS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'orange'];
+// Helper functions
 
-export function SelectionPopover({
-  text,
-  page,
-  anchorRect,
-  onCreateHighlight,
-  onSpeedRead,
-  onClose,
-}: SelectionPopoverProps) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [showNote, setShowNote] = useState(false);
-  const [note, setNote] = useState('');
-  const [selectedColor, setSelectedColor] = useState<HighlightColor | null>(null);
-
-  // Position popover above selection
-  const [position, setPosition] = useState({ x: anchorRect.x, y: anchorRect.y - 8 });
-
-  useEffect(() => {
-    const popover = popoverRef.current;
-    if (!popover) return;
-
-    // Adjust position to stay within viewport
-    const rect = popover.getBoundingClientRect();
-    let x = anchorRect.x - rect.width / 2;
-    let y = anchorRect.y - rect.height - 8;
-
-    // Keep within horizontal bounds
-    x = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-
-    // If no room above, show below
-    if (y < 8) {
-      y = anchorRect.y + 8;
-    }
-
-    setPosition({ x, y });
-  }, [anchorRect]);
-
-  // Close on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
-
-  // Close on Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
-
-  const handleColorClick = (color: HighlightColor) => {
-    if (showNote) {
-      setSelectedColor(color);
-    } else {
-      onCreateHighlight(color);
-    }
-  };
-
-  const handleCreateWithNote = () => {
-    if (selectedColor) {
-      onCreateHighlight(selectedColor);
-      // Note will be added after highlight is created
-    }
-  };
-
-  return (
-    <div
-      ref={popoverRef}
-      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl popover"
-      style={{ left: position.x, top: position.y }}
-    >
-      <div className="flex items-center gap-1 p-2">
-        {/* Color buttons */}
-        {COLOR_OPTIONS.map((color) => (
-          <button
-            key={color}
-            onClick={() => handleColorClick(color)}
-            className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-              selectedColor === color ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-800' : ''
-            }`}
-            style={{ backgroundColor: HIGHLIGHT_COLORS[color].hex }}
-            aria-label={`Highlight ${color}`}
-          />
-        ))}
-
-        <div className="w-px h-6 bg-zinc-600 mx-1" />
-
-        {/* Note button */}
-        <button
-          onClick={() => setShowNote(!showNote)}
-          className={`p-1.5 rounded hover:bg-zinc-700 transition-colors ${
-            showNote ? 'text-red-500' : 'text-zinc-400'
-          }`}
-          aria-label="Add note"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-        </button>
-
-        {/* Speed Read button */}
-        <button
-          onClick={onSpeedRead}
-          className="p-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-red-500 transition-colors"
-          aria-label="Speed read selection"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </button>
-
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="p-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-          aria-label="Close"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Note input area */}
-      {showNote && (
-        <div className="px-2 pb-2">
-          <p className="text-zinc-500 text-xs mb-1">Select a color first, then add a note:</p>
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note..."
-            className="w-full bg-zinc-700 text-zinc-100 text-sm rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
-            rows={3}
-            autoFocus
-          />
-          {selectedColor && (
-            <button
-              onClick={handleCreateWithNote}
-              className="mt-2 w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors"
-            >
-              Create Highlight
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
+function formatDate(date: Date): string {
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 }
 
-export function HighlightPopover({
-  highlight,
-  anchorRect,
-  onUpdateNote,
-  onUpdateColor,
-  onDelete,
-  onSpeedRead,
-  onClose,
-}: HighlightPopoverProps) {
-  const popoverRef = useRef<HTMLDivElement>(null);
-  const [note, setNote] = useState(highlight.note || '');
-  const [showNote, setShowNote] = useState(!!highlight.note);
+function formatColorLabel(color: string): string {
+  return color.charAt(0).toUpperCase() + color.slice(1);
+}
 
-  // Position popover
-  const [position, setPosition] = useState({ x: anchorRect.x, y: anchorRect.y - 8 });
+function escapeMarkdown(text: string): string {
+  // Escape special markdown characters in the text
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\*/g, '\\*')
+    .replace(/_/g, '\\_')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+    .replace(/\n/g, ' '); // Replace newlines with spaces in quoted text
+}
 
-  useEffect(() => {
-    const popover = popoverRef.current;
-    if (!popover) return;
-
-    const rect = popover.getBoundingClientRect();
-    let x = anchorRect.x - rect.width / 2;
-    let y = anchorRect.y - rect.height - 8;
-
-    x = Math.max(8, Math.min(x, window.innerWidth - rect.width - 8));
-    if (y < 8) y = anchorRect.y + 8;
-
-    setPosition({ x, y });
-  }, [anchorRect, showNote]);
-
-  // Close on click outside
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
-        // Save note on close
-        if (note !== highlight.note) {
-          onUpdateNote(note);
-        }
-        onClose();
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose, note, highlight.note, onUpdateNote]);
-
-  // Close on Escape
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        if (note !== highlight.note) {
-          onUpdateNote(note);
-        }
-        onClose();
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, note, highlight.note, onUpdateNote]);
-
-  return (
-    <div
-      ref={popoverRef}
-      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl popover"
-      style={{ left: position.x, top: position.y }}
-    >
-      <div className="flex items-center gap-1 p-2">
-        {/* Color buttons */}
-        {COLOR_OPTIONS.map((color) => (
-          <button
-            key={color}
-            onClick={() => onUpdateColor(color)}
-            className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-              highlight.color === color ? 'ring-2 ring-white ring-offset-2 ring-offset-zinc-800' : ''
-            }`}
-            style={{ backgroundColor: HIGHLIGHT_COLORS[color].hex }}
-            aria-label={`Change to ${color}`}
-          />
-        ))}
-
-        <div className="w-px h-6 bg-zinc-600 mx-1" />
-
-        {/* Note button */}
-        <button
-          onClick={() => setShowNote(!showNote)}
-          className={`p-1.5 rounded hover:bg-zinc-700 transition-colors ${
-            showNote || highlight.note ? 'text-red-500' : 'text-zinc-400'
-          }`}
-          aria-label="Edit note"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
-          </svg>
-        </button>
-
-        {/* Speed Read button */}
-        <button
-          onClick={onSpeedRead}
-          className="p-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-red-500 transition-colors"
-          aria-label="Speed read highlight"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </button>
-
-        {/* Delete button */}
-        <button
-          onClick={onDelete}
-          className="p-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-red-500 transition-colors"
-          aria-label="Delete highlight"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
-        </button>
-
-        {/* Close button */}
-        <button
-          onClick={() => {
-            if (note !== highlight.note) {
-              onUpdateNote(note);
-            }
-            onClose();
-          }}
-          className="p-1.5 rounded text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors"
-          aria-label="Close"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Note editor */}
-      {showNote && (
-        <div className="px-2 pb-2">
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Add a note..."
-            className="w-full bg-zinc-700 text-zinc-100 text-sm rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
-            rows={3}
-            maxLength={2000}
-            autoFocus
-          />
-          <div className="flex justify-between items-center mt-1">
-            <span className="text-zinc-500 text-xs">{note.length}/2000</span>
-            {note !== highlight.note && (
-              <button
-                onClick={() => onUpdateNote(note)}
-                className="text-red-500 text-xs hover:text-red-400"
-              >
-                Save
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Preview of highlighted text */}
-      <div className="px-2 pb-2 border-t border-zinc-700 mt-1 pt-2">
-        <p className="text-zinc-400 text-xs line-clamp-2">
-          "{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}"
-        </p>
-      </div>
-    </div>
-  );
+function sanitizeFilename(title: string): string {
+  return title
+    .replace(/[<>:"/\\|?*]/g, '') // Remove invalid filename characters
+    .replace(/\s+/g, '_') // Replace spaces with underscores
+    .slice(0, 100); // Limit length
 }
 ```
 
-### Integrate Popovers into PDFViewer
-
-Update PDFViewer to manage popover state:
+### Alternative Export Formats (Optional Enhancement)
 
 ```typescript
-// In PDFViewer.tsx
-
-const [selectionPopover, setSelectionPopover] = useState<{
-  selection: TextSelection;
-  anchorRect: { x: number; y: number };
-} | null>(null);
-
-const [highlightPopover, setHighlightPopover] = useState<{
-  highlight: Highlight;
-  anchorRect: { x: number; y: number };
-} | null>(null);
-
-// Handle text selection
-const handleTextSelect = useCallback((selection: TextSelection) => {
-  // Get anchor position (center-top of first rect)
-  const firstRect = selection.rects[0];
-  if (!firstRect) return;
-
-  const containerRect = containerRef.current?.getBoundingClientRect();
-  if (!containerRect) return;
-
-  setSelectionPopover({
-    selection,
-    anchorRect: {
-      x: containerRect.left + firstRect.x + firstRect.width / 2,
-      y: containerRect.top + firstRect.y,
+/**
+ * Generate JSON export for programmatic use
+ */
+export function generateAnnotationsJSON(
+  document: DocumentMeta,
+  highlights: Highlight[]
+): string {
+  const data = {
+    document: {
+      id: document.id,
+      title: document.title,
+      pageCount: document.pageCount,
     },
-  });
-}, []);
+    exportedAt: new Date().toISOString(),
+    highlights: highlights.map(h => ({
+      page: h.page,
+      color: h.color,
+      text: h.text,
+      note: h.note,
+      createdAt: new Date(h.createdAt).toISOString(),
+    })),
+  };
 
-// Handle highlight click
-const handleHighlightClick = useCallback((highlight: Highlight) => {
-  // Position based on first rect of highlight
-  // ... calculate position similar to selection
-  setHighlightPopover({
-    highlight,
-    anchorRect: { x: ..., y: ... },
-  });
-}, []);
+  return JSON.stringify(data, null, 2);
+}
+
+/**
+ * Generate plain text export
+ */
+export function generateAnnotationsText(
+  document: DocumentMeta,
+  highlights: Highlight[]
+): string {
+  const lines: string[] = [];
+
+  lines.push(document.title);
+  lines.push('='.repeat(document.title.length));
+  lines.push('');
+  lines.push(`Exported: ${formatDate(new Date())}`);
+  lines.push('');
+
+  // Group by page
+  const byPage = highlights.reduce((acc, h) => {
+    if (!acc[h.page]) acc[h.page] = [];
+    acc[h.page].push(h);
+    return acc;
+  }, {} as Record<number, Highlight[]>);
+
+  const pages = Object.keys(byPage).map(Number).sort((a, b) => a - b);
+
+  for (const page of pages) {
+    lines.push(`Page ${page}`);
+    lines.push('-'.repeat(10));
+
+    for (const h of byPage[page]) {
+      lines.push(`"${h.text}"`);
+      if (h.note) {
+        lines.push(`  Note: ${h.note}`);
+      }
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
+}
+```
+
+### Keyboard Shortcut
+
+Add to PDFViewer:
+
+```typescript
+// Handle Ctrl+Shift+E for export
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'e') {
+      e.preventDefault();
+      handleExport();
+    }
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, [handleExport]);
+
+const handleExport = useCallback(() => {
+  if (highlights.length === 0) {
+    // Could show a toast: "No highlights to export"
+    return;
+  }
+
+  if (documentMeta) {
+    downloadAnnotations(documentMeta, highlights);
+  }
+}, [highlights, documentMeta]);
+```
+
+### Wire Up Export Button in Sidebar
+
+In PDFSidebar, the onExport callback should trigger the download:
+
+```typescript
+// In the parent component (PDFViewer)
+<PDFSidebar
+  // ... other props
+  onExport={() => {
+    if (meta && highlights.length > 0) {
+      downloadAnnotations(meta, highlights);
+    }
+  }}
+/>
+```
+
+### Example Export Output
+
+```markdown
+# Research Paper on Machine Learning
+
+Exported from Glyph on January 18, 2026
+
+---
+
+## Page 3
+
+> "This is a highlighted passage that was marked as important." [Yellow]
+
+**Note:** This is my annotation about the highlight.
+
+---
+
+## Page 7
+
+> "Another highlighted section from the document." [Green]
+
+---
+
+## Page 12
+
+> "A third highlight with a longer note attached." [Blue]
+
+**Note:** This is a longer note that provides additional context and thoughts about the highlighted passage.
+
+---
+
+*Exported 3 highlights from 3 pages*
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/components/pdf/PDFHighlightPopover.tsx` | Create | Selection and highlight popovers |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate popovers |
+| `src/lib/export.ts` | Create | Export utilities for Markdown generation |
+| `src/components/pdf/PDFViewer.tsx` | Modify | Add export keyboard shortcut |
+| `src/components/pdf/PDFSidebar.tsx` | Modify | Wire up export button |
 
 ## Success Criteria
 
-1. [x] `src/components/pdf/PDFHighlightPopover.tsx` exists
-2. [x] SelectionPopover shows on text selection
-3. [x] SelectionPopover has 5 color buttons
-4. [x] Clicking color creates highlight and closes popover
-5. [x] Note button expands textarea
-6. [x] Speed Read button triggers navigation
-7. [x] Close button/Escape closes popover
-8. [x] Popover positions above selection
-9. [x] Popover stays within viewport bounds
-10. [x] HighlightPopover shows when clicking highlight
-11. [x] HighlightPopover allows color change
-12. [x] HighlightPopover has note editor
-13. [x] Note auto-saves on close
-14. [x] Delete button removes highlight
-15. [x] Character count shows for note (max 2000)
-16. [x] `npm run type-check` passes
-17. [x] `npm run lint` passes
+1. [x] `src/lib/export.ts` exists
+2. [x] generateAnnotationsMarkdown produces valid Markdown
+3. [x] Highlights are grouped by page number
+4. [x] Each highlight shows quoted text and color label
+5. [x] Notes are included with **Note:** prefix
+6. [x] Summary shows count of highlights and pages
+7. [x] downloadAnnotations triggers file download
+8. [x] Filename is sanitized and includes document title
+9. [x] Special characters in text are escaped
+10. [x] Ctrl+Shift+E triggers export
+11. [x] Export button in sidebar triggers download
+12. [x] Export is disabled when no highlights exist
+13. [x] Export date is formatted correctly
+14. [x] Exported file has .md extension
+15. [x] `npm run type-check` passes
+16. [x] `npm run lint` passes
 
 ---
 

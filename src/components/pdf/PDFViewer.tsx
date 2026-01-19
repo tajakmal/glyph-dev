@@ -18,6 +18,7 @@ import { PDFSidebar } from './PDFSidebar';
 import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
 import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
+import { downloadAnnotations } from '@/lib/export';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -296,9 +297,24 @@ export function PDFViewer({
   }, [handlePageChange]);
 
   const handleExport = useCallback(() => {
-    // Placeholder - will be implemented in a later task
-    console.log('Export annotations');
-  }, []);
+    if (highlights.length === 0 || !meta) {
+      return;
+    }
+    downloadAnnotations(meta, highlights);
+  }, [highlights, meta]);
+
+  // Handle Ctrl+Shift+E for export
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'e') {
+        e.preventDefault();
+        handleExport();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleExport]);
 
   // Handle text selection from PDFPage
   const handleTextSelect = useCallback((selection: TextSelection) => {
