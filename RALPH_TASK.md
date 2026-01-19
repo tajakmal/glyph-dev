@@ -1,253 +1,275 @@
 ---
-task: Global CSS Setup
+task: PDF.js Setup and Configuration
 priority: 1
-depends_on: []
+depends_on: ["001-typescript-types"]
 ---
 
-# Task: Global CSS Setup
+# Task: PDF.js Setup and Configuration
 
-Set up global CSS variables, design system tokens, and PDF text layer styles in the application.
+Install and configure pdfjs-dist for PDF rendering in the Next.js application.
 
 ## Overview
 
-This task establishes the CSS foundation for the entire application. It includes design system CSS variables, the critical PDF text layer styles that enable text selection, and animation keyframes used throughout the app.
+This task sets up Mozilla's PDF.js library (pdfjs-dist) for rendering PDFs in the browser. It includes installing the package, configuring the web worker, copying required static files, and creating utility functions for PDF operations.
 
 ## Context
 
-- Styles go in `src/app/globals.css`
-- Using Tailwind CSS v4
-- PDF text layer CSS is critical for text selection functionality
-- Animations include popover entrance and search match pulsing
-- Design system from PRD Section 8.1
+- Using pdfjs-dist ^4.0.0
+- PDF.js requires a web worker for performance
+- Character maps (cmaps) needed for international fonts
+- Next.js webpack config needs adjustment for PDF.js
+- Utility functions go in `src/lib/pdf-utils.ts`
 
 ## Requirements
 
-### CSS Variables (Design System)
+### Install Dependencies
 
-Add the following CSS variables to `:root`:
+```bash
+npm install pdfjs-dist uuid
+npm install --save-dev @types/uuid
+```
 
-```css
-:root {
-  /* Background */
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-tertiary: #27272a;
+### Next.js Configuration
 
-  /* Text */
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+**File:** `next.config.js` or `next.config.ts`
 
-  /* Accent */
-  --accent-primary: #ef4444;
-  --accent-hover: #f87171;
+```javascript
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  webpack: (config) => {
+    // Disable canvas for PDF.js (not needed in browser)
+    config.resolve.alias.canvas = false;
+    return config;
+  },
+};
 
-  /* Highlight Colors */
-  --highlight-yellow: #fde047;
-  --highlight-green: #86efac;
-  --highlight-blue: #93c5fd;
-  --highlight-pink: #f9a8d4;
-  --highlight-orange: #fdba74;
+module.exports = nextConfig;
+```
 
-  /* Border */
-  --border-default: #27272a;
-  --border-subtle: #3f3f46;
+### Copy Static Files
 
-  /* Spacing (reference) */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
+Create a script or manually copy these files from `node_modules/pdfjs-dist`:
+
+1. Copy `node_modules/pdfjs-dist/build/pdf.worker.min.mjs` to `public/pdf.worker.min.mjs`
+2. Copy `node_modules/pdfjs-dist/cmaps/` folder to `public/cmaps/`
+
+**Recommended:** Add a postinstall script to `package.json`:
+
+```json
+{
+  "scripts": {
+    "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/ && cp -r node_modules/pdfjs-dist/cmaps public/"
+  }
 }
 ```
 
-### PDF Text Layer Styles
+### PDF Utility Functions
 
-**Critical for text selection in PDFs:**
+**File:** `src/lib/pdf-utils.ts`
 
-```css
-.pdf-page {
-  position: relative;
-  margin-bottom: 16px;
-  background: white;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+```typescript
+import * as pdfjsLib from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, TextContent } from 'pdfjs-dist';
+
+// Set worker path
+if (typeof window !== 'undefined') {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
 }
 
-.pdf-canvas {
-  display: block;
+/**
+ * Load a PDF document from an ArrayBuffer
+ */
+export async function loadPDF(data: ArrayBuffer): Promise<PDFDocumentProxy> {
+  return pdfjsLib.getDocument({
+    data,
+    cMapUrl: '/cmaps/',
+    cMapPacked: true,
+  }).promise;
 }
 
-.pdf-text-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  opacity: 0.2;
-  line-height: 1;
-  pointer-events: auto;
+/**
+ * Render a PDF page to a canvas element
+ * Handles HiDPI displays correctly
+ */
+export async function renderPage(
+  page: PDFPageProxy,
+  canvas: HTMLCanvasElement,
+  scale: number
+): Promise<void> {
+  const dpr = window.devicePixelRatio || 1;
+  const viewport = page.getViewport({ scale: scale * dpr });
+
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  canvas.style.width = `${viewport.width / dpr}px`;
+  canvas.style.height = `${viewport.height / dpr}px`;
+
+  const ctx = canvas.getContext('2d')!;
+
+  await page.render({
+    canvasContext: ctx,
+    viewport,
+  }).promise;
 }
 
-.pdf-text-layer span {
-  position: absolute;
-  white-space: pre;
-  color: transparent;
-  pointer-events: auto;
+/**
+ * Get text content from a PDF page
+ */
+export async function getTextContent(page: PDFPageProxy): Promise<TextContent> {
+  return page.getTextContent();
 }
 
-.pdf-text-layer span::selection {
-  background: rgba(59, 130, 246, 0.3);
+/**
+ * Extract PDF metadata (title, page count)
+ */
+export async function extractPDFMetadata(
+  pdf: PDFDocumentProxy,
+  fileName: string
+): Promise<{ title: string; pageCount: number }> {
+  const metadata = await pdf.getMetadata();
+  const info = metadata.info as Record<string, unknown>;
+
+  // Use PDF title if available, otherwise use filename
+  const title = (info?.Title as string) || fileName.replace(/\.pdf$/i, '');
+
+  return {
+    title,
+    pageCount: pdf.numPages,
+  };
 }
 
-.pdf-highlight-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  pointer-events: none;
+/**
+ * Generate a thumbnail from the first page of a PDF
+ * Returns a JPEG data URL
+ */
+export async function generateThumbnail(
+  pdf: PDFDocumentProxy,
+  targetWidth: number = 200
+): Promise<string> {
+  const page = await pdf.getPage(1);
+  const viewport = page.getViewport({ scale: 1 });
+
+  // Calculate scale to fit target width
+  const scale = targetWidth / viewport.width;
+  const scaledViewport = page.getViewport({ scale });
+
+  // Create off-screen canvas
+  const canvas = document.createElement('canvas');
+  canvas.width = scaledViewport.width;
+  canvas.height = scaledViewport.height;
+
+  const ctx = canvas.getContext('2d')!;
+
+  await page.render({
+    canvasContext: ctx,
+    viewport: scaledViewport,
+  }).promise;
+
+  // Convert to JPEG data URL (quality 0.7)
+  return canvas.toDataURL('image/jpeg', 0.7);
 }
 
-.pdf-highlight-layer > div {
-  pointer-events: auto;
+/**
+ * Get the outline (table of contents) from a PDF
+ */
+export async function getPDFOutline(
+  pdf: PDFDocumentProxy
+): Promise<Array<{ title: string; page: number; items: Array<unknown> }>> {
+  const outline = await pdf.getOutline();
+
+  if (!outline) {
+    return [];
+  }
+
+  // Process outline items recursively
+  const processItems = async (items: typeof outline): Promise<Array<{ title: string; page: number; items: Array<unknown> }>> => {
+    const result = [];
+
+    for (const item of items) {
+      let page = 1;
+
+      if (item.dest) {
+        try {
+          // Resolve named destination to page number
+          const dest = typeof item.dest === 'string'
+            ? await pdf.getDestination(item.dest)
+            : item.dest;
+
+          if (dest) {
+            const pageIndex = await pdf.getPageIndex(dest[0]);
+            page = pageIndex + 1; // Convert to 1-based
+          }
+        } catch {
+          // Keep default page 1 if destination resolution fails
+        }
+      }
+
+      result.push({
+        title: item.title,
+        page,
+        items: item.items ? await processItems(item.items) : [],
+      });
+    }
+
+    return result;
+  };
+
+  return processItems(outline);
+}
+
+/**
+ * Extract all text from a PDF (for full-document speed reading)
+ */
+export async function extractAllText(pdf: PDFDocumentProxy): Promise<string> {
+  const texts: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items
+      .map(item => ('str' in item ? item.str : ''))
+      .join(' ');
+    texts.push(pageText);
+  }
+
+  return texts.join('\n\n');
 }
 ```
 
-### Animation Keyframes
+### Type Exports for PDF.js
 
-```css
-/* Transition defaults */
-.transition-default {
-  transition: all 200ms ease-in-out;
-}
+Add to `src/types/index.ts` or create `src/types/pdf.ts`:
 
-/* Highlight pulse on search navigation */
-@keyframes highlight-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.search-match-active {
-  animation: highlight-pulse 1s ease-in-out 2;
-}
-
-/* Popover appearance */
-@keyframes popover-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.popover {
-  animation: popover-in 150ms ease-out;
-}
-
-/* Modal appearance */
-@keyframes modal-in {
-  from {
-    opacity: 0;
-    transform: scale(0.95);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.modal {
-  animation: modal-in 200ms ease-out;
-}
-
-/* Fade in */
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-.fade-in {
-  animation: fade-in 200ms ease-out;
-}
-
-/* Spinner for loading states */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.spinner {
-  animation: spin 1s linear infinite;
-}
-```
-
-### Scrollbar Styling
-
-```css
-/* Custom scrollbar for dark theme */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
-}
-```
-
-### Body/HTML Base Styles
-
-```css
-html, body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
-}
-
-/* Prevent text selection on UI elements */
-.no-select {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* Allow text selection (for PDF text layer) */
-.allow-select {
-  user-select: text;
-  -webkit-user-select: text;
-}
+```typescript
+// Re-export commonly used PDF.js types for convenience
+export type { PDFDocumentProxy, PDFPageProxy, TextContent } from 'pdfjs-dist';
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/app/globals.css` | Modify | Add CSS variables, text layer styles, animations |
+| `package.json` | Modify | Add pdfjs-dist, uuid dependencies and postinstall script |
+| `next.config.js` | Modify | Add webpack canvas alias |
+| `public/pdf.worker.min.mjs` | Create | Copy from node_modules |
+| `public/cmaps/` | Create | Copy from node_modules |
+| `src/lib/pdf-utils.ts` | Create | PDF utility functions |
 
 ## Success Criteria
 
-1. [x] CSS variables for design system colors are defined in `:root`
-2. [x] PDF text layer styles are implemented (`.pdf-page`, `.pdf-text-layer`, etc.)
-3. [x] Text layer span selection style shows blue highlight
-4. [x] Animation keyframes are defined (highlight-pulse, popover-in, modal-in, fade-in, spin)
-5. [x] Utility classes are defined (transition-default, search-match-active, etc.)
-6. [x] Custom scrollbar styles are implemented
-7. [x] Body/HTML base styles set background and text colors
-8. [x] `npm run lint` passes
-9. [x] `npm run dev` runs without CSS errors
+1. [x] pdfjs-dist is installed (check package.json)
+2. [x] uuid is installed (check package.json)
+3. [x] next.config.js has webpack canvas alias configuration
+4. [x] `public/pdf.worker.min.mjs` exists
+5. [x] `public/cmaps/` directory exists with .bcmap files
+6. [x] `src/lib/pdf-utils.ts` exists with loadPDF function
+7. [x] `src/lib/pdf-utils.ts` has renderPage function with HiDPI support
+8. [x] `src/lib/pdf-utils.ts` has getTextContent function
+9. [x] `src/lib/pdf-utils.ts` has generateThumbnail function
+10. [x] `src/lib/pdf-utils.ts` has extractPDFMetadata function
+11. [x] `npm run type-check` passes
+12. [x] `npm run lint` passes
+13. [x] `npm run dev` starts without PDF.js errors
 
 ---
 
