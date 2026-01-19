@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
+import type { SearchMatch } from '@/types';
 import { renderPage } from '@/lib/pdf-utils';
 import { PDFTextLayer, TextSelection } from './PDFTextLayer';
 
@@ -16,6 +17,12 @@ interface PDFPageProps {
   onRenderComplete?: () => void;
   /** Optional: callback when text is selected */
   onTextSelect?: (selection: TextSelection) => void;
+  /** Search matches for this page */
+  searchMatches?: SearchMatch[];
+  /** Index of the active match (global index) */
+  activeMatchIndex?: number;
+  /** All matches for active match calculation */
+  allMatches?: SearchMatch[];
 }
 
 export function PDFPage({
@@ -24,6 +31,9 @@ export function PDFPage({
   zoom,
   onRenderComplete,
   onTextSelect,
+  searchMatches = [],
+  activeMatchIndex = -1,
+  allMatches = [],
 }: PDFPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -59,6 +69,9 @@ export function PDFPage({
           page={page}
           zoom={zoom}
           onTextSelect={onTextSelect}
+          searchMatches={searchMatches}
+          activeMatchIndex={activeMatchIndex}
+          allMatches={allMatches}
         />
       )}
       {/* Highlight layer will be added in later task */}
