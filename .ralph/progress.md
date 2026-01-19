@@ -1,49 +1,48 @@
 # Progress Log
 
-Task started: 2026-01-18 21:01:26
+Task started: 2026-01-18 21:05:10
 
-### 2026-01-18 21:01:27
+### 2026-01-18 21:05:10
 **Iteration 1 started**
 
-### 2026-01-18
-**Completed all criteria for Zoom Controls task**
+### 2026-01-18 - PDF Search Implementation
 
-#### Files Created:
-- `src/components/pdf/PDFControls.tsx` - Toolbar component with zoom controls, page navigation
-- `src/hooks/useZoomKeyboard.ts` - Keyboard shortcuts hook (Ctrl+/-/0)
-- `src/hooks/usePinchZoom.ts` - Touch pinch-to-zoom hook
+**Completed:**
 
-#### Files Modified:
-- `src/components/pdf/PDFViewer.tsx` - Integrated PDFControls, useZoomKeyboard, usePinchZoom
+1. Created `src/hooks/usePDFSearch.ts`:
+   - Extracts text from all PDF pages with caching
+   - Case-insensitive search
+   - Returns matches with page index and text positions
+   - Debounced search (200ms)
+   - Navigation (next/previous/goTo match)
 
-#### Features Implemented:
-1. PDFControls component with:
-   - Zoom in/out buttons
-   - Zoom preset dropdown (50%, 75%, 100%, 125%, 150%, 200%, 300%)
-   - "Fit" button to reset zoom to 100%
-   - Page indicator (Page X of Y) with input for direct navigation
-   - Sidebar toggle button and title display
+2. Created `src/components/pdf/PDFSearch.tsx`:
+   - Floating search bar UI in top-right
+   - Input field with placeholder "Search in document..."
+   - Match counter showing "X of Y"
+   - Previous/next navigation buttons
+   - Close button (X) and Escape key support
+   - Enter goes to next match, Shift+Enter to previous
 
-2. Keyboard shortcuts (useZoomKeyboard):
-   - Ctrl+Plus/= zooms in
-   - Ctrl+Minus zooms out
-   - Ctrl+0 resets zoom to 100%
-   - Browser default zoom is prevented
+3. Updated `src/components/pdf/PDFTextLayer.tsx`:
+   - Added search highlighting with yellow background
+   - Active match gets pulsing animation via `search-match-active` class
+   - Inline highlighting within text spans
 
-3. Pinch-to-zoom (usePinchZoom):
-   - Two-finger pinch gesture on touch devices
-   - Scales from initial zoom based on pinch distance
+4. Updated `src/components/pdf/PDFPage.tsx`:
+   - Added props for search matches and active match index
+   - Passes props to PDFTextLayer
 
-4. Zoom constraints:
-   - Minimum: 50% (0.5)
-   - Maximum: 300% (3.0)
-   - Step: 25% (0.25)
+5. Updated `src/components/pdf/PDFViewer.tsx`:
+   - Integrated usePDFSearch hook
+   - Added PDFSearch component
+   - Ctrl+F opens search bar
+   - Navigating to match scrolls page into view
 
-5. Scroll position preservation when zooming
+6. Updated `src/app/globals.css`:
+   - Added `.pdf-search-highlight` CSS class
 
-#### Verification:
+**Verified:**
 - `npm run type-check` passes
 - `npm run lint` passes
-
-### 2026-01-18 21:05:08
-**Iteration 1 ended** - TASK COMPLETE
+- (Note: `npm run build` has pre-existing PDF.js SSR issue unrelated to this task)

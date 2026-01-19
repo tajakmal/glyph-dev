@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
+import type { SearchMatch } from '@/types';
 import { getTextContent } from '@/lib/pdf-utils';
 
 interface PDFTextLayerProps {
@@ -11,6 +12,12 @@ interface PDFTextLayerProps {
   zoom: number;
   /** Callback when text is selected */
   onTextSelect?: (selection: TextSelection) => void;
+  /** Search matches for this page */
+  searchMatches?: SearchMatch[];
+  /** Index of the active match (global index across all pages) */
+  activeMatchIndex?: number;
+  /** All matches (to calculate if this page has active match) */
+  allMatches?: SearchMatch[];
 }
 
 export interface TextSelection {
@@ -24,8 +31,27 @@ export interface TextSelection {
   range: Range | null;
 }
 
-export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
+// Helper function to escape HTML (prevents XSS)
+function escapeHtml(text: string): string {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+export function PDFTextLayer({
+  page,
+  zoom,
+  onTextSelect,
+  searchMatches = [],
+  activeMatchIndex = -1,
+  allMatches = [],
+}: PDFTextLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Calculate the active match for this page
+  const pageIndex = page.pageNumber - 1;
+  const activeMatch = allMatches[activeMatchIndex];
+  const activeMatchOnThisPage = activeMatch?.pageIndex === pageIndex ? activeMatch : null;
 
   useEffect(() => {
     const container = containerRef.current;
@@ -45,6 +71,9 @@ export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
       // Get viewport for positioning
       const viewport = page.getViewport({ scale: zoom });
 
+      // Track cumulative character position for search highlighting
+      let charPosition = 0;
+
       // Render each text item as a span
       textContent.items.forEach((item) => {
         if (!('str' in item) || !item.str) return;
@@ -53,7 +82,6 @@ export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
         // PDF.js transform: [scaleX, skewX, skewY, scaleY, translateX, translateY]
 
         const span = document.createElement('span');
-        span.textContent = item.str;
 
         // Calculate position from transform matrix
         // tx[4] = x position, tx[5] = y position
@@ -65,6 +93,49 @@ export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
         span.style.left = `${left}px`;
         span.style.top = `${top}px`;
         span.style.fontSize = `${fontSize}px`;
+
+        // Check if this text item contains any search matches
+        const itemStart = charPosition;
+        const itemEnd = charPosition + item.str.length;
+
+        // Find matches that overlap with this text item
+        const overlappingMatches = searchMatches.filter(match =>
+          match.startIndex < itemEnd && match.endIndex > itemStart
+        );
+
+        if (overlappingMatches.length > 0) {
+          // Build highlighted text with spans for matches
+          let html = '';
+          let lastIndex = 0;
+
+          for (const match of overlappingMatches) {
+            // Calculate relative positions within this text item
+            const relStart = Math.max(0, match.startIndex - itemStart);
+            const relEnd = Math.min(item.str.length, match.endIndex - itemStart);
+
+            // Add text before match
+            if (relStart > lastIndex) {
+              html += escapeHtml(item.str.slice(lastIndex, relStart));
+            }
+
+            // Check if this match is the active one
+            const isActive = activeMatchOnThisPage?.matchIndex === match.matchIndex;
+            const activeClass = isActive ? ' search-match-active' : '';
+
+            // Add highlighted match
+            html += `<mark class="pdf-search-highlight${activeClass}">${escapeHtml(item.str.slice(relStart, relEnd))}</mark>`;
+            lastIndex = relEnd;
+          }
+
+          // Add remaining text
+          if (lastIndex < item.str.length) {
+            html += escapeHtml(item.str.slice(lastIndex));
+          }
+
+          span.innerHTML = html;
+        } else {
+          span.textContent = item.str;
+        }
 
         // Handle text width scaling
         if (item.width) {
@@ -78,6 +149,7 @@ export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
         }
 
         container.appendChild(span);
+        charPosition += item.str.length;
       });
     };
 
@@ -86,7 +158,7 @@ export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
     return () => {
       isMounted = false;
     };
-  }, [page, zoom]);
+  }, [page, zoom, searchMatches, activeMatchOnThisPage]);
 
   // Handle selection events
   useEffect(() => {

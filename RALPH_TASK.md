@@ -1,400 +1,413 @@
 ---
-task: Zoom Controls
+task: PDF Search
 priority: 3
-depends_on: ["002-shared-ui-components", "005-pdf-viewer-component"]
+depends_on: ["004-pdf-js-setup", "005-pdf-viewer-component", "009-text-layer-selection"]
 ---
 
-# Task: Zoom Controls
+# Task: PDF Search
 
-Implement zoom controls including toolbar buttons, keyboard shortcuts, and pinch-to-zoom for touch devices.
+Implement full-text search within PDF documents with match highlighting and navigation.
 
 ## Overview
 
-This task adds comprehensive zoom functionality to the PDF viewer. Users can zoom using toolbar buttons, keyboard shortcuts (Ctrl+/-/0), preset zoom levels, and pinch gestures on touch devices. The zoom should preserve scroll position (keeping the center of the viewport stable).
+This task adds document search functionality. Users can search for text within the PDF using Ctrl+F or a search button. The search highlights all matches, shows a match counter, and allows navigation between matches. The active match is scrolled into view and has a pulsing animation.
 
 ## Context
 
-- Zoom range: 50% to 300%
-- Zoom step: 25%
-- Default zoom: "Fit to width" (calculated based on container width)
-- Keyboard shortcuts follow standard patterns (Ctrl+Plus, Ctrl+Minus, Ctrl+0)
-- Pinch zoom uses touch events
+- Search UI appears as a floating bar in the top-right
+- Search algorithm from PRD Section 4.3.2
+- Uses PDF.js text content API
+- Match highlighting uses CSS (defined in Task 003)
+- Search is case-insensitive
 
 ## Requirements
 
-### PDFControls Component (Zoom Section)
+### usePDFSearch Hook
 
-**File:** `src/components/pdf/PDFControls.tsx`
+**File:** `src/hooks/usePDFSearch.ts`
 
 ```typescript
 'use client';
 
-import React from 'react';
-import { Button } from '@/components/ui/Button';
-import { VALIDATION } from '@/types';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+import type { SearchMatch } from '@/types';
+import { getTextContent } from '@/lib/pdf-utils';
 
-interface PDFControlsProps {
-  /** Current zoom level (1 = 100%) */
-  zoom: number;
-  /** Set zoom level */
-  onZoomChange: (zoom: number) => void;
-  /** Current page number (1-based) */
-  currentPage: number;
-  /** Total page count */
-  pageCount: number;
-  /** Go to specific page */
-  onPageChange: (page: number) => void;
-  /** Document title */
-  title?: string;
-  /** Toggle sidebar */
-  onSidebarToggle?: () => void;
-  /** Is sidebar open */
-  isSidebarOpen?: boolean;
+interface UsePDFSearchOptions {
+  pdf: PDFDocumentProxy | null;
 }
 
-const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+interface UsePDFSearchReturn {
+  /** Current search query */
+  query: string;
+  /** Set search query (triggers search) */
+  setQuery: (query: string) => void;
+  /** All matches */
+  matches: SearchMatch[];
+  /** Current match index (0-based) */
+  currentMatchIndex: number;
+  /** Total match count */
+  matchCount: number;
+  /** Is search in progress */
+  isSearching: boolean;
+  /** Go to next match */
+  nextMatch: () => void;
+  /** Go to previous match */
+  previousMatch: () => void;
+  /** Go to specific match */
+  goToMatch: (index: number) => void;
+  /** Clear search */
+  clearSearch: () => void;
+  /** Get matches for a specific page */
+  getMatchesForPage: (pageIndex: number) => SearchMatch[];
+}
 
-export function PDFControls({
-  zoom,
-  onZoomChange,
-  currentPage,
-  pageCount,
-  onPageChange,
-  title,
-  onSidebarToggle,
-  isSidebarOpen,
-}: PDFControlsProps) {
-  const zoomIn = () => {
-    const newZoom = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
-    onZoomChange(newZoom);
+export function usePDFSearch({ pdf }: UsePDFSearchOptions): UsePDFSearchReturn {
+  const [query, setQueryState] = useState('');
+  const [matches, setMatches] = useState<SearchMatch[]>([]);
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Cache text content per page
+  const textCache = useRef<Map<number, string>>(new Map());
+
+  // Extract text from a page (with caching)
+  const getPageText = useCallback(async (pageIndex: number): Promise<string> => {
+    if (textCache.current.has(pageIndex)) {
+      return textCache.current.get(pageIndex)!;
+    }
+
+    if (!pdf) return '';
+
+    const page = await pdf.getPage(pageIndex + 1);
+    const textContent = await getTextContent(page);
+    const text = textContent.items
+      .map(item => ('str' in item ? item.str : ''))
+      .join('');
+
+    textCache.current.set(pageIndex, text);
+    return text;
+  }, [pdf]);
+
+  // Perform search
+  const search = useCallback(async (searchQuery: string) => {
+    if (!pdf || !searchQuery.trim()) {
+      setMatches([]);
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    setIsSearching(true);
+
+    try {
+      const normalizedQuery = searchQuery.toLowerCase();
+      const newMatches: SearchMatch[] = [];
+
+      for (let i = 0; i < pdf.numPages; i++) {
+        const pageText = await getPageText(i);
+        const normalizedText = pageText.toLowerCase();
+
+        let searchIndex = 0;
+        let matchIndex = 0;
+
+        while ((searchIndex = normalizedText.indexOf(normalizedQuery, searchIndex)) !== -1) {
+          newMatches.push({
+            pageIndex: i,
+            matchIndex: matchIndex++,
+            text: pageText.slice(searchIndex, searchIndex + searchQuery.length),
+            startIndex: searchIndex,
+            endIndex: searchIndex + searchQuery.length,
+          });
+          searchIndex += searchQuery.length;
+        }
+      }
+
+      setMatches(newMatches);
+      setCurrentMatchIndex(0);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [pdf, getPageText]);
+
+  // Set query with debounced search
+  const setQuery = useCallback((newQuery: string) => {
+    setQueryState(newQuery);
+  }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      search(query);
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [query, search]);
+
+  // Clear cache when PDF changes
+  useEffect(() => {
+    textCache.current.clear();
+  }, [pdf]);
+
+  const nextMatch = useCallback(() => {
+    if (matches.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % matches.length);
+  }, [matches.length]);
+
+  const previousMatch = useCallback(() => {
+    if (matches.length === 0) return;
+    setCurrentMatchIndex((prev) => (prev - 1 + matches.length) % matches.length);
+  }, [matches.length]);
+
+  const goToMatch = useCallback((index: number) => {
+    if (index >= 0 && index < matches.length) {
+      setCurrentMatchIndex(index);
+    }
+  }, [matches.length]);
+
+  const clearSearch = useCallback(() => {
+    setQueryState('');
+    setMatches([]);
+    setCurrentMatchIndex(0);
+  }, []);
+
+  const getMatchesForPage = useCallback((pageIndex: number): SearchMatch[] => {
+    return matches.filter(m => m.pageIndex === pageIndex);
+  }, [matches]);
+
+  return {
+    query,
+    setQuery,
+    matches,
+    currentMatchIndex,
+    matchCount: matches.length,
+    isSearching,
+    nextMatch,
+    previousMatch,
+    goToMatch,
+    clearSearch,
+    getMatchesForPage,
   };
+}
+```
 
-  const zoomOut = () => {
-    const newZoom = Math.max(zoom - VALIDATION.ZOOM_STEP, VALIDATION.MIN_ZOOM);
-    onZoomChange(newZoom);
+### PDFSearch Component
+
+**File:** `src/components/pdf/PDFSearch.tsx`
+
+```typescript
+'use client';
+
+import React, { useRef, useEffect } from 'react';
+
+interface PDFSearchProps {
+  /** Current query */
+  query: string;
+  /** Set query */
+  onQueryChange: (query: string) => void;
+  /** Current match index (0-based) */
+  currentMatch: number;
+  /** Total matches */
+  totalMatches: number;
+  /** Is searching */
+  isSearching: boolean;
+  /** Go to next match */
+  onNext: () => void;
+  /** Go to previous match */
+  onPrevious: () => void;
+  /** Close search */
+  onClose: () => void;
+}
+
+export function PDFSearch({
+  query,
+  onQueryChange,
+  currentMatch,
+  totalMatches,
+  isSearching,
+  onNext,
+  onPrevious,
+  onClose,
+}: PDFSearchProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input on mount
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        onPrevious();
+      } else {
+        onNext();
+      }
+    } else if (e.key === 'Escape') {
+      onClose();
+    }
   };
-
-  const resetZoom = () => {
-    onZoomChange(1);
-  };
-
-  const zoomPercent = Math.round(zoom * 100);
 
   return (
-    <div className="h-12 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4">
-      {/* Left: Sidebar toggle and title */}
-      <div className="flex items-center gap-3">
-        {onSidebarToggle && (
-          <button
-            onClick={onSidebarToggle}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-        )}
-        {title && (
-          <span className="text-zinc-300 text-sm font-medium truncate max-w-[200px]" title={title}>
-            {title}
-          </span>
-        )}
+    <div className="absolute top-2 right-2 z-20 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-2 flex items-center gap-2">
+      {/* Search icon */}
+      <svg className="w-4 h-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+
+      {/* Input */}
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder="Search in document..."
+        className="w-48 bg-transparent text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none"
+      />
+
+      {/* Match counter */}
+      <div className="text-zinc-400 text-sm min-w-[60px] text-center">
+        {isSearching ? (
+          <span className="text-zinc-500">...</span>
+        ) : totalMatches > 0 ? (
+          <span>{currentMatch + 1} / {totalMatches}</span>
+        ) : query ? (
+          <span className="text-zinc-500">0 / 0</span>
+        ) : null}
       </div>
 
-      {/* Center: Zoom controls */}
-      <div className="flex items-center gap-2">
+      {/* Navigation */}
+      <div className="flex items-center gap-1">
         <button
-          onClick={zoomOut}
-          disabled={zoom <= VALIDATION.MIN_ZOOM}
-          className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Zoom out"
+          onClick={onPrevious}
+          disabled={totalMatches === 0}
+          className="p-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Previous match"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
           </svg>
         </button>
-
-        <select
-          value={zoom}
-          onChange={(e) => onZoomChange(parseFloat(e.target.value))}
-          className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-2 py-1 border border-zinc-700 focus:outline-none focus:border-zinc-600"
-        >
-          {ZOOM_PRESETS.map((preset) => (
-            <option key={preset} value={preset}>
-              {Math.round(preset * 100)}%
-            </option>
-          ))}
-          {!ZOOM_PRESETS.includes(zoom) && (
-            <option value={zoom}>{zoomPercent}%</option>
-          )}
-        </select>
-
         <button
-          onClick={zoomIn}
-          disabled={zoom >= VALIDATION.MAX_ZOOM}
-          className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Zoom in"
+          onClick={onNext}
+          disabled={totalMatches === 0}
+          className="p-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Next match"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </button>
-
-        <button
-          onClick={resetZoom}
-          className="px-2 py-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg text-sm transition-colors"
-          aria-label="Reset zoom to fit width"
-        >
-          Fit
-        </button>
       </div>
 
-      {/* Right: Page indicator */}
-      <div className="flex items-center gap-2 text-zinc-400 text-sm">
-        <span>Page</span>
-        <input
-          type="number"
-          min={1}
-          max={pageCount}
-          value={currentPage}
-          onChange={(e) => {
-            const page = parseInt(e.target.value);
-            if (page >= 1 && page <= pageCount) {
-              onPageChange(page);
-            }
-          }}
-          className="w-12 bg-zinc-800 text-zinc-300 text-center rounded px-1 py-0.5 border border-zinc-700"
-        />
-        <span>of {pageCount}</span>
-      </div>
+      {/* Close */}
+      <button
+        onClick={onClose}
+        className="p-1 text-zinc-400 hover:text-zinc-100"
+        aria-label="Close search"
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
   );
 }
 ```
 
-### Keyboard Shortcuts Hook
+### Search Match Highlighting
 
-**File:** `src/hooks/useZoomKeyboard.ts`
+Update PDFTextLayer to highlight search matches:
 
 ```typescript
-'use client';
+// Add to PDFTextLayer.tsx
 
-import { useEffect } from 'react';
-import { VALIDATION } from '@/types';
-
-interface UseZoomKeyboardOptions {
+interface PDFTextLayerProps {
+  page: PDFPageProxy;
   zoom: number;
-  onZoomChange: (zoom: number) => void;
-  enabled?: boolean;
+  onTextSelect?: (selection: TextSelection) => void;
+  /** Search matches for this page */
+  searchMatches?: SearchMatch[];
+  /** Index of the active match (global) */
+  activeMatchIndex?: number;
+  /** All matches (to calculate if this page has active match) */
+  allMatches?: SearchMatch[];
 }
 
-export function useZoomKeyboard({
-  zoom,
-  onZoomChange,
-  enabled = true,
-}: UseZoomKeyboardOptions) {
-  useEffect(() => {
-    if (!enabled) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for Ctrl/Cmd key
-      if (!e.ctrlKey && !e.metaKey) return;
-
-      // Prevent default browser zoom
-      if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0') {
-        e.preventDefault();
-      }
-
-      switch (e.key) {
-        case '+':
-        case '=': // Plus without shift
-          const newZoomIn = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
-          onZoomChange(newZoomIn);
-          break;
-
-        case '-':
-          const newZoomOut = Math.max(zoom - VALIDATION.ZOOM_STEP, VALIDATION.MIN_ZOOM);
-          onZoomChange(newZoomOut);
-          break;
-
-        case '0':
-          onZoomChange(1); // Reset to 100%
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [zoom, onZoomChange, enabled]);
-}
+// In the render function, add highlighting logic:
+// - Wrap matched text in spans with yellow background
+// - Active match gets .search-match-active class for pulsing animation
 ```
 
-### Pinch-to-Zoom Hook
+### Keyboard Shortcut
 
-**File:** `src/hooks/usePinchZoom.ts`
+Add to PDFViewer:
 
 ```typescript
-'use client';
-
-import { useEffect, useRef, RefObject } from 'react';
-import { VALIDATION } from '@/types';
-
-interface UsePinchZoomOptions {
-  /** Element ref to attach gesture handlers */
-  elementRef: RefObject<HTMLElement>;
-  /** Current zoom level */
-  zoom: number;
-  /** Callback when zoom changes */
-  onZoomChange: (zoom: number) => void;
-  /** Minimum zoom */
-  minZoom?: number;
-  /** Maximum zoom */
-  maxZoom?: number;
-  /** Whether pinch zoom is enabled */
-  enabled?: boolean;
-}
-
-interface UsePinchZoomReturn {
-  /** Is currently pinching */
-  isPinching: boolean;
-}
-
-export function usePinchZoom({
-  elementRef,
-  zoom,
-  onZoomChange,
-  minZoom = VALIDATION.MIN_ZOOM,
-  maxZoom = VALIDATION.MAX_ZOOM,
-  enabled = true,
-}: UsePinchZoomOptions): UsePinchZoomReturn {
-  const isPinchingRef = useRef(false);
-  const startDistanceRef = useRef(0);
-  const startZoomRef = useRef(zoom);
-
-  useEffect(() => {
-    const element = elementRef.current;
-    if (!element || !enabled) return;
-
-    const getDistance = (touches: TouchList): number => {
-      if (touches.length < 2) return 0;
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    };
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length === 2) {
-        isPinchingRef.current = true;
-        startDistanceRef.current = getDistance(e.touches);
-        startZoomRef.current = zoom;
-      }
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      if (!isPinchingRef.current || e.touches.length !== 2) return;
-
-      e.preventDefault(); // Prevent page zoom
-
-      const currentDistance = getDistance(e.touches);
-      const scale = currentDistance / startDistanceRef.current;
-      const newZoom = Math.min(maxZoom, Math.max(minZoom, startZoomRef.current * scale));
-
-      onZoomChange(newZoom);
-    };
-
-    const handleTouchEnd = () => {
-      isPinchingRef.current = false;
-    };
-
-    element.addEventListener('touchstart', handleTouchStart, { passive: true });
-    element.addEventListener('touchmove', handleTouchMove, { passive: false });
-    element.addEventListener('touchend', handleTouchEnd, { passive: true });
-    element.addEventListener('touchcancel', handleTouchEnd, { passive: true });
-
-    return () => {
-      element.removeEventListener('touchstart', handleTouchStart);
-      element.removeEventListener('touchmove', handleTouchMove);
-      element.removeEventListener('touchend', handleTouchEnd);
-      element.removeEventListener('touchcancel', handleTouchEnd);
-    };
-  }, [elementRef, zoom, onZoomChange, minZoom, maxZoom, enabled]);
-
-  return {
-    isPinching: isPinchingRef.current,
+// Handle Ctrl+F to open search
+useEffect(() => {
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+      e.preventDefault();
+      setSearchOpen(true);
+    }
   };
-}
+
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, []);
 ```
 
-### Update PDFViewer for Zoom
+### Scroll to Match
 
-Update `PDFViewer.tsx` to integrate zoom controls and preserve scroll position:
+When currentMatchIndex changes, scroll the match into view:
 
 ```typescript
-// Add to PDFViewer.tsx
+// In PDFViewer
+useEffect(() => {
+  if (matches.length === 0) return;
 
-// Preserve scroll position when zooming
-const handleZoomChange = useCallback((newZoom: number) => {
-  const container = containerRef.current;
-  if (!container) {
-    setZoom(newZoom);
-    return;
+  const match = matches[currentMatchIndex];
+  // Scroll to the page containing the match
+  const pageElement = containerRef.current?.querySelector(
+    `[data-page-number="${match.pageIndex + 1}"]`
+  );
+
+  if (pageElement) {
+    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
-
-  // Get current scroll center
-  const scrollCenter = container.scrollTop + container.clientHeight / 2;
-  const scrollRatio = scrollCenter / container.scrollHeight;
-
-  setZoom(newZoom);
-
-  // After re-render, restore scroll position
-  requestAnimationFrame(() => {
-    const newScrollCenter = container.scrollHeight * scrollRatio;
-    container.scrollTop = newScrollCenter - container.clientHeight / 2;
-  });
-}, []);
-
-// Add keyboard shortcuts
-useZoomKeyboard({
-  zoom,
-  onZoomChange: handleZoomChange,
-});
-
-// Add pinch zoom
-usePinchZoom({
-  elementRef: containerRef,
-  zoom,
-  onZoomChange: handleZoomChange,
-});
+}, [currentMatchIndex, matches]);
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/components/pdf/PDFControls.tsx` | Create | Toolbar with zoom controls |
-| `src/hooks/useZoomKeyboard.ts` | Create | Keyboard shortcut handler |
-| `src/hooks/usePinchZoom.ts` | Create | Touch pinch gesture handler |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate zoom functionality |
+| `src/hooks/usePDFSearch.ts` | Create | Search logic hook |
+| `src/components/pdf/PDFSearch.tsx` | Create | Search UI component |
+| `src/components/pdf/PDFTextLayer.tsx` | Modify | Add search highlighting |
+| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate search |
 
 ## Success Criteria
 
-1. [x] `src/components/pdf/PDFControls.tsx` exists
-2. [x] PDFControls has zoom in/out buttons
-3. [x] PDFControls has zoom preset dropdown (50%, 75%, 100%, 125%, 150%, 200%, 300%)
-4. [x] PDFControls has "Fit" button to reset zoom
-5. [x] PDFControls shows page indicator (Page X of Y)
-6. [x] `src/hooks/useZoomKeyboard.ts` exists
-7. [x] Ctrl+Plus zooms in
-8. [x] Ctrl+Minus zooms out
-9. [x] Ctrl+0 resets zoom to 100%
-10. [x] Keyboard shortcuts prevent browser default zoom
-11. [x] `src/hooks/usePinchZoom.ts` exists
-12. [x] Pinch-to-zoom works on touch devices
-13. [x] Zoom is constrained between 50% and 300%
-14. [x] Scroll position is preserved when zooming
-15. [x] `npm run type-check` passes
-16. [x] `npm run lint` passes
+1. [x] `src/hooks/usePDFSearch.ts` exists
+2. [x] usePDFSearch extracts text from all pages
+3. [x] Search is case-insensitive
+4. [x] Search results include page index and text position
+5. [x] `src/components/pdf/PDFSearch.tsx` exists
+6. [x] PDFSearch has input field with placeholder
+7. [x] PDFSearch shows match counter (X of Y)
+8. [x] PDFSearch has previous/next navigation buttons
+9. [x] PDFSearch closes with Escape or X button
+10. [x] Enter goes to next match, Shift+Enter to previous
+11. [x] Ctrl+F opens search bar
+12. [x] Search matches are highlighted in yellow
+13. [x] Active match has pulsing animation
+14. [x] Navigating to match scrolls page into view
+15. [x] Search is debounced (200ms delay)
+16. [x] `npm run type-check` passes
+17. [x] `npm run lint` passes
 
 ---
 

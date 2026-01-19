@@ -3,10 +3,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import { usePDF } from '@/hooks/usePDF';
+import { usePDFSearch } from '@/hooks/usePDFSearch';
 import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { PDFPage } from './PDFPage';
 import { PDFControls } from './PDFControls';
+import { PDFSearch } from './PDFSearch';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -42,7 +44,22 @@ export function PDFViewer({
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [pageCount, setPageCount] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // PDF Search
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    matches: searchMatches,
+    currentMatchIndex,
+    matchCount,
+    isSearching,
+    nextMatch,
+    previousMatch,
+    clearSearch,
+    getMatchesForPage,
+  } = usePDFSearch({ pdf });
 
   // Preserve scroll position when zooming
   const handleZoomChange = useCallback((newZoom: number) => {
@@ -88,6 +105,42 @@ export function PDFViewer({
     zoom,
     onZoomChange: handleZoomChange,
   });
+
+  // Handle Ctrl+F to open search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Close search handler
+  const handleCloseSearch = useCallback(() => {
+    setSearchOpen(false);
+    clearSearch();
+  }, [clearSearch]);
+
+  // Scroll to match when current match changes
+  useEffect(() => {
+    if (searchMatches.length === 0) return;
+
+    const match = searchMatches[currentMatchIndex];
+    if (!match) return;
+
+    // Scroll to the page containing the match
+    const pageElement = containerRef.current?.querySelector(
+      `[data-page-number="${match.pageIndex + 1}"]`
+    );
+
+    if (pageElement) {
+      pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [currentMatchIndex, searchMatches]);
 
   // Load all page proxies when PDF is ready
   useEffect(() => {
@@ -172,9 +225,22 @@ export function PDFViewer({
       />
       <div
         ref={containerRef}
-        className="pdf-viewer overflow-auto flex-1 bg-zinc-900"
+        className="pdf-viewer overflow-auto flex-1 bg-zinc-900 relative"
         data-testid="pdf-viewer"
       >
+        {/* Search UI */}
+        {searchOpen && (
+          <PDFSearch
+            query={searchQuery}
+            onQueryChange={setSearchQuery}
+            currentMatch={currentMatchIndex}
+            totalMatches={matchCount}
+            isSearching={isSearching}
+            onNext={nextMatch}
+            onPrevious={previousMatch}
+            onClose={handleCloseSearch}
+          />
+        )}
         <div className="flex flex-col items-center py-4">
           {pages.map((page, index) => (
             <PDFPage
@@ -182,6 +248,9 @@ export function PDFViewer({
               page={page}
               pageNumber={index + 1}
               zoom={zoom}
+              searchMatches={getMatchesForPage(index)}
+              activeMatchIndex={currentMatchIndex}
+              allMatches={searchMatches}
             />
           ))}
         </div>
