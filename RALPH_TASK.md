@@ -1,305 +1,306 @@
 ---
-task: PDF Viewer Component
+task: IndexedDB Storage Layer
 priority: 2
-depends_on: ["001-typescript-types", "003-global-css-setup", "004-pdf-js-setup"]
+depends_on: ["001-typescript-types"]
 ---
 
-# Task: PDF Viewer Component
+# Task: IndexedDB Storage Layer
 
-Create the main PDFViewer component and PDFPage component for rendering PDFs with continuous scroll.
+Create the IndexedDB wrapper for storing PDF binary data and localStorage utilities for metadata.
 
 ## Overview
 
-This task creates the core PDF viewing functionality. The PDFViewer component manages the overall PDF state and renders all pages in a continuous scroll layout. The PDFPage component handles rendering individual pages including the canvas and managing HiDPI displays.
+This task creates the storage layer for the application. PDF binary data (ArrayBuffer) is stored in IndexedDB to handle large files efficiently. Document metadata, bookmarks, and highlights are stored in localStorage as JSON. The storage module provides a clean async API for all operations.
 
 ## Context
 
-- PDFViewer is the main container for the reader route
-- PDFPage renders a single page with canvas
-- Uses PDF.js utilities from the previous task
-- Implements continuous scroll with 16px gaps between pages
-- Must handle HiDPI (retina) displays correctly
-- Components go in `src/components/pdf/`
+- IndexedDB for large binary data (PDF files)
+- localStorage for JSON metadata (documents, bookmarks, highlights)
+- All operations should be async/promise-based
+- Use the constants from types (STORAGE_KEYS, INDEXEDDB_CONFIG)
+- Handle storage quota errors gracefully
 
 ## Requirements
 
-### usePDF Hook
+### IndexedDB Operations
 
-**File:** `src/hooks/usePDF.ts`
-
-```typescript
-'use client';
-
-import { useState, useEffect } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import type { DocumentMeta } from '@/types';
-import { loadPDF } from '@/lib/pdf-utils';
-import { getPDFFromStorage } from '@/lib/storage';
-
-interface UsePDFOptions {
-  documentId: string;
-}
-
-interface UsePDFReturn {
-  /** PDF document proxy from pdfjs-dist */
-  pdf: PDFDocumentProxy | null;
-  /** Loading state */
-  isLoading: boolean;
-  /** Error if loading failed */
-  error: Error | null;
-  /** Document metadata */
-  meta: DocumentMeta | null;
-  /** Total page count */
-  pageCount: number;
-  /** Reload the PDF */
-  reload: () => Promise<void>;
-}
-
-export function usePDF(options: UsePDFOptions): UsePDFReturn {
-  // Implementation:
-  // 1. Load PDF ArrayBuffer from IndexedDB using documentId
-  // 2. Pass to loadPDF utility
-  // 3. Return PDFDocumentProxy and metadata
-  // 4. Handle errors gracefully
-}
-```
-
-### PDFPage Component
-
-**File:** `src/components/pdf/PDFPage.tsx`
+**File:** `src/lib/storage.ts`
 
 ```typescript
-'use client';
+import { INDEXEDDB_CONFIG, STORAGE_KEYS } from '@/types';
 
-import React, { useRef, useEffect } from 'react';
-import type { PDFPageProxy } from 'pdfjs-dist';
-import { renderPage } from '@/lib/pdf-utils';
+// IndexedDB instance (singleton)
+let db: IDBDatabase | null = null;
 
-interface PDFPageProps {
-  /** PDF page proxy */
-  page: PDFPageProxy;
-  /** Page number (1-based) */
-  pageNumber: number;
-  /** Zoom level (1 = 100%) */
-  zoom: number;
-  /** Optional: callback when rendered */
-  onRenderComplete?: () => void;
-}
+/**
+ * Initialize or get the IndexedDB database
+ */
+export async function getDB(): Promise<IDBDatabase> {
+  if (db) return db;
 
-export function PDFPage({ page, pageNumber, zoom, onRenderComplete }: PDFPageProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(
+      INDEXEDDB_CONFIG.DB_NAME,
+      INDEXEDDB_CONFIG.DB_VERSION
+    );
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
+    request.onerror = () => reject(request.error);
 
-    renderPage(page, canvasRef.current, zoom).then(() => {
-      onRenderComplete?.();
-    });
-  }, [page, zoom, onRenderComplete]);
-
-  return (
-    <div
-      className="pdf-page"
-      data-page-number={pageNumber}
-      data-testid={`pdf-page-${pageNumber}`}
-    >
-      <canvas ref={canvasRef} className="pdf-canvas" />
-      {/* Text layer and highlight layer will be added in later tasks */}
-    </div>
-  );
-}
-```
-
-### PDFViewer Component
-
-**File:** `src/components/pdf/PDFViewer.tsx`
-
-```typescript
-'use client';
-
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { PDFPageProxy } from 'pdfjs-dist';
-import { usePDF } from '@/hooks/usePDF';
-import { PDFPage } from './PDFPage';
-
-interface PDFViewerProps {
-  /** Document ID to load */
-  documentId: string;
-  /** Initial page to scroll to (1-based) */
-  initialPage?: number;
-  /** Initial zoom level (default: 1) */
-  initialZoom?: number;
-  /** Callback when page changes */
-  onPageChange?: (page: number) => void;
-  /** Callback when document loads */
-  onDocumentLoad?: (pageCount: number) => void;
-}
-
-export function PDFViewer({
-  documentId,
-  initialPage = 1,
-  initialZoom = 1,
-  onPageChange,
-  onDocumentLoad,
-}: PDFViewerProps) {
-  const { pdf, isLoading, error, pageCount } = usePDF({ documentId });
-  const [zoom, setZoom] = useState(initialZoom);
-  const [pages, setPages] = useState<PDFPageProxy[]>([]);
-  const [currentPage, setCurrentPage] = useState(initialPage);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  // Load all page proxies when PDF is ready
-  useEffect(() => {
-    if (!pdf) return;
-
-    const loadPages = async () => {
-      const loadedPages: PDFPageProxy[] = [];
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        loadedPages.push(page);
-      }
-      setPages(loadedPages);
-      onDocumentLoad?.(pdf.numPages);
+    request.onsuccess = () => {
+      db = request.result;
+      resolve(db);
     };
 
-    loadPages();
-  }, [pdf, onDocumentLoad]);
+    request.onupgradeneeded = (event) => {
+      const database = (event.target as IDBOpenDBRequest).result;
 
-  // Track current page on scroll
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => {
-      // Find the page that is most visible in the viewport
-      const pageElements = container.querySelectorAll('[data-page-number]');
-      let mostVisiblePage = 1;
-      let maxVisibility = 0;
-
-      pageElements.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        const visibleHeight = Math.min(rect.bottom, containerRect.bottom) -
-                             Math.max(rect.top, containerRect.top);
-        const visibility = Math.max(0, visibleHeight / rect.height);
-
-        if (visibility > maxVisibility) {
-          maxVisibility = visibility;
-          mostVisiblePage = parseInt(el.getAttribute('data-page-number') || '1');
-        }
-      });
-
-      if (mostVisiblePage !== currentPage) {
-        setCurrentPage(mostVisiblePage);
-        onPageChange?.(mostVisiblePage);
+      // Create object store for PDFs
+      if (!database.objectStoreNames.contains(INDEXEDDB_CONFIG.STORE_PDFS)) {
+        database.createObjectStore(INDEXEDDB_CONFIG.STORE_PDFS);
       }
     };
+  });
+}
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [currentPage, onPageChange]);
+/**
+ * Store a PDF in IndexedDB
+ */
+export async function storePDF(documentId: string, data: ArrayBuffer): Promise<void> {
+  const database = await getDB();
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
-      </div>
-    );
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_PDFS, 'readwrite');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_PDFS);
+    const request = store.put(data, documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
+/**
+ * Get a PDF from IndexedDB
+ */
+export async function getPDF(documentId: string): Promise<ArrayBuffer | null> {
+  const database = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_PDFS, 'readonly');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_PDFS);
+    const request = store.get(documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result || null);
+  });
+}
+
+/**
+ * Delete a PDF from IndexedDB
+ */
+export async function deletePDF(documentId: string): Promise<void> {
+  const database = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_PDFS, 'readwrite');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_PDFS);
+    const request = store.delete(documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
+/**
+ * Check if storage quota is available
+ */
+export async function checkStorageQuota(): Promise<{
+  used: number;
+  available: number;
+  percentUsed: number;
+}> {
+  if ('storage' in navigator && 'estimate' in navigator.storage) {
+    const estimate = await navigator.storage.estimate();
+    const used = estimate.usage || 0;
+    const quota = estimate.quota || 0;
+    return {
+      used,
+      available: quota - used,
+      percentUsed: quota > 0 ? (used / quota) * 100 : 0,
+    };
   }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-        <p>Failed to load PDF</p>
-        <p className="text-sm text-zinc-600">{error.message}</p>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={containerRef}
-      className="pdf-viewer overflow-auto h-full bg-zinc-900"
-      data-testid="pdf-viewer"
-    >
-      <div className="flex flex-col items-center py-4">
-        {pages.map((page, index) => (
-          <PDFPage
-            key={index + 1}
-            page={page}
-            pageNumber={index + 1}
-            zoom={zoom}
-          />
-        ))}
-      </div>
-    </div>
-  );
+  return { used: 0, available: 0, percentUsed: 0 };
 }
 ```
 
-### Reader Route
+### localStorage Utilities
 
-**File:** `src/app/reader/[id]/page.tsx`
+Add to `src/lib/storage.ts`:
 
 ```typescript
-'use client';
+import type { DocumentMeta, Bookmark, Highlight, UserPreferences } from '@/types';
 
-import { use } from 'react';
-import { PDFViewer } from '@/components/pdf/PDFViewer';
+/**
+ * Generic localStorage getter with type safety
+ */
+export function getFromStorage<T>(key: string, defaultValue: T): T {
+  if (typeof window === 'undefined') return defaultValue;
 
-interface ReaderPageProps {
-  params: Promise<{ id: string }>;
+  try {
+    const item = localStorage.getItem(key);
+    return item ? JSON.parse(item) : defaultValue;
+  } catch {
+    return defaultValue;
+  }
 }
 
-export default function ReaderPage({ params }: ReaderPageProps) {
-  const { id } = use(params);
+/**
+ * Generic localStorage setter
+ */
+export function setToStorage<T>(key: string, value: T): void {
+  if (typeof window === 'undefined') return;
 
-  return (
-    <main className="h-screen flex flex-col bg-zinc-950">
-      {/* Toolbar will be added in later task */}
-      <div className="flex-1 overflow-hidden">
-        <PDFViewer documentId={id} />
-      </div>
-    </main>
-  );
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    // Handle quota exceeded
+    console.error('localStorage quota exceeded:', e);
+  }
+}
+
+/**
+ * Remove item from localStorage
+ */
+export function removeFromStorage(key: string): void {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem(key);
+}
+
+// Document metadata operations
+export function getDocuments(): DocumentMeta[] {
+  return getFromStorage<DocumentMeta[]>(STORAGE_KEYS.DOCUMENTS, []);
+}
+
+export function setDocuments(documents: DocumentMeta[]): void {
+  setToStorage(STORAGE_KEYS.DOCUMENTS, documents);
+}
+
+// Bookmark operations
+export function getBookmarks(): Bookmark[] {
+  return getFromStorage<Bookmark[]>(STORAGE_KEYS.BOOKMARKS, []);
+}
+
+export function setBookmarks(bookmarks: Bookmark[]): void {
+  setToStorage(STORAGE_KEYS.BOOKMARKS, bookmarks);
+}
+
+export function getBookmarksForDocument(documentId: string): Bookmark[] {
+  return getBookmarks().filter(b => b.documentId === documentId);
+}
+
+// Highlight operations
+export function getHighlights(): Highlight[] {
+  return getFromStorage<Highlight[]>(STORAGE_KEYS.HIGHLIGHTS, []);
+}
+
+export function setHighlights(highlights: Highlight[]): void {
+  setToStorage(STORAGE_KEYS.HIGHLIGHTS, highlights);
+}
+
+export function getHighlightsForDocument(documentId: string): Highlight[] {
+  return getHighlights().filter(h => h.documentId === documentId);
+}
+
+// User preferences
+export function getPreferences(): UserPreferences {
+  return getFromStorage<UserPreferences>(STORAGE_KEYS.PREFERENCES, {
+    defaultZoom: 1,
+    defaultSidebarOpen: true,
+    showPageNumbers: true,
+    defaultWpm: 300,
+  });
+}
+
+export function setPreferences(preferences: UserPreferences): void {
+  setToStorage(STORAGE_KEYS.PREFERENCES, preferences);
 }
 ```
 
-### Styling Requirements
+### Composite Operations
 
-The PDFViewer should:
-- Fill the available height
-- Center pages horizontally
-- Have 16px vertical gap between pages
-- Have zinc-900 background
-- Show a shadow on each page (from globals.css)
+Add to `src/lib/storage.ts`:
+
+```typescript
+/**
+ * Delete a document and all associated data
+ */
+export async function deleteDocumentComplete(documentId: string): Promise<void> {
+  // Delete PDF from IndexedDB
+  await deletePDF(documentId);
+
+  // Remove from documents list
+  const documents = getDocuments();
+  setDocuments(documents.filter(d => d.id !== documentId));
+
+  // Remove associated bookmarks
+  const bookmarks = getBookmarks();
+  setBookmarks(bookmarks.filter(b => b.documentId !== documentId));
+
+  // Remove associated highlights
+  const highlights = getHighlights();
+  setHighlights(highlights.filter(h => h.documentId !== documentId));
+}
+
+/**
+ * Update document's last opened timestamp
+ */
+export function updateLastOpened(documentId: string): void {
+  const documents = getDocuments();
+  const index = documents.findIndex(d => d.id === documentId);
+
+  if (index !== -1) {
+    documents[index].lastOpenedAt = Date.now();
+    setDocuments(documents);
+  }
+}
+
+/**
+ * Update document's last read page
+ */
+export function updateLastReadPage(documentId: string, page: number): void {
+  const documents = getDocuments();
+  const index = documents.findIndex(d => d.id === documentId);
+
+  if (index !== -1) {
+    documents[index].lastReadPage = page;
+    setDocuments(documents);
+  }
+}
+```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/hooks/usePDF.ts` | Create | Hook for loading and managing PDF state |
-| `src/components/pdf/PDFPage.tsx` | Create | Single page rendering component |
-| `src/components/pdf/PDFViewer.tsx` | Create | Main viewer container component |
-| `src/app/reader/[id]/page.tsx` | Create | Reader route page |
+| `src/lib/storage.ts` | Create | Complete storage layer with IndexedDB and localStorage |
 
 ## Success Criteria
 
-1. [x] `src/hooks/usePDF.ts` exists with UsePDFReturn interface
-2. [x] usePDF hook loads PDF from storage and returns PDFDocumentProxy
-3. [x] usePDF hook handles loading and error states
-4. [x] `src/components/pdf/PDFPage.tsx` exists
-5. [x] PDFPage renders canvas with correct HiDPI scaling
-6. [x] PDFPage has data-page-number attribute for tracking
-7. [x] `src/components/pdf/PDFViewer.tsx` exists
-8. [x] PDFViewer renders all pages in continuous scroll
-9. [x] PDFViewer tracks current page on scroll
-10. [x] PDFViewer shows loading spinner during load
-11. [x] PDFViewer shows error message on failure
-12. [x] `src/app/reader/[id]/page.tsx` route exists
-13. [x] Pages have 16px gap between them
-14. [x] `npm run type-check` passes
-15. [x] `npm run lint` passes
+1. [x] `src/lib/storage.ts` exists
+2. [x] getDB() initializes IndexedDB with correct name and version
+3. [x] storePDF() stores ArrayBuffer in IndexedDB
+4. [x] getPDF() retrieves ArrayBuffer from IndexedDB
+5. [x] deletePDF() removes data from IndexedDB
+6. [x] checkStorageQuota() returns storage estimates
+7. [x] getFromStorage/setToStorage work with generic types
+8. [x] getDocuments/setDocuments work correctly
+9. [x] getBookmarks/setBookmarks work correctly
+10. [x] getHighlights/setHighlights work correctly
+11. [x] getPreferences/setPreferences work with defaults
+12. [x] deleteDocumentComplete removes PDF and all associated data
+13. [x] updateLastOpened updates timestamp correctly
+14. [x] updateLastReadPage updates page correctly
+15. [x] `npm run type-check` passes
+16. [x] `npm run lint` passes
 
 ---
 
