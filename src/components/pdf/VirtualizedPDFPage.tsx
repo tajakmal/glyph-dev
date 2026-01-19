@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
-import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import type { SearchMatch, Highlight } from '@/types';
-import { renderPage } from '@/lib/pdf-utils';
 import { PDFTextLayer, TextSelection } from './PDFTextLayer';
 import { PDFHighlightLayer } from './PDFHighlightLayer';
 
@@ -62,6 +61,10 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
     const [isRendered, setIsRendered] = useState(false);
     const [renderError, setRenderError] = useState<string | null>(null);
 
+    // Use ref for callback to avoid infinite render loops
+    const onDimensionsReadyRef = useRef(onDimensionsReady);
+    onDimensionsReadyRef.current = onDimensionsReady;
+
     // Forward ref
     useImperativeHandle(ref, () => containerRef.current!, []);
 
@@ -91,15 +94,29 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
       if (!page || !canvas) return;
 
       let isMounted = true;
+      let renderTask: RenderTask | null = null;
 
       const render = async () => {
         try {
-          await renderPage(page, canvas, zoom);
-
-          if (!isMounted) return;
-
           const dpr = window.devicePixelRatio || 1;
           const viewport = page.getViewport({ scale: zoom * dpr });
+
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          canvas.style.width = `${viewport.width / dpr}px`;
+          canvas.style.height = `${viewport.height / dpr}px`;
+
+          const ctx = canvas.getContext('2d')!;
+
+          renderTask = page.render({
+            canvasContext: ctx,
+            canvas,
+            viewport,
+          });
+
+          await renderTask.promise;
+
+          if (!isMounted) return;
 
           const newDimensions = {
             width: viewport.width / dpr,
@@ -109,8 +126,12 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
           setDimensions(newDimensions);
           setIsRendered(true);
           setRenderError(null);
-          onDimensionsReady?.(newDimensions.width, newDimensions.height);
+          onDimensionsReadyRef.current?.(newDimensions.width, newDimensions.height);
         } catch (error) {
+          // Ignore cancellation errors - they're expected when zoom changes rapidly
+          if (error instanceof Error && error.name === 'RenderingCancelledException') {
+            return;
+          }
           if (isMounted) {
             console.error(`Failed to render page ${pageNumber}:`, error);
             setRenderError('Failed to render page');
@@ -120,9 +141,12 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
 
       render();
 
-      // Cleanup canvas memory when unmounting
+      // Cleanup: cancel in-flight render and release canvas memory
       return () => {
         isMounted = false;
+        if (renderTask) {
+          renderTask.cancel();
+        }
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -131,7 +155,7 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
         canvas.width = 0;
         canvas.height = 0;
       };
-    }, [page, zoom, pageNumber, onDimensionsReady]);
+    }, [page, zoom, pageNumber]);
 
     if (renderError) {
       return (

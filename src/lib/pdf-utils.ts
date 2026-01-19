@@ -1,16 +1,18 @@
-import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy, PDFPageProxy } from 'pdfjs-dist';
 import type { TextContent } from 'pdfjs-dist/types/src/display/api';
 
-// Set worker path
-if (typeof window !== 'undefined') {
+// Dynamically import pdfjs-dist to avoid SSR issues with DOMMatrix
+async function getPdfjs() {
+  const pdfjsLib = await import('pdfjs-dist');
   pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
+  return pdfjsLib;
 }
 
 /**
  * Load a PDF document from an ArrayBuffer
  */
 export async function loadPDF(data: ArrayBuffer): Promise<PDFDocumentProxy> {
+  const pdfjsLib = await getPdfjs();
   return pdfjsLib.getDocument({
     data,
     cMapUrl: '/cmaps/',
@@ -21,6 +23,10 @@ export async function loadPDF(data: ArrayBuffer): Promise<PDFDocumentProxy> {
 /**
  * Render a PDF page to a canvas element
  * Handles HiDPI displays correctly
+ *
+ * Note: This function doesn't support cancellation. For components that need
+ * to cancel renders (e.g., when zoom changes rapidly), inline the render logic
+ * and store the RenderTask reference to call cancel() on cleanup.
  */
 export async function renderPage(
   page: PDFPageProxy,

@@ -53,7 +53,7 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
         onContextMenu={handleContextMenu}
       >
         {/* Thumbnail */}
-        <div className="aspect-[0.714] bg-zinc-800 rounded-t-xl overflow-hidden">
+        <div className="relative aspect-[0.714] bg-zinc-800 rounded-t-xl overflow-hidden">
           {document.thumbnailDataUrl ? (
             <Image
               src={document.thumbnailDataUrl}
