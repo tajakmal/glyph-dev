@@ -1,32 +1,3 @@
----
-task: Highlight Popover and Notes
-priority: 4
-depends_on: ["002-shared-ui-components", "009-text-layer-selection", "014-highlights-system"]
----
-
-# Task: Highlight Popover and Notes
-
-Implement the popover that appears when text is selected or a highlight is clicked, allowing users to choose colors, add notes, and trigger speed reading.
-
-## Overview
-
-This task creates the highlight popover UI. When the user selects text, a popover appears with color options, a note button, and a speed-read button. Clicking a color creates the highlight. For existing highlights, the popover shows edit/delete options and the note editor.
-
-## Context
-
-- Popover specs from PRD Section 8.3
-- Position 8px above selection, centered
-- Color options: yellow, green, blue, pink, orange
-- Note editor expands when clicking note button
-- Speed Read button navigates to /speed-read with text
-
-## Requirements
-
-### PDFHighlightPopover Component
-
-**File:** `src/components/pdf/PDFHighlightPopover.tsx`
-
-```typescript
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -41,7 +12,7 @@ interface SelectionPopoverProps {
   /** Anchor position (top-center of selection) */
   anchorRect: { x: number; y: number };
   /** Create highlight with color */
-  onCreateHighlight: (color: HighlightColor) => void;
+  onCreateHighlight: (color: HighlightColor, note?: string) => void;
   /** Trigger speed reading */
   onSpeedRead: () => void;
   /** Close popover */
@@ -68,8 +39,6 @@ interface HighlightPopoverProps {
 const COLOR_OPTIONS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'orange'];
 
 export function SelectionPopover({
-  text,
-  page,
   anchorRect,
   onCreateHighlight,
   onSpeedRead,
@@ -111,8 +80,15 @@ export function SelectionPopover({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // Delay to avoid immediate close from selection click
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [onClose]);
 
   // Close on Escape
@@ -137,15 +113,14 @@ export function SelectionPopover({
 
   const handleCreateWithNote = () => {
     if (selectedColor) {
-      onCreateHighlight(selectedColor);
-      // Note will be added after highlight is created
+      onCreateHighlight(selectedColor, note);
     }
   };
 
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl popover"
+      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl"
       style={{ left: position.x, top: position.y }}
     >
       <div className="flex items-center gap-1 p-2">
@@ -210,6 +185,7 @@ export function SelectionPopover({
             placeholder="Add a note..."
             className="w-full bg-zinc-700 text-zinc-100 text-sm rounded px-2 py-1.5 resize-none focus:outline-none focus:ring-1 focus:ring-red-500"
             rows={3}
+            maxLength={2000}
             autoFocus
           />
           {selectedColor && (
@@ -268,8 +244,15 @@ export function HighlightPopover({
       }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    // Delay to avoid immediate close from click that opened it
+    const timer = setTimeout(() => {
+      document.addEventListener('mousedown', handleClickOutside);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
   }, [onClose, note, highlight.note, onUpdateNote]);
 
   // Close on Escape
@@ -290,7 +273,7 @@ export function HighlightPopover({
   return (
     <div
       ref={popoverRef}
-      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl popover"
+      className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl"
       style={{ left: position.x, top: position.y }}
     >
       <div className="flex items-center gap-1 p-2">
@@ -390,98 +373,9 @@ export function HighlightPopover({
       {/* Preview of highlighted text */}
       <div className="px-2 pb-2 border-t border-zinc-700 mt-1 pt-2">
         <p className="text-zinc-400 text-xs line-clamp-2">
-          "{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}"
+          &quot;{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}&quot;
         </p>
       </div>
     </div>
   );
 }
-```
-
-### Integrate Popovers into PDFViewer
-
-Update PDFViewer to manage popover state:
-
-```typescript
-// In PDFViewer.tsx
-
-const [selectionPopover, setSelectionPopover] = useState<{
-  selection: TextSelection;
-  anchorRect: { x: number; y: number };
-} | null>(null);
-
-const [highlightPopover, setHighlightPopover] = useState<{
-  highlight: Highlight;
-  anchorRect: { x: number; y: number };
-} | null>(null);
-
-// Handle text selection
-const handleTextSelect = useCallback((selection: TextSelection) => {
-  // Get anchor position (center-top of first rect)
-  const firstRect = selection.rects[0];
-  if (!firstRect) return;
-
-  const containerRect = containerRef.current?.getBoundingClientRect();
-  if (!containerRect) return;
-
-  setSelectionPopover({
-    selection,
-    anchorRect: {
-      x: containerRect.left + firstRect.x + firstRect.width / 2,
-      y: containerRect.top + firstRect.y,
-    },
-  });
-}, []);
-
-// Handle highlight click
-const handleHighlightClick = useCallback((highlight: Highlight) => {
-  // Position based on first rect of highlight
-  // ... calculate position similar to selection
-  setHighlightPopover({
-    highlight,
-    anchorRect: { x: ..., y: ... },
-  });
-}, []);
-```
-
-## Files to Create/Modify
-
-| File | Action | Description |
-|------|--------|-------------|
-| `src/components/pdf/PDFHighlightPopover.tsx` | Create | Selection and highlight popovers |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate popovers |
-
-## Success Criteria
-
-1. [x] `src/components/pdf/PDFHighlightPopover.tsx` exists
-2. [x] SelectionPopover shows on text selection
-3. [x] SelectionPopover has 5 color buttons
-4. [x] Clicking color creates highlight and closes popover
-5. [x] Note button expands textarea
-6. [x] Speed Read button triggers navigation
-7. [x] Close button/Escape closes popover
-8. [x] Popover positions above selection
-9. [x] Popover stays within viewport bounds
-10. [x] HighlightPopover shows when clicking highlight
-11. [x] HighlightPopover allows color change
-12. [x] HighlightPopover has note editor
-13. [x] Note auto-saves on close
-14. [x] Delete button removes highlight
-15. [x] Character count shows for note (max 2000)
-16. [x] `npm run type-check` passes
-17. [x] `npm run lint` passes
-
----
-
-## Ralph Instructions
-
-When working on this task:
-
-1. Read `.ralph/guardrails.md` for signs to follow
-2. Read `.ralph/progress.md` to see what's been done
-3. Work on the next unchecked criterion (marked [ ])
-4. After completing a criterion, change [ ] to [x] in this file
-5. Update `.ralph/progress.md` with your progress
-6. Commit your changes frequently with descriptive messages
-7. When ALL criteria are [x], output: `<ralph>COMPLETE</ralph>`
-8. If stuck 3+ times on same issue, output: `<ralph>GUTTER</ralph>`

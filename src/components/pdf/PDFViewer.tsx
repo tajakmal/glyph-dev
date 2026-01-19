@@ -1,18 +1,23 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import type { PDFPageProxy } from 'pdfjs-dist';
-import type { Bookmark, Highlight } from '@/types';
+import type { Bookmark, Highlight, HighlightColor } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
 import { usePDFOutline } from '@/hooks/usePDFOutline';
 import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useBookmarks } from '@/hooks/useBookmarks';
+import { useHighlights } from '@/hooks/useHighlights';
 import { PDFPage } from './PDFPage';
 import { PDFControls } from './PDFControls';
 import { PDFSearch } from './PDFSearch';
 import { PDFSidebar } from './PDFSidebar';
+import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
+import type { TextSelection } from './PDFTextLayer';
+import { normalizeRects } from '@/lib/highlight-utils';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -37,6 +42,7 @@ export function PDFViewer({
   onPageChange,
   onDocumentLoad,
 }: PDFViewerProps) {
+  const router = useRouter();
   const { pdf, isLoading, error, meta } = usePDF({ documentId });
   const [zoom, setZoom] = useState(initialZoom);
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
@@ -44,6 +50,21 @@ export function PDFViewer({
   const [pageCount, setPageCount] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Track page dimensions for highlight normalization
+  const [pageDimensions, setPageDimensions] = useState<Map<number, { width: number; height: number }>>(new Map());
+
+  // Selection popover state
+  const [selectionPopover, setSelectionPopover] = useState<{
+    selection: TextSelection;
+    anchorRect: { x: number; y: number };
+  } | null>(null);
+
+  // Highlight popover state
+  const [highlightPopover, setHighlightPopover] = useState<{
+    highlight: Highlight;
+    anchorRect: { x: number; y: number };
+  } | null>(null);
 
   // Sidebar state with localStorage persistence
   const [sidebarOpen, setSidebarOpen] = useState(() => {
@@ -62,8 +83,15 @@ export function PDFViewer({
     setSidebarOpen((prev: boolean) => !prev);
   }, []);
 
-  // Placeholder highlights (to be implemented in Task 014)
-  const [highlights] = useState<Highlight[]>([]);
+  // Highlights
+  const {
+    highlights,
+    addHighlight,
+    removeHighlight,
+    updateHighlightNote,
+    updateHighlightColor,
+    getHighlightsForPage,
+  } = useHighlights({ documentId });
 
   // PDF Search
   const {
@@ -263,7 +291,7 @@ export function PDFViewer({
     handlePageChange(bookmark.page);
   }, [handlePageChange]);
 
-  const handleHighlightClick = useCallback((highlight: Highlight) => {
+  const handleSidebarHighlightClick = useCallback((highlight: Highlight) => {
     handlePageChange(highlight.page);
   }, [handlePageChange]);
 
@@ -271,6 +299,158 @@ export function PDFViewer({
     // Placeholder - will be implemented in a later task
     console.log('Export annotations');
   }, []);
+
+  // Handle text selection from PDFPage
+  const handleTextSelect = useCallback((selection: TextSelection) => {
+    // Close any existing highlight popover
+    setHighlightPopover(null);
+
+    // Get anchor position (center-top of first rect in viewport coordinates)
+    const firstRect = selection.rects[0];
+    if (!firstRect) return;
+
+    // Find the page element to get its viewport position
+    const pageElement = containerRef.current?.querySelector(
+      `[data-page-number="${selection.page}"]`
+    );
+    if (!pageElement) return;
+
+    const pageRect = pageElement.getBoundingClientRect();
+
+    // Calculate anchor position in viewport coordinates
+    const anchorX = pageRect.left + firstRect.x + firstRect.width / 2;
+    const anchorY = pageRect.top + firstRect.y;
+
+    setSelectionPopover({
+      selection,
+      anchorRect: { x: anchorX, y: anchorY },
+    });
+  }, []);
+
+  // Handle highlight click from PDFPage
+  const handleHighlightClick = useCallback((highlight: Highlight) => {
+    // Close any existing selection popover
+    setSelectionPopover(null);
+
+    // Find the page element to calculate position
+    const pageElement = containerRef.current?.querySelector(
+      `[data-page-number="${highlight.page}"]`
+    );
+    if (!pageElement) return;
+
+    const pageRect = pageElement.getBoundingClientRect();
+    const dims = pageDimensions.get(highlight.page);
+
+    // Use first rect of highlight for anchor position
+    if (highlight.rects.length > 0 && dims) {
+      const firstRect = highlight.rects[0];
+      const anchorX = pageRect.left + firstRect.x * dims.width + (firstRect.width * dims.width) / 2;
+      const anchorY = pageRect.top + firstRect.y * dims.height;
+
+      setHighlightPopover({
+        highlight,
+        anchorRect: { x: anchorX, y: anchorY },
+      });
+    }
+  }, [pageDimensions]);
+
+  // Handle page render to track dimensions
+  const handlePageRenderComplete = useCallback((pageNumber: number, width: number, height: number) => {
+    setPageDimensions(prev => {
+      const next = new Map(prev);
+      next.set(pageNumber, { width, height });
+      return next;
+    });
+  }, []);
+
+  // Create highlight from selection
+  const handleCreateHighlight = useCallback((color: HighlightColor, note?: string) => {
+    if (!selectionPopover) return;
+
+    const { selection } = selectionPopover;
+    const dims = pageDimensions.get(selection.page);
+
+    if (!dims) return;
+
+    // Normalize rects to 0-1 range
+    const normalizedRects = normalizeRects(selection.rects, dims.width, dims.height);
+
+    addHighlight({
+      documentId,
+      page: selection.page,
+      color,
+      text: selection.text,
+      rects: normalizedRects,
+      note: note || undefined,
+    });
+
+    // Clear selection
+    setSelectionPopover(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, pageDimensions, addHighlight, documentId]);
+
+  // Close selection popover
+  const handleCloseSelectionPopover = useCallback(() => {
+    setSelectionPopover(null);
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  // Close highlight popover
+  const handleCloseHighlightPopover = useCallback(() => {
+    setHighlightPopover(null);
+  }, []);
+
+  // Speed read handler for selection
+  const handleSpeedReadSelection = useCallback(() => {
+    if (!selectionPopover) return;
+
+    // Store selected text in sessionStorage for speed reader to access
+    sessionStorage.setItem('glyph:speed-read-text', selectionPopover.selection.text);
+    router.push('/');
+
+    setSelectionPopover(null);
+    window.getSelection()?.removeAllRanges();
+  }, [selectionPopover, router]);
+
+  // Speed read handler for highlight
+  const handleSpeedReadHighlight = useCallback(() => {
+    if (!highlightPopover) return;
+
+    // Store highlight text in sessionStorage for speed reader to access
+    sessionStorage.setItem('glyph:speed-read-text', highlightPopover.highlight.text);
+    router.push('/');
+
+    setHighlightPopover(null);
+  }, [highlightPopover, router]);
+
+  // Update highlight color
+  const handleUpdateHighlightColor = useCallback((color: HighlightColor) => {
+    if (!highlightPopover) return;
+    updateHighlightColor(highlightPopover.highlight.id, color);
+    // Update the popover state with new color
+    setHighlightPopover(prev => prev ? {
+      ...prev,
+      highlight: { ...prev.highlight, color }
+    } : null);
+  }, [highlightPopover, updateHighlightColor]);
+
+  // Update highlight note
+  const handleUpdateHighlightNote = useCallback((note: string) => {
+    if (!highlightPopover) return;
+    updateHighlightNote(highlightPopover.highlight.id, note);
+    // Update the popover state with new note
+    setHighlightPopover(prev => prev ? {
+      ...prev,
+      highlight: { ...prev.highlight, note }
+    } : null);
+  }, [highlightPopover, updateHighlightNote]);
+
+  // Delete highlight
+  const handleDeleteHighlight = useCallback(() => {
+    if (!highlightPopover) return;
+    removeHighlight(highlightPopover.highlight.id);
+    setHighlightPopover(null);
+  }, [highlightPopover, removeHighlight]);
 
   // Get document title
   const documentTitle = title || meta?.title || 'Untitled Document';
@@ -320,7 +500,7 @@ export function PDFViewer({
           onBookmarkClick={handleBookmarkClick}
           onBookmarkDelete={removeBookmark}
           onBookmarkRename={updateBookmark}
-          onHighlightClick={handleHighlightClick}
+          onHighlightClick={handleSidebarHighlightClick}
           onExport={handleExport}
         />
         <div
@@ -353,9 +533,48 @@ export function PDFViewer({
                 allMatches={searchMatches}
                 isBookmarked={isPageBookmarked(index + 1)}
                 onBookmarkToggle={() => toggleBookmark(index + 1)}
+                highlights={getHighlightsForPage(index + 1)}
+                onHighlightClick={handleHighlightClick}
+                selectedHighlightId={highlightPopover?.highlight.id}
+                onTextSelect={handleTextSelect}
+                onRenderComplete={() => {
+                  // Get dimensions from the page element
+                  const pageEl = containerRef.current?.querySelector(
+                    `[data-page-number="${index + 1}"]`
+                  );
+                  if (pageEl) {
+                    const rect = pageEl.getBoundingClientRect();
+                    handlePageRenderComplete(index + 1, rect.width, rect.height);
+                  }
+                }}
               />
             ))}
           </div>
+
+          {/* Selection Popover */}
+          {selectionPopover && (
+            <SelectionPopover
+              text={selectionPopover.selection.text}
+              page={selectionPopover.selection.page}
+              anchorRect={selectionPopover.anchorRect}
+              onCreateHighlight={handleCreateHighlight}
+              onSpeedRead={handleSpeedReadSelection}
+              onClose={handleCloseSelectionPopover}
+            />
+          )}
+
+          {/* Highlight Popover */}
+          {highlightPopover && (
+            <HighlightPopover
+              highlight={highlightPopover.highlight}
+              anchorRect={highlightPopover.anchorRect}
+              onUpdateNote={handleUpdateHighlightNote}
+              onUpdateColor={handleUpdateHighlightColor}
+              onDelete={handleDeleteHighlight}
+              onSpeedRead={handleSpeedReadHighlight}
+              onClose={handleCloseHighlightPopover}
+            />
+          )}
         </div>
       </div>
     </div>
