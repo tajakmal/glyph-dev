@@ -19,6 +19,7 @@ import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
 import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
+import { navigateToSpeedRead, navigateToDocumentSpeedRead } from '@/lib/speed-read';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -253,6 +254,27 @@ export function PDFViewer({
     loadPages();
   }, [pdf, onDocumentLoad]);
 
+  // Restore scroll position when returning from speed reader
+  useEffect(() => {
+    const saved = sessionStorage.getItem('glyph:reader-scroll');
+    if (saved && pages.length > 0) {
+      try {
+        const { documentId: savedId, scrollTop } = JSON.parse(saved);
+        if (savedId === documentId && containerRef.current) {
+          // Use requestAnimationFrame to wait for rendering
+          requestAnimationFrame(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = scrollTop;
+            }
+          });
+        }
+        sessionStorage.removeItem('glyph:reader-scroll');
+      } catch {
+        sessionStorage.removeItem('glyph:reader-scroll');
+      }
+    }
+  }, [documentId, pages.length]);
+
   // Track current page on scroll
   useEffect(() => {
     const container = containerRef.current;
@@ -420,24 +442,53 @@ export function PDFViewer({
   const handleSpeedReadSelection = useCallback(() => {
     if (!selectionPopover) return;
 
-    // Store selected text in sessionStorage for speed reader to access
-    sessionStorage.setItem('glyph:speed-read-text', selectionPopover.selection.text);
-    router.push('/');
+    // Save scroll position before navigating
+    if (containerRef.current) {
+      sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
+        documentId,
+        scrollTop: containerRef.current.scrollTop,
+      }));
+    }
+
+    navigateToSpeedRead(router, selectionPopover.selection.text, {
+      returnPath: `/reader/${documentId}`,
+    });
 
     setSelectionPopover(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionPopover, router]);
+  }, [selectionPopover, router, documentId]);
 
   // Speed read handler for highlight
   const handleSpeedReadHighlight = useCallback(() => {
     if (!highlightPopover) return;
 
-    // Store highlight text in sessionStorage for speed reader to access
-    sessionStorage.setItem('glyph:speed-read-text', highlightPopover.highlight.text);
-    router.push('/');
+    // Save scroll position before navigating
+    if (containerRef.current) {
+      sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
+        documentId,
+        scrollTop: containerRef.current.scrollTop,
+      }));
+    }
+
+    navigateToSpeedRead(router, highlightPopover.highlight.text, {
+      returnPath: `/reader/${documentId}`,
+    });
 
     setHighlightPopover(null);
-  }, [highlightPopover, router]);
+  }, [highlightPopover, router, documentId]);
+
+  // Speed read handler for full document
+  const handleSpeedReadDocument = useCallback(() => {
+    // Save scroll position before navigating
+    if (containerRef.current) {
+      sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
+        documentId,
+        scrollTop: containerRef.current.scrollTop,
+      }));
+    }
+
+    navigateToDocumentSpeedRead(router, documentId, `/reader/${documentId}`);
+  }, [router, documentId]);
 
   // Update highlight color
   const handleUpdateHighlightColor = useCallback((color: HighlightColor) => {
@@ -501,6 +552,7 @@ export function PDFViewer({
         isSidebarOpen={sidebarOpen}
         isBookmarked={isPageBookmarked(currentPage)}
         onBookmarkToggle={() => toggleBookmark(currentPage)}
+        onSpeedReadDocument={handleSpeedReadDocument}
       />
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}

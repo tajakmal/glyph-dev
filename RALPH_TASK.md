@@ -1,341 +1,381 @@
 ---
-task: Annotation Export
-priority: 4
-depends_on: ["014-highlights-system", "013-sidebar-toc"]
+task: Speed Reading Integration
+priority: 5
+depends_on: ["005-pdf-viewer-component", "015-highlight-popover-notes"]
 ---
 
-# Task: Annotation Export
+# Task: Speed Reading Integration
 
-Implement the export functionality that generates a Markdown file containing all highlights and notes for a document.
+Connect the PDF reader to the existing RSVP speed reading functionality, allowing users to speed-read selected text, highlights, or entire documents.
 
 ## Overview
 
-This task creates the export feature that allows users to download their annotations as a Markdown file. The export includes all highlights grouped by page, with their text, color, and any associated notes. The file is formatted for easy reading and import into note-taking apps.
+This task integrates the existing SpritzReader component with the new PDF reader. Users can trigger speed reading from multiple entry points: selection popover, highlight popover, toolbar button, and library card context menu. The speed reader should accept text via URL parameters or sessionStorage, and provide navigation back to the reader.
 
 ## Context
 
-- Export format from PRD Section 4.7
-- Trigger: Button in sidebar or Ctrl+Shift+E
-- Output: Downloaded .md file
-- Filename: `{document-title}_annotations.md`
+- Existing SpritzReader component in src/components/SpritzReader.tsx
+- Multiple entry points from PRD Section 4.8
+- Data passing via URL params (small text) or sessionStorage (large text)
+- Return navigation should restore scroll position
 
 ## Requirements
 
-### Export Utility
+### Update Speed Read Route
 
-**File:** `src/lib/export.ts`
+**File:** `src/app/speed-read/page.tsx`
 
 ```typescript
-import type { Highlight, DocumentMeta } from '@/types';
+'use client';
 
-/**
- * Generate Markdown content from highlights
- */
-export function generateAnnotationsMarkdown(
-  document: DocumentMeta,
-  highlights: Highlight[]
-): string {
-  const lines: string[] = [];
+import { useEffect, useState, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { SpritzReader } from '@/components/SpritzReader';
+import { getPDF } from '@/lib/storage';
+import { loadPDF, extractAllText } from '@/lib/pdf-utils';
+import { getDocuments } from '@/lib/storage';
 
-  // Title
-  lines.push(`# ${document.title}`);
-  lines.push('');
-  lines.push(`Exported from Glyph on ${formatDate(new Date())}`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
+function SpeedReadContent() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [text, setText] = useState<string>('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [documentTitle, setDocumentTitle] = useState<string>('');
+  const [returnPath, setReturnPath] = useState<string | null>(null);
 
-  if (highlights.length === 0) {
-    lines.push('*No highlights in this document.*');
-    return lines.join('\n');
-  }
+  useEffect(() => {
+    const loadText = async () => {
+      setIsLoading(true);
 
-  // Group highlights by page
-  const byPage = highlights.reduce((acc, h) => {
-    if (!acc[h.page]) acc[h.page] = [];
-    acc[h.page].push(h);
-    return acc;
-  }, {} as Record<number, Highlight[]>);
+      try {
+        // Check for text in URL params (small text)
+        const urlText = searchParams.get('text');
+        if (urlText) {
+          setText(decodeURIComponent(urlText));
+          setIsLoading(false);
+          return;
+        }
 
-  // Sort pages
-  const pages = Object.keys(byPage)
-    .map(Number)
-    .sort((a, b) => a - b);
+        // Check for text in sessionStorage
+        const source = searchParams.get('source');
+        if (source === 'session') {
+          const sessionText = sessionStorage.getItem('glyph:speedread-text');
+          if (sessionText) {
+            setText(sessionText);
+            sessionStorage.removeItem('glyph:speedread-text');
+          }
+          setIsLoading(false);
+          return;
+        }
 
-  let highlightCount = 0;
+        // Check for document ID (full document speed read)
+        const documentId = searchParams.get('documentId');
+        if (documentId) {
+          // Get document metadata
+          const documents = getDocuments();
+          const doc = documents.find(d => d.id === documentId);
+          if (doc) {
+            setDocumentTitle(doc.title);
+            setReturnPath(`/reader/${documentId}`);
+          }
 
-  for (const page of pages) {
-    const pageHighlights = byPage[page];
+          // Load PDF and extract text
+          const pdfData = await getPDF(documentId);
+          if (pdfData) {
+            const pdf = await loadPDF(pdfData);
+            const extractedText = await extractAllText(pdf);
+            setText(extractedText);
+          }
+          setIsLoading(false);
+          return;
+        }
 
-    // Sort by creation time within page
-    pageHighlights.sort((a, b) => a.createdAt - b.createdAt);
-
-    lines.push(`## Page ${page}`);
-    lines.push('');
-
-    for (const highlight of pageHighlights) {
-      highlightCount++;
-
-      // Format color label
-      const colorLabel = formatColorLabel(highlight.color);
-
-      // Quoted text
-      lines.push(`> "${escapeMarkdown(highlight.text)}" [${colorLabel}]`);
-      lines.push('');
-
-      // Note if present
-      if (highlight.note) {
-        lines.push(`**Note:** ${escapeMarkdown(highlight.note)}`);
-        lines.push('');
+        // No text source found
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Failed to load text:', error);
+        setIsLoading(false);
       }
+    };
 
-      lines.push('---');
-      lines.push('');
+    // Get return path from sessionStorage
+    const storedReturnPath = sessionStorage.getItem('glyph:speedread-return');
+    if (storedReturnPath) {
+      setReturnPath(storedReturnPath);
     }
-  }
 
-  // Summary
-  lines.push(`*Exported ${highlightCount} highlight${highlightCount !== 1 ? 's' : ''} from ${pages.length} page${pages.length !== 1 ? 's' : ''}*`);
+    loadText();
+  }, [searchParams]);
 
-  return lines.join('\n');
-}
-
-/**
- * Trigger download of the markdown file
- */
-export function downloadAnnotations(
-  document: DocumentMeta,
-  highlights: Highlight[]
-): void {
-  const content = generateAnnotationsMarkdown(document, highlights);
-  const filename = sanitizeFilename(document.title) + '_annotations.md';
-
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-
-  document.body.appendChild(a);
-  a.click();
-
-  // Cleanup
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-// Helper functions
-
-function formatDate(date: Date): string {
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
-}
-
-function formatColorLabel(color: string): string {
-  return color.charAt(0).toUpperCase() + color.slice(1);
-}
-
-function escapeMarkdown(text: string): string {
-  // Escape special markdown characters in the text
-  return text
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/\*/g, '\\*')
-    .replace(/_/g, '\\_')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/\n/g, ' '); // Replace newlines with spaces in quoted text
-}
-
-function sanitizeFilename(title: string): string {
-  return title
-    .replace(/[<>:"/\\|?*]/g, '') // Remove invalid filename characters
-    .replace(/\s+/g, '_') // Replace spaces with underscores
-    .slice(0, 100); // Limit length
-}
-```
-
-### Alternative Export Formats (Optional Enhancement)
-
-```typescript
-/**
- * Generate JSON export for programmatic use
- */
-export function generateAnnotationsJSON(
-  document: DocumentMeta,
-  highlights: Highlight[]
-): string {
-  const data = {
-    document: {
-      id: document.id,
-      title: document.title,
-      pageCount: document.pageCount,
-    },
-    exportedAt: new Date().toISOString(),
-    highlights: highlights.map(h => ({
-      page: h.page,
-      color: h.color,
-      text: h.text,
-      note: h.note,
-      createdAt: new Date(h.createdAt).toISOString(),
-    })),
-  };
-
-  return JSON.stringify(data, null, 2);
-}
-
-/**
- * Generate plain text export
- */
-export function generateAnnotationsText(
-  document: DocumentMeta,
-  highlights: Highlight[]
-): string {
-  const lines: string[] = [];
-
-  lines.push(document.title);
-  lines.push('='.repeat(document.title.length));
-  lines.push('');
-  lines.push(`Exported: ${formatDate(new Date())}`);
-  lines.push('');
-
-  // Group by page
-  const byPage = highlights.reduce((acc, h) => {
-    if (!acc[h.page]) acc[h.page] = [];
-    acc[h.page].push(h);
-    return acc;
-  }, {} as Record<number, Highlight[]>);
-
-  const pages = Object.keys(byPage).map(Number).sort((a, b) => a - b);
-
-  for (const page of pages) {
-    lines.push(`Page ${page}`);
-    lines.push('-'.repeat(10));
-
-    for (const h of byPage[page]) {
-      lines.push(`"${h.text}"`);
-      if (h.note) {
-        lines.push(`  Note: ${h.note}`);
-      }
-      lines.push('');
-    }
-  }
-
-  return lines.join('\n');
-}
-```
-
-### Keyboard Shortcut
-
-Add to PDFViewer:
-
-```typescript
-// Handle Ctrl+Shift+E for export
-useEffect(() => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'e') {
-      e.preventDefault();
-      handleExport();
+  const handleBack = () => {
+    if (returnPath) {
+      router.push(returnPath);
+    } else {
+      router.push('/');
     }
   };
 
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
-}, [handleExport]);
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-zinc-950">
+        <div className="flex flex-col items-center gap-4">
+          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
+          <p className="text-zinc-400">Loading text...</p>
+        </div>
+      </div>
+    );
+  }
 
-const handleExport = useCallback(() => {
-  if (highlights.length === 0) {
-    // Could show a toast: "No highlights to export"
+  if (!text) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-zinc-950">
+        <p className="text-zinc-400 mb-4">No text to speed read.</p>
+        <button
+          onClick={handleBack}
+          className="px-4 py-2 bg-zinc-800 text-zinc-200 rounded-lg hover:bg-zinc-700 transition-colors"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-screen flex flex-col bg-zinc-950">
+      {/* Header with back button */}
+      <div className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800">
+        <button
+          onClick={handleBack}
+          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+        >
+          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Back to Reader</span>
+        </button>
+        {documentTitle && (
+          <span className="text-zinc-500 text-sm truncate">
+            Reading: {documentTitle}
+          </span>
+        )}
+      </div>
+
+      {/* Speed Reader */}
+      <div className="flex-1 overflow-hidden">
+        <SpritzReader initialText={text} />
+      </div>
+    </div>
+  );
+}
+
+export default function SpeedReadPage() {
+  return (
+    <Suspense fallback={
+      <div className="h-screen flex items-center justify-center bg-zinc-950">
+        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
+      </div>
+    }>
+      <SpeedReadContent />
+    </Suspense>
+  );
+}
+```
+
+### Update SpritzReader Component
+
+**File:** `src/components/SpritzReader.tsx` (update)
+
+Add support for initialText prop:
+
+```typescript
+interface SpritzReaderProps {
+  /** Initial text to speed read (optional) */
+  initialText?: string;
+}
+
+export function SpritzReader({ initialText }: SpritzReaderProps) {
+  const [text, setText] = useState(initialText || '');
+  // ... rest of existing implementation
+
+  // If initialText is provided, skip the input UI
+  useEffect(() => {
+    if (initialText) {
+      setText(initialText);
+      // Optionally auto-start
+    }
+  }, [initialText]);
+
+  // ... existing render
+}
+```
+
+### Navigation Helper Functions
+
+**File:** `src/lib/speed-read.ts`
+
+```typescript
+import { useRouter } from 'next/navigation';
+
+/**
+ * Navigate to speed reader with text
+ * Uses URL params for small text (<2000 chars), sessionStorage for larger
+ */
+export function navigateToSpeedRead(
+  router: ReturnType<typeof useRouter>,
+  text: string,
+  options?: {
+    returnPath?: string;
+    documentId?: string;
+  }
+) {
+  // Store return path
+  if (options?.returnPath) {
+    sessionStorage.setItem('glyph:speedread-return', options.returnPath);
+  }
+
+  // Small text: use URL params
+  if (text.length < 2000) {
+    router.push(`/speed-read?text=${encodeURIComponent(text)}`);
     return;
   }
 
-  if (documentMeta) {
-    downloadAnnotations(documentMeta, highlights);
+  // Large text: use sessionStorage
+  sessionStorage.setItem('glyph:speedread-text', text);
+  router.push('/speed-read?source=session');
+}
+
+/**
+ * Navigate to speed reader for full document
+ */
+export function navigateToDocumentSpeedRead(
+  router: ReturnType<typeof useRouter>,
+  documentId: string,
+  returnPath?: string
+) {
+  if (returnPath) {
+    sessionStorage.setItem('glyph:speedread-return', returnPath);
   }
-}, [highlights, documentMeta]);
+
+  router.push(`/speed-read?documentId=${documentId}`);
+}
 ```
 
-### Wire Up Export Button in Sidebar
+### Add Speed Read Button to Toolbar
 
-In PDFSidebar, the onExport callback should trigger the download:
+**File:** `src/components/pdf/PDFControls.tsx` (update)
 
 ```typescript
-// In the parent component (PDFViewer)
-<PDFSidebar
-  // ... other props
-  onExport={() => {
-    if (meta && highlights.length > 0) {
-      downloadAnnotations(meta, highlights);
-    }
-  }}
-/>
+interface PDFControlsProps {
+  // ... existing props
+  /** Callback for speed read entire document */
+  onSpeedReadDocument?: () => void;
+}
+
+// In the toolbar:
+<button
+  onClick={onSpeedReadDocument}
+  className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+  aria-label="Speed read entire document"
+  title="Speed read document"
+>
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+  </svg>
+</button>
 ```
 
-### Example Export Output
+### Speed Read from Popovers
 
-```markdown
-# Research Paper on Machine Learning
+In PDFHighlightPopover, the onSpeedRead callback should:
 
-Exported from Glyph on January 18, 2026
+```typescript
+// In selection popover
+const handleSpeedRead = () => {
+  navigateToSpeedRead(router, selection.text, {
+    returnPath: `/reader/${documentId}`,
+  });
+};
 
----
+// In highlight popover
+const handleSpeedRead = () => {
+  navigateToSpeedRead(router, highlight.text, {
+    returnPath: `/reader/${documentId}`,
+  });
+};
+```
 
-## Page 3
+### Speed Read from Library Card
 
-> "This is a highlighted passage that was marked as important." [Yellow]
+In DocumentCard context menu, add Speed Read option that navigates:
 
-**Note:** This is my annotation about the highlight.
+```typescript
+// In context menu
+<button
+  onClick={(e) => {
+    e.stopPropagation();
+    setShowContextMenu(false);
+    navigateToDocumentSpeedRead(router, document.id);
+  }}
+>
+  Speed Read
+</button>
+```
 
----
+### Save and Restore Scroll Position
 
-## Page 7
+When navigating to speed read from reader, save scroll position:
 
-> "Another highlighted section from the document." [Green]
+```typescript
+// Before navigating to speed read
+sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
+  documentId,
+  scrollTop: containerRef.current?.scrollTop || 0,
+}));
 
----
-
-## Page 12
-
-> "A third highlight with a longer note attached." [Blue]
-
-**Note:** This is a longer note that provides additional context and thoughts about the highlighted passage.
-
----
-
-*Exported 3 highlights from 3 pages*
+// On reader mount, restore if returning from speed read
+useEffect(() => {
+  const saved = sessionStorage.getItem('glyph:reader-scroll');
+  if (saved) {
+    const { documentId: savedId, scrollTop } = JSON.parse(saved);
+    if (savedId === documentId && containerRef.current) {
+      containerRef.current.scrollTop = scrollTop;
+    }
+    sessionStorage.removeItem('glyph:reader-scroll');
+  }
+}, [documentId]);
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/lib/export.ts` | Create | Export utilities for Markdown generation |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Add export keyboard shortcut |
-| `src/components/pdf/PDFSidebar.tsx` | Modify | Wire up export button |
+| `src/app/speed-read/page.tsx` | Modify | Update to accept text from multiple sources |
+| `src/components/SpritzReader.tsx` | Modify | Add initialText prop |
+| `src/lib/speed-read.ts` | Create | Navigation helper functions |
+| `src/components/pdf/PDFControls.tsx` | Modify | Add speed read button |
+| `src/components/pdf/PDFHighlightPopover.tsx` | Modify | Wire up speed read callback |
+| `src/components/library/DocumentCard.tsx` | Modify | Add speed read to context menu |
 
 ## Success Criteria
 
-1. [x] `src/lib/export.ts` exists
-2. [x] generateAnnotationsMarkdown produces valid Markdown
-3. [x] Highlights are grouped by page number
-4. [x] Each highlight shows quoted text and color label
-5. [x] Notes are included with **Note:** prefix
-6. [x] Summary shows count of highlights and pages
-7. [x] downloadAnnotations triggers file download
-8. [x] Filename is sanitized and includes document title
-9. [x] Special characters in text are escaped
-10. [x] Ctrl+Shift+E triggers export
-11. [x] Export button in sidebar triggers download
-12. [x] Export is disabled when no highlights exist
-13. [x] Export date is formatted correctly
-14. [x] Exported file has .md extension
-15. [x] `npm run type-check` passes
-16. [x] `npm run lint` passes
+1. [x] Speed read route accepts text via URL param
+2. [x] Speed read route accepts text via sessionStorage
+3. [x] Speed read route accepts documentId for full document
+4. [x] SpritzReader accepts initialText prop
+5. [x] `src/lib/speed-read.ts` exists with navigation helpers
+6. [x] Small text (<2000 chars) uses URL params
+7. [x] Large text uses sessionStorage
+8. [x] Speed read button in toolbar triggers document speed read
+9. [x] Speed read from selection popover works
+10. [x] Speed read from highlight popover works
+11. [x] Speed read from library card context menu works
+12. [x] Back button returns to reader
+13. [x] Scroll position is saved before navigating
+14. [x] Scroll position is restored when returning
+15. [x] Loading state shows while extracting document text
+16. [x] Error state shows when no text available
+17. [x] `npm run type-check` passes
+18. [x] `npm run lint` passes
 
 ---
 

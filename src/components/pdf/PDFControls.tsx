@@ -24,6 +24,8 @@ interface PDFControlsProps {
   isBookmarked?: boolean;
   /** Toggle bookmark on current page */
   onBookmarkToggle?: () => void;
+  /** Callback for speed read entire document */
+  onSpeedReadDocument?: () => void;
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
@@ -39,6 +41,7 @@ export function PDFControls({
   isSidebarOpen,
   isBookmarked,
   onBookmarkToggle,
+  onSpeedReadDocument,
 }: PDFControlsProps) {
   const zoomIn = () => {
     const newZoom = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
@@ -126,8 +129,20 @@ export function PDFControls({
         </button>
       </div>
 
-      {/* Right: Bookmark and Page indicator */}
+      {/* Right: Speed Read, Bookmark and Page indicator */}
       <div className="flex items-center gap-3">
+        {onSpeedReadDocument && (
+          <button
+            onClick={onSpeedReadDocument}
+            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+            aria-label="Speed read entire document"
+            title="Speed read document"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </button>
+        )}
         {onBookmarkToggle && (
           <button
             onClick={onBookmarkToggle}
