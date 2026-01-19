@@ -1,49 +1,49 @@
 # Progress Log
 
-Task started: 2026-01-18 20:33:23
+Task started: 2026-01-18 20:39:32
 
-### 2026-01-18 20:33:24
+### 2026-01-18 20:39:33
 **Iteration 1 started**
 
-### 2026-01-18
-**Task: Shared UI Components - COMPLETED**
+### 2026-01-18 20:40:xx
+**Global CSS Setup - COMPLETE**
 
-Created three reusable UI components in `src/components/ui/`:
+Completed all success criteria:
 
-1. **Button.tsx** - Reusable button component with:
-   - 4 variants: primary, secondary, ghost, danger
-   - 3 sizes: sm, md, lg
-   - Loading state with spinner animation
-   - Icon support (leftIcon, rightIcon)
-   - Disabled state styling
-   - Focus ring for accessibility
+1. **CSS variables for design system colors** - Added to `:root` including:
+   - Background colors (--bg-primary, --bg-secondary, --bg-tertiary)
+   - Text colors (--text-primary, --text-secondary, --text-muted)
+   - Accent colors (--accent-primary, --accent-hover)
+   - Highlight colors (yellow, green, blue, pink, orange)
+   - Border colors (--border-default, --border-subtle)
+   - Spacing variables (--space-1 through --space-8)
 
-2. **Popover.tsx** - Popover/tooltip component with:
-   - Positioning relative to anchor element (top, bottom, left, right)
-   - Auto-repositioning when near viewport edges
-   - Click outside to close
-   - Escape key to close
-   - Arrow pointer to anchor
-   - Fade + zoom animation on open
+2. **PDF text layer styles** - Implemented:
+   - `.pdf-page` - container with relative positioning and shadow
+   - `.pdf-canvas` - display block
+   - `.pdf-text-layer` - absolute positioning overlay
+   - `.pdf-text-layer span` - transparent text spans for selection
+   - `.pdf-highlight-layer` - overlay for highlights
 
-3. **Modal.tsx** - Modal dialog component with:
-   - Centered overlay with backdrop (black/50)
-   - 3 sizes: sm, md, lg
-   - Click backdrop to close
-   - Escape key to close
-   - Focus trap (tab stays within modal)
-   - Fade + zoom animation on open
-   - Scrollable content area
-   - Header with title and close button
-   - Footer area for action buttons
+3. **Text selection style** - Blue highlight (`rgba(59, 130, 246, 0.3)`) on `.pdf-text-layer span::selection`
 
-4. **index.ts** - Barrel export file for all components
+4. **Animation keyframes** - Defined:
+   - `highlight-pulse` - for search match pulsing
+   - `popover-in` - for popover appearance
+   - `modal-in` - for modal appearance
+   - `fade-in` - for general fade animations
+   - `spin` - for loading spinners
 
-All components:
-- Have `"use client"` directive
-- Have TypeScript interfaces
-- Pass `npm run lint`
-- Pass `npx tsc --noEmit`
+5. **Utility classes** - Created:
+   - `.transition-default` - 200ms ease-in-out transitions
+   - `.search-match-active` - applies pulse animation
+   - `.popover`, `.modal`, `.fade-in`, `.spinner` - animation classes
+   - `.no-select`, `.allow-select` - selection control
 
-### 2026-01-18 20:39:30
-**Iteration 1 ended** - TASK COMPLETE
+6. **Custom scrollbar styles** - Dark theme webkit scrollbar styling
+
+7. **Body/HTML base styles** - Set dark background and light text colors
+
+8. **Lint passes** - `npm run lint` succeeds
+
+9. **Build passes** - `npm run build` compiles CSS without errors

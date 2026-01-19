@@ -1,167 +1,253 @@
 ---
-task: Shared UI Components
+task: Global CSS Setup
 priority: 1
-depends_on: ["001-typescript-types"]
+depends_on: []
 ---
 
-# Task: Shared UI Components
+# Task: Global CSS Setup
 
-Create reusable UI components (Button, Popover, Modal) that will be used throughout the application.
+Set up global CSS variables, design system tokens, and PDF text layer styles in the application.
 
 ## Overview
 
-These foundational UI components provide consistent styling and behavior across the application. They follow the design system defined in the PRD (Section 8.1) and use Tailwind CSS for styling. All components should be client components with proper TypeScript typing.
+This task establishes the CSS foundation for the entire application. It includes design system CSS variables, the critical PDF text layer styles that enable text selection, and animation keyframes used throughout the app.
 
 ## Context
 
-- Components go in `src/components/ui/`
-- Use Tailwind CSS v4 for styling
-- Follow the color palette from the PRD design system
-- All components need `"use client"` directive
-- Components should be accessible (keyboard navigation, ARIA labels)
+- Styles go in `src/app/globals.css`
+- Using Tailwind CSS v4
+- PDF text layer CSS is critical for text selection functionality
+- Animations include popover entrance and search match pulsing
+- Design system from PRD Section 8.1
 
 ## Requirements
 
-### Button Component
+### CSS Variables (Design System)
 
-**File:** `src/components/ui/Button.tsx`
-
-```typescript
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
-  size?: 'sm' | 'md' | 'lg';
-  isLoading?: boolean;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
-}
-```
-
-**Variants:**
-- `primary`: Red background (#ef4444), white text
-- `secondary`: Zinc-800 background, zinc-100 text
-- `ghost`: Transparent background, zinc-400 text, hover shows background
-- `danger`: Red-600 background for destructive actions
-
-**Sizes:**
-- `sm`: h-8, px-3, text-sm
-- `md`: h-10, px-4, text-base
-- `lg`: h-12, px-6, text-lg
-
-**Features:**
-- Loading state with spinner
-- Disabled state styling
-- Icon support (left/right)
-- Focus ring for accessibility
-
-### Popover Component
-
-**File:** `src/components/ui/Popover.tsx`
-
-```typescript
-interface PopoverProps {
-  isOpen: boolean;
-  onClose: () => void;
-  anchorRect: DOMRect | null;
-  position?: 'top' | 'bottom' | 'left' | 'right';
-  offset?: number;
-  children: React.ReactNode;
-}
-```
-
-**Features:**
-- Positioned relative to anchor element
-- Auto-repositions if near viewport edge
-- Click outside to close
-- Escape key to close
-- Animation on open/close (fade + translate)
-- Arrow pointer to anchor
-
-**Styling:**
-- Background: bg-tertiary (#27272a)
-- Border: border-subtle (#3f3f46)
-- Shadow: elevated (lg)
-- Border radius: 8px
-- Padding: 8px
-
-### Modal Component
-
-**File:** `src/components/ui/Modal.tsx`
-
-```typescript
-interface ModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  title?: string;
-  size?: 'sm' | 'md' | 'lg';
-  children: React.ReactNode;
-  footer?: React.ReactNode;
-}
-```
-
-**Features:**
-- Centered overlay with backdrop
-- Click backdrop to close
-- Escape key to close
-- Focus trap (tab stays within modal)
-- Animation on open/close
-- Scrollable content area
-
-**Sizes:**
-- `sm`: max-w-sm
-- `md`: max-w-md
-- `lg`: max-w-lg
-
-**Styling:**
-- Backdrop: black/50 opacity
-- Background: bg-secondary (#18181b)
-- Border radius: 12px
-- Header with title and close button
-- Footer area for action buttons
-
-### Design System Colors (Reference)
+Add the following CSS variables to `:root`:
 
 ```css
-/* Background */
---bg-primary: #09090b;      /* zinc-950 */
---bg-secondary: #18181b;    /* zinc-900 */
---bg-tertiary: #27272a;     /* zinc-800 */
+:root {
+  /* Background */
+  --bg-primary: #09090b;
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
 
-/* Text */
---text-primary: #fafafa;    /* zinc-50 */
---text-secondary: #a1a1aa;  /* zinc-400 */
---text-muted: #52525b;      /* zinc-600 */
+  /* Text */
+  --text-primary: #fafafa;
+  --text-secondary: #a1a1aa;
+  --text-muted: #52525b;
 
-/* Accent */
---accent-primary: #ef4444;  /* red-500 */
---accent-hover: #f87171;    /* red-400 */
+  /* Accent */
+  --accent-primary: #ef4444;
+  --accent-hover: #f87171;
 
-/* Border */
---border-default: #27272a;  /* zinc-800 */
---border-subtle: #3f3f46;   /* zinc-700 */
+  /* Highlight Colors */
+  --highlight-yellow: #fde047;
+  --highlight-green: #86efac;
+  --highlight-blue: #93c5fd;
+  --highlight-pink: #f9a8d4;
+  --highlight-orange: #fdba74;
+
+  /* Border */
+  --border-default: #27272a;
+  --border-subtle: #3f3f46;
+
+  /* Spacing (reference) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}
+```
+
+### PDF Text Layer Styles
+
+**Critical for text selection in PDFs:**
+
+```css
+.pdf-page {
+  position: relative;
+  margin-bottom: 16px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.pdf-canvas {
+  display: block;
+}
+
+.pdf-text-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  opacity: 0.2;
+  line-height: 1;
+  pointer-events: auto;
+}
+
+.pdf-text-layer span {
+  position: absolute;
+  white-space: pre;
+  color: transparent;
+  pointer-events: auto;
+}
+
+.pdf-text-layer span::selection {
+  background: rgba(59, 130, 246, 0.3);
+}
+
+.pdf-highlight-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.pdf-highlight-layer > div {
+  pointer-events: auto;
+}
+```
+
+### Animation Keyframes
+
+```css
+/* Transition defaults */
+.transition-default {
+  transition: all 200ms ease-in-out;
+}
+
+/* Highlight pulse on search navigation */
+@keyframes highlight-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.search-match-active {
+  animation: highlight-pulse 1s ease-in-out 2;
+}
+
+/* Popover appearance */
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.popover {
+  animation: popover-in 150ms ease-out;
+}
+
+/* Modal appearance */
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.modal {
+  animation: modal-in 200ms ease-out;
+}
+
+/* Fade in */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fade-in 200ms ease-out;
+}
+
+/* Spinner for loading states */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spin 1s linear infinite;
+}
+```
+
+### Scrollbar Styling
+
+```css
+/* Custom scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+```
+
+### Body/HTML Base Styles
+
+```css
+html, body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Prevent text selection on UI elements */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Allow text selection (for PDF text layer) */
+.allow-select {
+  user-select: text;
+  -webkit-user-select: text;
+}
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/components/ui/Button.tsx` | Create | Reusable button component |
-| `src/components/ui/Popover.tsx` | Create | Popover/tooltip component |
-| `src/components/ui/Modal.tsx` | Create | Modal dialog component |
-| `src/components/ui/index.ts` | Create | Barrel export file |
+| `src/app/globals.css` | Modify | Add CSS variables, text layer styles, animations |
 
 ## Success Criteria
 
-1. [x] Button component exists with all variants (primary, secondary, ghost, danger)
-2. [x] Button component has all sizes (sm, md, lg)
-3. [x] Button supports loading state with spinner
-4. [x] Popover component positions correctly relative to anchor
-5. [x] Popover closes on click outside and Escape key
-6. [x] Modal component renders centered with backdrop
-7. [x] Modal closes on backdrop click and Escape key
-8. [x] All components have TypeScript interfaces
-9. [x] All components have `"use client"` directive
-10. [x] `npm run type-check` passes
-11. [x] `npm run lint` passes
+1. [x] CSS variables for design system colors are defined in `:root`
+2. [x] PDF text layer styles are implemented (`.pdf-page`, `.pdf-text-layer`, etc.)
+3. [x] Text layer span selection style shows blue highlight
+4. [x] Animation keyframes are defined (highlight-pulse, popover-in, modal-in, fade-in, spin)
+5. [x] Utility classes are defined (transition-default, search-match-active, etc.)
+6. [x] Custom scrollbar styles are implemented
+7. [x] Body/HTML base styles set background and text colors
+8. [x] `npm run lint` passes
+9. [x] `npm run dev` runs without CSS errors
 
 ---
 
