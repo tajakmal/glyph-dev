@@ -2,9 +2,10 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
-import type { SearchMatch } from '@/types';
+import type { SearchMatch, Highlight } from '@/types';
 import { renderPage } from '@/lib/pdf-utils';
 import { PDFTextLayer, TextSelection } from './PDFTextLayer';
+import { PDFHighlightLayer } from './PDFHighlightLayer';
 
 interface PDFPageProps {
   /** PDF page proxy */
@@ -27,6 +28,12 @@ interface PDFPageProps {
   isBookmarked?: boolean;
   /** Toggle bookmark callback */
   onBookmarkToggle?: () => void;
+  /** Highlights for this page */
+  highlights?: Highlight[];
+  /** Callback when highlight is clicked */
+  onHighlightClick?: (highlight: Highlight) => void;
+  /** Currently selected highlight ID */
+  selectedHighlightId?: string;
 }
 
 export function PDFPage({
@@ -40,6 +47,9 @@ export function PDFPage({
   allMatches = [],
   isBookmarked,
   onBookmarkToggle,
+  highlights,
+  onHighlightClick,
+  selectedHighlightId,
 }: PDFPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -71,14 +81,23 @@ export function PDFPage({
     >
       <canvas ref={canvasRef} className="pdf-canvas" />
       {dimensions.width > 0 && (
-        <PDFTextLayer
-          page={page}
-          zoom={zoom}
-          onTextSelect={onTextSelect}
-          searchMatches={searchMatches}
-          activeMatchIndex={activeMatchIndex}
-          allMatches={allMatches}
-        />
+        <>
+          <PDFTextLayer
+            page={page}
+            zoom={zoom}
+            onTextSelect={onTextSelect}
+            searchMatches={searchMatches}
+            activeMatchIndex={activeMatchIndex}
+            allMatches={allMatches}
+          />
+          <PDFHighlightLayer
+            highlights={highlights || []}
+            pageWidth={dimensions.width}
+            pageHeight={dimensions.height}
+            onHighlightClick={onHighlightClick}
+            selectedHighlightId={selectedHighlightId}
+          />
+        </>
       )}
       {/* Bookmark indicator */}
       {isBookmarked && (
@@ -95,7 +114,6 @@ export function PDFPage({
           </svg>
         </div>
       )}
-      {/* Highlight layer will be added in later task */}
     </div>
   );
 }

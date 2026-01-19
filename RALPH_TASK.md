@@ -1,501 +1,439 @@
 ---
-task: Sidebar and Table of Contents
-priority: 3
-depends_on: ["004-pdf-js-setup", "005-pdf-viewer-component", "012-bookmarks-system"]
+task: Highlights System
+priority: 4
+depends_on: ["001-typescript-types", "006-indexeddb-storage", "009-text-layer-selection"]
 ---
 
-# Task: Sidebar and Table of Contents
+# Task: Highlights System
 
-Implement the sidebar component with tabs for Table of Contents, Bookmarks, and Highlights.
+Implement the highlight system for creating, storing, and rendering text highlights.
 
 ## Overview
 
-This task creates the sidebar that provides navigation and annotation overview. The sidebar has three tabs: Contents (table of contents from PDF), Bookmarks, and Highlights. It can be toggled open/closed and remembers its state. On mobile, it overlays the content; on desktop, it pushes the content.
+This task creates the core highlighting functionality. Users can select text and create colored highlights that persist across sessions. Highlights are stored with normalized coordinates so they render correctly at any zoom level. The highlight layer renders over the text layer.
 
 ## Context
 
-- Sidebar layout from PRD Section 4.6
-- TOC extraction from PDF outline metadata
-- Uses usePDFOutline hook
-- Bookmarks list from Task 012
-- Highlights list placeholder (implemented in Task 014)
-- S key toggles sidebar
+- Highlight interface defined in Task 001
+- Storage functions from Task 006
+- Text selection from Task 009
+- Five colors: yellow, green, blue, pink, orange
+- Coordinates are normalized (0-1 range) for zoom independence
 
 ## Requirements
 
-### usePDFOutline Hook
+### useHighlights Hook
 
-**File:** `src/hooks/usePDFOutline.ts`
+**File:** `src/hooks/useHighlights.ts`
 
 ```typescript
 'use client';
 
-import { useState, useEffect } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import type { PDFOutlineItem } from '@/types';
-import { getPDFOutline } from '@/lib/pdf-utils';
+import { useState, useEffect, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import type { Highlight, HighlightColor, HighlightRect } from '@/types';
+import { VALIDATION } from '@/types';
+import {
+  getHighlights,
+  setHighlights,
+  getHighlightsForDocument,
+} from '@/lib/storage';
 
-interface UsePDFOutlineOptions {
-  pdf: PDFDocumentProxy | null;
+interface UseHighlightsOptions {
+  documentId: string;
 }
 
-interface UsePDFOutlineReturn {
-  /** Outline items (table of contents) */
-  outline: PDFOutlineItem[];
-  /** Whether the PDF has an outline */
-  hasOutline: boolean;
-  /** Loading state */
-  isLoading: boolean;
+interface UseHighlightsReturn {
+  /** Highlights for this document */
+  highlights: Highlight[];
+  /** Highlights grouped by page */
+  highlightsByPage: Map<number, Highlight[]>;
+  /** Add a highlight */
+  addHighlight: (highlight: Omit<Highlight, 'id' | 'createdAt'>) => Highlight;
+  /** Remove a highlight */
+  removeHighlight: (id: string) => void;
+  /** Update highlight note */
+  updateHighlightNote: (id: string, note: string) => void;
+  /** Update highlight color */
+  updateHighlightColor: (id: string, color: HighlightColor) => void;
+  /** Get highlights for a specific page */
+  getHighlightsForPage: (page: number) => Highlight[];
 }
 
-export function usePDFOutline({ pdf }: UsePDFOutlineOptions): UsePDFOutlineReturn {
-  const [outline, setOutline] = useState<PDFOutlineItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+export function useHighlights({ documentId }: UseHighlightsOptions): UseHighlightsReturn {
+  const [highlights, setLocalHighlights] = useState<Highlight[]>([]);
 
+  // Load highlights on mount
   useEffect(() => {
-    if (!pdf) {
-      setOutline([]);
-      return;
-    }
+    const docs = getHighlightsForDocument(documentId);
+    setLocalHighlights(docs);
+  }, [documentId]);
 
-    const loadOutline = async () => {
-      setIsLoading(true);
-      try {
-        const result = await getPDFOutline(pdf);
-        setOutline(result as PDFOutlineItem[]);
-      } catch (error) {
-        console.error('Failed to load outline:', error);
-        setOutline([]);
-      } finally {
-        setIsLoading(false);
-      }
+  // Compute highlights by page
+  const highlightsByPage = new Map<number, Highlight[]>();
+  highlights.forEach(h => {
+    if (!highlightsByPage.has(h.page)) {
+      highlightsByPage.set(h.page, []);
+    }
+    highlightsByPage.get(h.page)!.push(h);
+  });
+
+  const addHighlight = useCallback((
+    data: Omit<Highlight, 'id' | 'createdAt'>
+  ): Highlight => {
+    const highlight: Highlight = {
+      ...data,
+      id: uuidv4(),
+      createdAt: Date.now(),
     };
 
-    loadOutline();
-  }, [pdf]);
+    // Update localStorage
+    const allHighlights = getHighlights();
+    allHighlights.push(highlight);
+    setHighlights(allHighlights);
+
+    // Update local state
+    setLocalHighlights(prev => [...prev, highlight]);
+
+    return highlight;
+  }, []);
+
+  const removeHighlight = useCallback((id: string) => {
+    // Update localStorage
+    const allHighlights = getHighlights();
+    setHighlights(allHighlights.filter(h => h.id !== id));
+
+    // Update local state
+    setLocalHighlights(prev => prev.filter(h => h.id !== id));
+  }, []);
+
+  const updateHighlightNote = useCallback((id: string, note: string) => {
+    // Validate note length
+    const safeNote = note.slice(0, VALIDATION.MAX_NOTE_LENGTH);
+
+    // Update localStorage
+    const allHighlights = getHighlights();
+    const index = allHighlights.findIndex(h => h.id === id);
+    if (index !== -1) {
+      allHighlights[index].note = safeNote;
+      allHighlights[index].updatedAt = Date.now();
+      setHighlights(allHighlights);
+    }
+
+    // Update local state
+    setLocalHighlights(prev =>
+      prev.map(h => (h.id === id ? { ...h, note: safeNote, updatedAt: Date.now() } : h))
+    );
+  }, []);
+
+  const updateHighlightColor = useCallback((id: string, color: HighlightColor) => {
+    // Update localStorage
+    const allHighlights = getHighlights();
+    const index = allHighlights.findIndex(h => h.id === id);
+    if (index !== -1) {
+      allHighlights[index].color = color;
+      allHighlights[index].updatedAt = Date.now();
+      setHighlights(allHighlights);
+    }
+
+    // Update local state
+    setLocalHighlights(prev =>
+      prev.map(h => (h.id === id ? { ...h, color, updatedAt: Date.now() } : h))
+    );
+  }, []);
+
+  const getHighlightsForPage = useCallback((page: number): Highlight[] => {
+    return highlights.filter(h => h.page === page);
+  }, [highlights]);
 
   return {
-    outline,
-    hasOutline: outline.length > 0,
-    isLoading,
+    highlights,
+    highlightsByPage,
+    addHighlight,
+    removeHighlight,
+    updateHighlightNote,
+    updateHighlightColor,
+    getHighlightsForPage,
   };
 }
 ```
 
-### PDFOutline Component
+### Coordinate Normalization Utilities
 
-**File:** `src/components/pdf/PDFOutline.tsx`
+**File:** `src/lib/highlight-utils.ts`
 
 ```typescript
-'use client';
+import type { HighlightRect } from '@/types';
 
-import React, { useState } from 'react';
-import type { PDFOutlineItem } from '@/types';
-
-interface PDFOutlineProps {
-  outline: PDFOutlineItem[];
-  onItemClick: (page: number) => void;
-  isLoading?: boolean;
+/**
+ * Normalize selection rects to 0-1 range based on page dimensions
+ */
+export function normalizeRects(
+  rects: DOMRect[],
+  pageWidth: number,
+  pageHeight: number
+): HighlightRect[] {
+  return rects.map(rect => ({
+    x: rect.x / pageWidth,
+    y: rect.y / pageHeight,
+    width: rect.width / pageWidth,
+    height: rect.height / pageHeight,
+  }));
 }
 
-interface OutlineItemProps {
-  item: PDFOutlineItem;
-  depth: number;
-  onItemClick: (page: number) => void;
+/**
+ * Denormalize rects back to pixel values for rendering
+ */
+export function denormalizeRects(
+  rects: HighlightRect[],
+  pageWidth: number,
+  pageHeight: number
+): Array<{ x: number; y: number; width: number; height: number }> {
+  return rects.map(rect => ({
+    x: rect.x * pageWidth,
+    y: rect.y * pageHeight,
+    width: rect.width * pageWidth,
+    height: rect.height * pageHeight,
+  }));
 }
 
-function OutlineItem({ item, depth, onItemClick }: OutlineItemProps) {
-  const [isExpanded, setIsExpanded] = useState(depth < 2);
-  const hasChildren = item.items && item.items.length > 0;
+/**
+ * Merge overlapping or adjacent rects for cleaner rendering
+ */
+export function mergeRects(rects: HighlightRect[]): HighlightRect[] {
+  if (rects.length <= 1) return rects;
 
-  return (
-    <div>
-      <div
-        className={`
-          flex items-center gap-2 py-1.5 px-3 cursor-pointer
-          hover:bg-zinc-800/50 text-sm transition-colors
-          ${depth === 0 ? 'font-medium text-zinc-200' : 'text-zinc-400'}
-        `}
-        style={{ paddingLeft: `${12 + depth * 16}px` }}
-        onClick={() => onItemClick(item.page)}
-      >
-        {hasChildren && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsExpanded(!isExpanded);
-            }}
-            className="p-0.5 hover:bg-zinc-700 rounded"
-          >
-            <svg
-              className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-            </svg>
-          </button>
-        )}
-        <span className="flex-1 truncate">{item.title}</span>
-        <span className="text-zinc-600 text-xs">{item.page}</span>
-      </div>
+  // Sort by y position, then x
+  const sorted = [...rects].sort((a, b) => {
+    if (Math.abs(a.y - b.y) < 0.01) {
+      return a.x - b.x;
+    }
+    return a.y - b.y;
+  });
 
-      {hasChildren && isExpanded && (
-        <div>
-          {item.items.map((child, index) => (
-            <OutlineItem
-              key={index}
-              item={child as PDFOutlineItem}
-              depth={depth + 1}
-              onItemClick={onItemClick}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+  const merged: HighlightRect[] = [];
+  let current = sorted[0];
 
-export function PDFOutline({ outline, onItemClick, isLoading }: PDFOutlineProps) {
-  if (isLoading) {
-    return (
-      <div className="p-4 text-zinc-500 text-sm text-center">
-        Loading table of contents...
-      </div>
-    );
+  for (let i = 1; i < sorted.length; i++) {
+    const next = sorted[i];
+
+    // Check if on same line and adjacent/overlapping
+    const sameLine = Math.abs(current.y - next.y) < 0.01;
+    const overlapping = current.x + current.width >= next.x - 0.01;
+
+    if (sameLine && overlapping) {
+      // Merge
+      const newWidth = Math.max(
+        current.x + current.width,
+        next.x + next.width
+      ) - current.x;
+      current = { ...current, width: newWidth };
+    } else {
+      merged.push(current);
+      current = next;
+    }
   }
+  merged.push(current);
 
-  if (outline.length === 0) {
-    return (
-      <div className="p-4 text-zinc-500 text-sm text-center">
-        No table of contents available for this document.
-      </div>
-    );
-  }
-
-  return (
-    <div className="py-2">
-      {outline.map((item, index) => (
-        <OutlineItem
-          key={index}
-          item={item}
-          depth={0}
-          onItemClick={onItemClick}
-        />
-      ))}
-    </div>
-  );
+  return merged;
 }
 ```
 
-### PDFSidebar Component
+### PDFHighlightLayer Component
 
-**File:** `src/components/pdf/PDFSidebar.tsx`
+**File:** `src/components/pdf/PDFHighlightLayer.tsx`
 
 ```typescript
 'use client';
 
-import React, { useState } from 'react';
-import type { PDFOutlineItem, Bookmark, Highlight } from '@/types';
-import { PDFOutline } from './PDFOutline';
-import { PDFBookmarks } from './PDFBookmarks';
+import React from 'react';
+import type { Highlight } from '@/types';
+import { HIGHLIGHT_COLORS } from '@/types';
+import { denormalizeRects } from '@/lib/highlight-utils';
 
-interface PDFSidebarProps {
-  /** Is sidebar open */
-  isOpen: boolean;
-  /** Toggle sidebar */
-  onToggle: () => void;
-  /** Document title */
-  documentTitle: string;
-  /** Outline items */
-  outline: PDFOutlineItem[];
-  /** Is outline loading */
-  isOutlineLoading?: boolean;
-  /** Bookmarks */
-  bookmarks: Bookmark[];
-  /** Highlights */
+interface PDFHighlightLayerProps {
+  /** Highlights for this page */
   highlights: Highlight[];
-  /** Callback when outline item clicked */
-  onOutlineClick: (page: number) => void;
-  /** Callback when bookmark clicked */
-  onBookmarkClick: (bookmark: Bookmark) => void;
-  /** Callback when bookmark deleted */
-  onBookmarkDelete: (id: string) => void;
-  /** Callback when bookmark renamed */
-  onBookmarkRename: (id: string, label: string) => void;
-  /** Callback when highlight clicked */
-  onHighlightClick: (highlight: Highlight) => void;
-  /** Callback for export */
-  onExport: () => void;
+  /** Page width in pixels */
+  pageWidth: number;
+  /** Page height in pixels */
+  pageHeight: number;
+  /** Callback when highlight is clicked */
+  onHighlightClick?: (highlight: Highlight) => void;
+  /** Currently selected highlight ID */
+  selectedHighlightId?: string;
 }
 
-type TabType = 'contents' | 'bookmarks' | 'highlights';
-
-export function PDFSidebar({
-  isOpen,
-  onToggle,
-  documentTitle,
-  outline,
-  isOutlineLoading,
-  bookmarks,
+export function PDFHighlightLayer({
   highlights,
-  onOutlineClick,
-  onBookmarkClick,
-  onBookmarkDelete,
-  onBookmarkRename,
+  pageWidth,
+  pageHeight,
   onHighlightClick,
-  onExport,
-}: PDFSidebarProps) {
-  const [activeTab, setActiveTab] = useState<TabType>('contents');
-
-  if (!isOpen) {
-    return null;
-  }
-
+  selectedHighlightId,
+}: PDFHighlightLayerProps) {
   return (
-    <div className="w-[280px] h-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
-        <h2 className="text-zinc-200 text-sm font-medium truncate flex-1" title={documentTitle}>
-          {documentTitle}
-        </h2>
-        <button
-          onClick={onToggle}
-          className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded"
-          aria-label="Close sidebar"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-          </svg>
-        </button>
-      </div>
+    <div className="pdf-highlight-layer">
+      {highlights.map((highlight) => {
+        const pixelRects = denormalizeRects(highlight.rects, pageWidth, pageHeight);
+        const isSelected = highlight.id === selectedHighlightId;
+        const colorInfo = HIGHLIGHT_COLORS[highlight.color];
 
-      {/* Tabs */}
-      <div className="flex border-b border-zinc-800">
-        <button
-          onClick={() => setActiveTab('contents')}
-          className={`flex-1 py-2 text-sm transition-colors ${
-            activeTab === 'contents'
-              ? 'text-red-500 border-b-2 border-red-500'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Contents
-        </button>
-        <button
-          onClick={() => setActiveTab('bookmarks')}
-          className={`flex-1 py-2 text-sm transition-colors ${
-            activeTab === 'bookmarks'
-              ? 'text-red-500 border-b-2 border-red-500'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Bookmarks
-          {bookmarks.length > 0 && (
-            <span className="ml-1 text-xs text-zinc-500">({bookmarks.length})</span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('highlights')}
-          className={`flex-1 py-2 text-sm transition-colors ${
-            activeTab === 'highlights'
-              ? 'text-red-500 border-b-2 border-red-500'
-              : 'text-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Notes
-          {highlights.length > 0 && (
-            <span className="ml-1 text-xs text-zinc-500">({highlights.length})</span>
-          )}
-        </button>
-      </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {activeTab === 'contents' && (
-          <PDFOutline
-            outline={outline}
-            onItemClick={onOutlineClick}
-            isLoading={isOutlineLoading}
-          />
-        )}
-        {activeTab === 'bookmarks' && (
-          <PDFBookmarks
-            bookmarks={bookmarks}
-            onBookmarkClick={onBookmarkClick}
-            onBookmarkDelete={onBookmarkDelete}
-            onBookmarkRename={onBookmarkRename}
-          />
-        )}
-        {activeTab === 'highlights' && (
-          <PDFHighlightsList
-            highlights={highlights}
-            onHighlightClick={onHighlightClick}
-          />
-        )}
-      </div>
-
-      {/* Export Button */}
-      <div className="p-3 border-t border-zinc-800">
-        <button
-          onClick={onExport}
-          disabled={highlights.length === 0}
-          className="w-full py-2 px-4 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-          Export Annotations
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// Placeholder for highlights list (implemented in Task 014)
-function PDFHighlightsList({
-  highlights,
-  onHighlightClick,
-}: {
-  highlights: Highlight[];
-  onHighlightClick: (highlight: Highlight) => void;
-}) {
-  if (highlights.length === 0) {
-    return (
-      <div className="p-4 text-zinc-500 text-sm text-center">
-        No highlights yet.
-        <br />
-        Select text to create a highlight.
-      </div>
-    );
-  }
-
-  // Group by page
-  const byPage = highlights.reduce((acc, h) => {
-    if (!acc[h.page]) acc[h.page] = [];
-    acc[h.page].push(h);
-    return acc;
-  }, {} as Record<number, Highlight[]>);
-
-  return (
-    <div className="py-2">
-      {Object.entries(byPage)
-        .sort(([a], [b]) => parseInt(a) - parseInt(b))
-        .map(([page, pageHighlights]) => (
-          <div key={page}>
-            <div className="px-3 py-1 text-xs text-zinc-500 font-medium bg-zinc-800/50">
-              Page {page}
-            </div>
-            {pageHighlights.map((highlight) => (
+        return (
+          <div key={highlight.id} className="highlight-group">
+            {pixelRects.map((rect, index) => (
               <div
-                key={highlight.id}
-                className="px-3 py-2 hover:bg-zinc-800/50 cursor-pointer"
-                onClick={() => onHighlightClick(highlight)}
-              >
-                <div className="flex items-start gap-2">
-                  <div
-                    className="w-3 h-3 rounded-full flex-shrink-0 mt-0.5"
-                    style={{ backgroundColor: getHighlightColor(highlight.color) }}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-zinc-300 text-sm line-clamp-2">
-                      "{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}"
-                    </p>
-                    {highlight.note && (
-                      <p className="text-zinc-500 text-xs mt-1 line-clamp-1">
-                        Note: {highlight.note}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
+                key={index}
+                className={`
+                  absolute cursor-pointer transition-all
+                  ${isSelected ? 'ring-2 ring-offset-1 ring-zinc-400' : ''}
+                  hover:brightness-90
+                `}
+                style={{
+                  left: `${rect.x}px`,
+                  top: `${rect.y}px`,
+                  width: `${rect.width}px`,
+                  height: `${rect.height}px`,
+                  backgroundColor: colorInfo.bg,
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onHighlightClick?.(highlight);
+                }}
+                data-highlight-id={highlight.id}
+              />
             ))}
+            {/* Note indicator */}
+            {highlight.note && pixelRects.length > 0 && (
+              <div
+                className="absolute w-3 h-3 bg-zinc-700 rounded-full flex items-center justify-center cursor-pointer hover:bg-zinc-600"
+                style={{
+                  left: `${pixelRects[pixelRects.length - 1].x + pixelRects[pixelRects.length - 1].width + 4}px`,
+                  top: `${pixelRects[pixelRects.length - 1].y}px`,
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onHighlightClick?.(highlight);
+                }}
+                title="View note"
+              >
+                <svg className="w-2 h-2 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z" />
+                </svg>
+              </div>
+            )}
           </div>
-        ))}
+        );
+      })}
     </div>
   );
 }
+```
 
-function getHighlightColor(color: string): string {
-  const colors: Record<string, string> = {
-    yellow: '#fde047',
-    green: '#86efac',
-    blue: '#93c5fd',
-    pink: '#f9a8d4',
-    orange: '#fdba74',
-  };
-  return colors[color] || colors.yellow;
+### Integrate Highlight Layer into PDFPage
+
+Update PDFPage to include the highlight layer:
+
+```typescript
+// In PDFPage.tsx
+
+interface PDFPageProps {
+  page: PDFPageProxy;
+  pageNumber: number;
+  zoom: number;
+  onRenderComplete?: () => void;
+  onTextSelect?: (selection: TextSelection) => void;
+  /** Highlights for this page */
+  highlights?: Highlight[];
+  /** Callback when highlight is clicked */
+  onHighlightClick?: (highlight: Highlight) => void;
+  /** Currently selected highlight ID */
+  selectedHighlightId?: string;
+  /** Whether this page is bookmarked */
+  isBookmarked?: boolean;
+  onBookmarkToggle?: () => void;
 }
+
+// In the render:
+return (
+  <div className="pdf-page" ...>
+    <canvas ref={canvasRef} className="pdf-canvas" />
+    {dimensions.width > 0 && (
+      <>
+        <PDFTextLayer
+          page={page}
+          zoom={zoom}
+          onTextSelect={onTextSelect}
+        />
+        <PDFHighlightLayer
+          highlights={highlights || []}
+          pageWidth={dimensions.width}
+          pageHeight={dimensions.height}
+          onHighlightClick={onHighlightClick}
+          selectedHighlightId={selectedHighlightId}
+        />
+      </>
+    )}
+    {isBookmarked && (/* bookmark indicator */)}
+  </div>
+);
 ```
 
-### Sidebar Toggle Keyboard Shortcut
+### Create Highlight from Selection
 
-Add to PDFViewer:
+Add helper function to create highlight from text selection:
 
 ```typescript
-// Handle S key to toggle sidebar
-useEffect(() => {
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-      return;
-    }
+// In PDFViewer.tsx or a separate utility
 
-    if (e.key === 's' || e.key === 'S') {
-      setSidebarOpen(prev => !prev);
-    }
+function createHighlightFromSelection(
+  selection: TextSelection,
+  documentId: string,
+  color: HighlightColor,
+  pageWidth: number,
+  pageHeight: number
+): Omit<Highlight, 'id' | 'createdAt'> {
+  // Get page-relative rects
+  const normalizedRects = normalizeRects(selection.rects, pageWidth, pageHeight);
+
+  return {
+    documentId,
+    page: selection.page,
+    color,
+    text: selection.text,
+    rects: normalizedRects,
   };
-
-  window.addEventListener('keydown', handleKeyDown);
-  return () => window.removeEventListener('keydown', handleKeyDown);
-}, []);
-```
-
-### Persist Sidebar State
-
-Use localStorage to remember sidebar state:
-
-```typescript
-// In PDFViewer
-const [sidebarOpen, setSidebarOpen] = useState(() => {
-  if (typeof window === 'undefined') return true;
-  const stored = localStorage.getItem('glyph:sidebar-open');
-  return stored !== null ? JSON.parse(stored) : true;
-});
-
-useEffect(() => {
-  localStorage.setItem('glyph:sidebar-open', JSON.stringify(sidebarOpen));
-}, [sidebarOpen]);
+}
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/hooks/usePDFOutline.ts` | Create | TOC extraction hook |
-| `src/components/pdf/PDFOutline.tsx` | Create | TOC tree component |
-| `src/components/pdf/PDFSidebar.tsx` | Create | Sidebar container with tabs |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate sidebar |
+| `src/hooks/useHighlights.ts` | Create | Highlight CRUD hook |
+| `src/lib/highlight-utils.ts` | Create | Coordinate normalization utilities |
+| `src/components/pdf/PDFHighlightLayer.tsx` | Create | Highlight rendering layer |
+| `src/components/pdf/PDFPage.tsx` | Modify | Integrate highlight layer |
 
 ## Success Criteria
 
-1. [x] `src/hooks/usePDFOutline.ts` exists
-2. [x] usePDFOutline extracts outline from PDF
-3. [x] usePDFOutline handles PDFs without outlines
-4. [x] `src/components/pdf/PDFOutline.tsx` exists
-5. [x] PDFOutline renders collapsible tree structure
-6. [x] Clicking outline item navigates to page
-7. [x] Empty state shows when no TOC available
-8. [x] `src/components/pdf/PDFSidebar.tsx` exists
-9. [x] Sidebar has three tabs (Contents, Bookmarks, Notes)
-10. [x] Tab badges show counts
-11. [x] Sidebar shows document title with truncation
-12. [x] Export button is disabled when no highlights
-13. [x] S key toggles sidebar
-14. [x] Sidebar state persists in localStorage
-15. [x] Sidebar has collapse button
-16. [x] `npm run type-check` passes
-17. [x] `npm run lint` passes
+1. [ ] `src/hooks/useHighlights.ts` exists
+2. [ ] useHighlights loads highlights from localStorage
+3. [ ] addHighlight creates highlight with UUID and timestamp
+4. [ ] removeHighlight removes from localStorage and state
+5. [ ] updateHighlightNote allows note editing (max 2000 chars)
+6. [ ] updateHighlightColor changes highlight color
+7. [ ] highlightsByPage groups highlights correctly
+8. [ ] `src/lib/highlight-utils.ts` exists
+9. [ ] normalizeRects converts to 0-1 range
+10. [ ] denormalizeRects converts back to pixels
+11. [ ] `src/components/pdf/PDFHighlightLayer.tsx` exists
+12. [ ] Highlights render with correct colors
+13. [ ] Highlights are clickable
+14. [ ] Note indicator shows when highlight has note
+15. [ ] Highlights render correctly at different zoom levels
+16. [ ] PDFPage integrates highlight layer
+17. [ ] `npm run type-check` passes
+18. [ ] `npm run lint` passes
 
 ---
 
