@@ -6,6 +6,7 @@ import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
 import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
 import { usePinchZoom } from '@/hooks/usePinchZoom';
+import { useBookmarks } from '@/hooks/useBookmarks';
 import { PDFPage } from './PDFPage';
 import { PDFControls } from './PDFControls';
 import { PDFSearch } from './PDFSearch';
@@ -60,6 +61,12 @@ export function PDFViewer({
     clearSearch,
     getMatchesForPage,
   } = usePDFSearch({ pdf });
+
+  // Bookmarks
+  const {
+    isPageBookmarked,
+    toggleBookmark,
+  } = useBookmarks({ documentId });
 
   // Preserve scroll position when zooming
   const handleZoomChange = useCallback((newZoom: number) => {
@@ -118,6 +125,23 @@ export function PDFViewer({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  // Handle B key to toggle bookmark on current page
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      if (e.key === 'b' || e.key === 'B') {
+        toggleBookmark(currentPage);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentPage, toggleBookmark]);
 
   // Close search handler
   const handleCloseSearch = useCallback(() => {
@@ -222,6 +246,8 @@ export function PDFViewer({
         title={title}
         onSidebarToggle={onSidebarToggle}
         isSidebarOpen={isSidebarOpen}
+        isBookmarked={isPageBookmarked(currentPage)}
+        onBookmarkToggle={() => toggleBookmark(currentPage)}
       />
       <div
         ref={containerRef}
@@ -251,6 +277,8 @@ export function PDFViewer({
               searchMatches={getMatchesForPage(index)}
               activeMatchIndex={currentMatchIndex}
               allMatches={searchMatches}
+              isBookmarked={isPageBookmarked(index + 1)}
+              onBookmarkToggle={() => toggleBookmark(index + 1)}
             />
           ))}
         </div>

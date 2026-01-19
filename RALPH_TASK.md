@@ -1,413 +1,387 @@
 ---
-task: PDF Search
+task: Bookmarks System
 priority: 3
-depends_on: ["004-pdf-js-setup", "005-pdf-viewer-component", "009-text-layer-selection"]
+depends_on: ["001-typescript-types", "006-indexeddb-storage", "005-pdf-viewer-component"]
 ---
 
-# Task: PDF Search
+# Task: Bookmarks System
 
-Implement full-text search within PDF documents with match highlighting and navigation.
+Implement the bookmark system for saving and navigating to specific pages within documents.
 
 ## Overview
 
-This task adds document search functionality. Users can search for text within the PDF using Ctrl+F or a search button. The search highlights all matches, shows a match counter, and allows navigation between matches. The active match is scrolled into view and has a pulsing animation.
+This task adds bookmarking functionality to the PDF reader. Users can bookmark pages using a toolbar button, keyboard shortcut (B), or context menu. Bookmarks are displayed in the sidebar and persisted in localStorage. Clicking a bookmark navigates to that page.
 
 ## Context
 
-- Search UI appears as a floating bar in the top-right
-- Search algorithm from PRD Section 4.3.2
-- Uses PDF.js text content API
-- Match highlighting uses CSS (defined in Task 003)
-- Search is case-insensitive
+- Bookmarks are stored in localStorage (defined in Task 006)
+- Bookmark interface defined in Task 001
+- Bookmark list appears in sidebar (Task 013)
+- This task focuses on the hook and bookmark indicator
 
 ## Requirements
 
-### usePDFSearch Hook
+### useBookmarks Hook
 
-**File:** `src/hooks/usePDFSearch.ts`
+**File:** `src/hooks/useBookmarks.ts`
 
 ```typescript
 'use client';
 
-import { useState, useCallback, useRef, useEffect } from 'react';
-import type { PDFDocumentProxy } from 'pdfjs-dist';
-import type { SearchMatch } from '@/types';
-import { getTextContent } from '@/lib/pdf-utils';
+import { useState, useEffect, useCallback } from 'react';
+import { v4 as uuidv4 } from 'uuid';
+import type { Bookmark } from '@/types';
+import { VALIDATION } from '@/types';
+import {
+  getBookmarks,
+  setBookmarks,
+  getBookmarksForDocument,
+} from '@/lib/storage';
 
-interface UsePDFSearchOptions {
-  pdf: PDFDocumentProxy | null;
+interface UseBookmarksOptions {
+  documentId: string;
 }
 
-interface UsePDFSearchReturn {
-  /** Current search query */
-  query: string;
-  /** Set search query (triggers search) */
-  setQuery: (query: string) => void;
-  /** All matches */
-  matches: SearchMatch[];
-  /** Current match index (0-based) */
-  currentMatchIndex: number;
-  /** Total match count */
-  matchCount: number;
-  /** Is search in progress */
-  isSearching: boolean;
-  /** Go to next match */
-  nextMatch: () => void;
-  /** Go to previous match */
-  previousMatch: () => void;
-  /** Go to specific match */
-  goToMatch: (index: number) => void;
-  /** Clear search */
-  clearSearch: () => void;
-  /** Get matches for a specific page */
-  getMatchesForPage: (pageIndex: number) => SearchMatch[];
+interface UseBookmarksReturn {
+  /** Bookmarks for this document */
+  bookmarks: Bookmark[];
+  /** Add a bookmark */
+  addBookmark: (page: number, label?: string) => Bookmark;
+  /** Remove a bookmark */
+  removeBookmark: (id: string) => void;
+  /** Update a bookmark label */
+  updateBookmark: (id: string, label: string) => void;
+  /** Check if a page is bookmarked */
+  isPageBookmarked: (page: number) => boolean;
+  /** Get bookmark for a specific page */
+  getBookmarkForPage: (page: number) => Bookmark | undefined;
+  /** Toggle bookmark on a page */
+  toggleBookmark: (page: number) => void;
 }
 
-export function usePDFSearch({ pdf }: UsePDFSearchOptions): UsePDFSearchReturn {
-  const [query, setQueryState] = useState('');
-  const [matches, setMatches] = useState<SearchMatch[]>([]);
-  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
-  const [isSearching, setIsSearching] = useState(false);
+export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksReturn {
+  const [bookmarks, setLocalBookmarks] = useState<Bookmark[]>([]);
 
-  // Cache text content per page
-  const textCache = useRef<Map<number, string>>(new Map());
+  // Load bookmarks on mount
+  useEffect(() => {
+    const docs = getBookmarksForDocument(documentId);
+    // Sort by page number
+    docs.sort((a, b) => a.page - b.page);
+    setLocalBookmarks(docs);
+  }, [documentId]);
 
-  // Extract text from a page (with caching)
-  const getPageText = useCallback(async (pageIndex: number): Promise<string> => {
-    if (textCache.current.has(pageIndex)) {
-      return textCache.current.get(pageIndex)!;
-    }
+  const addBookmark = useCallback((page: number, label?: string): Bookmark => {
+    // Check if already bookmarked
+    const existing = bookmarks.find(b => b.page === page);
+    if (existing) return existing;
 
-    if (!pdf) return '';
+    // Validate label length
+    const safeLabel = label?.slice(0, VALIDATION.MAX_LABEL_LENGTH);
 
-    const page = await pdf.getPage(pageIndex + 1);
-    const textContent = await getTextContent(page);
-    const text = textContent.items
-      .map(item => ('str' in item ? item.str : ''))
-      .join('');
+    const bookmark: Bookmark = {
+      id: uuidv4(),
+      documentId,
+      page,
+      label: safeLabel,
+      createdAt: Date.now(),
+    };
 
-    textCache.current.set(pageIndex, text);
-    return text;
-  }, [pdf]);
+    // Update localStorage
+    const allBookmarks = getBookmarks();
+    allBookmarks.push(bookmark);
+    setBookmarks(allBookmarks);
 
-  // Perform search
-  const search = useCallback(async (searchQuery: string) => {
-    if (!pdf || !searchQuery.trim()) {
-      setMatches([]);
-      setCurrentMatchIndex(0);
-      return;
-    }
+    // Update local state
+    setLocalBookmarks(prev => {
+      const updated = [...prev, bookmark];
+      return updated.sort((a, b) => a.page - b.page);
+    });
 
-    setIsSearching(true);
+    return bookmark;
+  }, [documentId, bookmarks]);
 
-    try {
-      const normalizedQuery = searchQuery.toLowerCase();
-      const newMatches: SearchMatch[] = [];
+  const removeBookmark = useCallback((id: string) => {
+    // Update localStorage
+    const allBookmarks = getBookmarks();
+    setBookmarks(allBookmarks.filter(b => b.id !== id));
 
-      for (let i = 0; i < pdf.numPages; i++) {
-        const pageText = await getPageText(i);
-        const normalizedText = pageText.toLowerCase();
-
-        let searchIndex = 0;
-        let matchIndex = 0;
-
-        while ((searchIndex = normalizedText.indexOf(normalizedQuery, searchIndex)) !== -1) {
-          newMatches.push({
-            pageIndex: i,
-            matchIndex: matchIndex++,
-            text: pageText.slice(searchIndex, searchIndex + searchQuery.length),
-            startIndex: searchIndex,
-            endIndex: searchIndex + searchQuery.length,
-          });
-          searchIndex += searchQuery.length;
-        }
-      }
-
-      setMatches(newMatches);
-      setCurrentMatchIndex(0);
-    } finally {
-      setIsSearching(false);
-    }
-  }, [pdf, getPageText]);
-
-  // Set query with debounced search
-  const setQuery = useCallback((newQuery: string) => {
-    setQueryState(newQuery);
+    // Update local state
+    setLocalBookmarks(prev => prev.filter(b => b.id !== id));
   }, []);
 
-  // Debounce search
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      search(query);
-    }, 200);
+  const updateBookmark = useCallback((id: string, label: string) => {
+    // Validate label length
+    const safeLabel = label.slice(0, VALIDATION.MAX_LABEL_LENGTH);
 
-    return () => clearTimeout(timer);
-  }, [query, search]);
-
-  // Clear cache when PDF changes
-  useEffect(() => {
-    textCache.current.clear();
-  }, [pdf]);
-
-  const nextMatch = useCallback(() => {
-    if (matches.length === 0) return;
-    setCurrentMatchIndex((prev) => (prev + 1) % matches.length);
-  }, [matches.length]);
-
-  const previousMatch = useCallback(() => {
-    if (matches.length === 0) return;
-    setCurrentMatchIndex((prev) => (prev - 1 + matches.length) % matches.length);
-  }, [matches.length]);
-
-  const goToMatch = useCallback((index: number) => {
-    if (index >= 0 && index < matches.length) {
-      setCurrentMatchIndex(index);
+    // Update localStorage
+    const allBookmarks = getBookmarks();
+    const index = allBookmarks.findIndex(b => b.id === id);
+    if (index !== -1) {
+      allBookmarks[index].label = safeLabel;
+      setBookmarks(allBookmarks);
     }
-  }, [matches.length]);
 
-  const clearSearch = useCallback(() => {
-    setQueryState('');
-    setMatches([]);
-    setCurrentMatchIndex(0);
+    // Update local state
+    setLocalBookmarks(prev =>
+      prev.map(b => (b.id === id ? { ...b, label: safeLabel } : b))
+    );
   }, []);
 
-  const getMatchesForPage = useCallback((pageIndex: number): SearchMatch[] => {
-    return matches.filter(m => m.pageIndex === pageIndex);
-  }, [matches]);
+  const isPageBookmarked = useCallback((page: number): boolean => {
+    return bookmarks.some(b => b.page === page);
+  }, [bookmarks]);
+
+  const getBookmarkForPage = useCallback((page: number): Bookmark | undefined => {
+    return bookmarks.find(b => b.page === page);
+  }, [bookmarks]);
+
+  const toggleBookmark = useCallback((page: number) => {
+    const existing = getBookmarkForPage(page);
+    if (existing) {
+      removeBookmark(existing.id);
+    } else {
+      addBookmark(page);
+    }
+  }, [getBookmarkForPage, removeBookmark, addBookmark]);
 
   return {
-    query,
-    setQuery,
-    matches,
-    currentMatchIndex,
-    matchCount: matches.length,
-    isSearching,
-    nextMatch,
-    previousMatch,
-    goToMatch,
-    clearSearch,
-    getMatchesForPage,
+    bookmarks,
+    addBookmark,
+    removeBookmark,
+    updateBookmark,
+    isPageBookmarked,
+    getBookmarkForPage,
+    toggleBookmark,
   };
 }
 ```
 
-### PDFSearch Component
-
-**File:** `src/components/pdf/PDFSearch.tsx`
-
-```typescript
-'use client';
-
-import React, { useRef, useEffect } from 'react';
-
-interface PDFSearchProps {
-  /** Current query */
-  query: string;
-  /** Set query */
-  onQueryChange: (query: string) => void;
-  /** Current match index (0-based) */
-  currentMatch: number;
-  /** Total matches */
-  totalMatches: number;
-  /** Is searching */
-  isSearching: boolean;
-  /** Go to next match */
-  onNext: () => void;
-  /** Go to previous match */
-  onPrevious: () => void;
-  /** Close search */
-  onClose: () => void;
-}
-
-export function PDFSearch({
-  query,
-  onQueryChange,
-  currentMatch,
-  totalMatches,
-  isSearching,
-  onNext,
-  onPrevious,
-  onClose,
-}: PDFSearchProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Focus input on mount
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      if (e.shiftKey) {
-        onPrevious();
-      } else {
-        onNext();
-      }
-    } else if (e.key === 'Escape') {
-      onClose();
-    }
-  };
-
-  return (
-    <div className="absolute top-2 right-2 z-20 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl p-2 flex items-center gap-2">
-      {/* Search icon */}
-      <svg className="w-4 h-4 text-zinc-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-
-      {/* Input */}
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => onQueryChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Search in document..."
-        className="w-48 bg-transparent text-zinc-100 text-sm placeholder-zinc-500 focus:outline-none"
-      />
-
-      {/* Match counter */}
-      <div className="text-zinc-400 text-sm min-w-[60px] text-center">
-        {isSearching ? (
-          <span className="text-zinc-500">...</span>
-        ) : totalMatches > 0 ? (
-          <span>{currentMatch + 1} / {totalMatches}</span>
-        ) : query ? (
-          <span className="text-zinc-500">0 / 0</span>
-        ) : null}
-      </div>
-
-      {/* Navigation */}
-      <div className="flex items-center gap-1">
-        <button
-          onClick={onPrevious}
-          disabled={totalMatches === 0}
-          className="p-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Previous match"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-          </svg>
-        </button>
-        <button
-          onClick={onNext}
-          disabled={totalMatches === 0}
-          className="p-1 text-zinc-400 hover:text-zinc-100 disabled:opacity-50 disabled:cursor-not-allowed"
-          aria-label="Next match"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Close */}
-      <button
-        onClick={onClose}
-        className="p-1 text-zinc-400 hover:text-zinc-100"
-        aria-label="Close search"
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  );
-}
-```
-
-### Search Match Highlighting
-
-Update PDFTextLayer to highlight search matches:
-
-```typescript
-// Add to PDFTextLayer.tsx
-
-interface PDFTextLayerProps {
-  page: PDFPageProxy;
-  zoom: number;
-  onTextSelect?: (selection: TextSelection) => void;
-  /** Search matches for this page */
-  searchMatches?: SearchMatch[];
-  /** Index of the active match (global) */
-  activeMatchIndex?: number;
-  /** All matches (to calculate if this page has active match) */
-  allMatches?: SearchMatch[];
-}
-
-// In the render function, add highlighting logic:
-// - Wrap matched text in spans with yellow background
-// - Active match gets .search-match-active class for pulsing animation
-```
-
-### Keyboard Shortcut
+### Bookmark Keyboard Shortcut
 
 Add to PDFViewer:
 
 ```typescript
-// Handle Ctrl+F to open search
+// Handle B key to toggle bookmark on current page
 useEffect(() => {
   const handleKeyDown = (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-      e.preventDefault();
-      setSearchOpen(true);
+    // Don't trigger if typing in an input
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    if (e.key === 'b' || e.key === 'B') {
+      toggleBookmark(currentPage);
     }
   };
 
   window.addEventListener('keydown', handleKeyDown);
   return () => window.removeEventListener('keydown', handleKeyDown);
-}, []);
+}, [currentPage, toggleBookmark]);
 ```
 
-### Scroll to Match
+### Bookmark Button in Toolbar
 
-When currentMatchIndex changes, scroll the match into view:
+Add to PDFControls:
 
 ```typescript
-// In PDFViewer
-useEffect(() => {
-  if (matches.length === 0) return;
+interface PDFControlsProps {
+  // ... existing props
+  /** Is current page bookmarked */
+  isBookmarked: boolean;
+  /** Toggle bookmark on current page */
+  onBookmarkToggle: () => void;
+}
 
-  const match = matches[currentMatchIndex];
-  // Scroll to the page containing the match
-  const pageElement = containerRef.current?.querySelector(
-    `[data-page-number="${match.pageIndex + 1}"]`
-  );
+// In the component:
+<button
+  onClick={onBookmarkToggle}
+  className={`p-2 rounded-lg transition-colors ${
+    isBookmarked
+      ? 'text-red-500 bg-red-500/10'
+      : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+  }`}
+  aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+  aria-pressed={isBookmarked}
+>
+  <svg className="w-5 h-5" fill={isBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+  </svg>
+</button>
+```
 
-  if (pageElement) {
-    pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+### Bookmark Indicator on Page
+
+Add a small bookmark icon on bookmarked pages:
+
+**File:** `src/components/pdf/PDFPage.tsx` (update)
+
+```typescript
+interface PDFPageProps {
+  // ... existing props
+  /** Whether this page is bookmarked */
+  isBookmarked?: boolean;
+  /** Toggle bookmark callback */
+  onBookmarkToggle?: () => void;
+}
+
+// In the component:
+{isBookmarked && (
+  <div
+    className="absolute top-2 right-2 text-red-500 cursor-pointer hover:scale-110 transition-transform"
+    onClick={(e) => {
+      e.stopPropagation();
+      onBookmarkToggle?.();
+    }}
+    title="Remove bookmark"
+  >
+    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+    </svg>
+  </div>
+)}
+```
+
+### PDFBookmarks List Component
+
+**File:** `src/components/pdf/PDFBookmarks.tsx`
+
+```typescript
+'use client';
+
+import React, { useState } from 'react';
+import type { Bookmark } from '@/types';
+
+interface PDFBookmarksProps {
+  bookmarks: Bookmark[];
+  onBookmarkClick: (bookmark: Bookmark) => void;
+  onBookmarkDelete: (id: string) => void;
+  onBookmarkRename: (id: string, label: string) => void;
+}
+
+export function PDFBookmarks({
+  bookmarks,
+  onBookmarkClick,
+  onBookmarkDelete,
+  onBookmarkRename,
+}: PDFBookmarksProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  const handleDoubleClick = (bookmark: Bookmark) => {
+    setEditingId(bookmark.id);
+    setEditValue(bookmark.label || `Page ${bookmark.page}`);
+  };
+
+  const handleRenameSubmit = (id: string) => {
+    if (editValue.trim()) {
+      onBookmarkRename(id, editValue.trim());
+    }
+    setEditingId(null);
+  };
+
+  if (bookmarks.length === 0) {
+    return (
+      <div className="p-4 text-zinc-500 text-sm text-center">
+        No bookmarks yet.
+        <br />
+        Press <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-xs">B</kbd> to bookmark the current page.
+      </div>
+    );
   }
-}, [currentMatchIndex, matches]);
+
+  return (
+    <div className="divide-y divide-zinc-800">
+      {bookmarks.map((bookmark) => (
+        <div
+          key={bookmark.id}
+          className="flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/50 cursor-pointer group"
+          onClick={() => onBookmarkClick(bookmark)}
+          onDoubleClick={() => handleDoubleClick(bookmark)}
+        >
+          {/* Bookmark icon */}
+          <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+
+          {/* Label */}
+          <div className="flex-1 min-w-0">
+            {editingId === bookmark.id ? (
+              <input
+                type="text"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onBlur={() => handleRenameSubmit(bookmark.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleRenameSubmit(bookmark.id);
+                  if (e.key === 'Escape') setEditingId(null);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full bg-zinc-700 text-zinc-100 text-sm rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-red-500"
+                autoFocus
+              />
+            ) : (
+              <>
+                <div className="text-zinc-200 text-sm truncate">
+                  {bookmark.label || `Page ${bookmark.page}`}
+                </div>
+                <div className="text-zinc-500 text-xs">
+                  Page {bookmark.page}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Delete button */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onBookmarkDelete(bookmark.id);
+            }}
+            className="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-red-400 transition-opacity"
+            aria-label="Delete bookmark"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/hooks/usePDFSearch.ts` | Create | Search logic hook |
-| `src/components/pdf/PDFSearch.tsx` | Create | Search UI component |
-| `src/components/pdf/PDFTextLayer.tsx` | Modify | Add search highlighting |
-| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate search |
+| `src/hooks/useBookmarks.ts` | Create | Bookmark CRUD hook |
+| `src/components/pdf/PDFBookmarks.tsx` | Create | Bookmark list component |
+| `src/components/pdf/PDFControls.tsx` | Modify | Add bookmark button |
+| `src/components/pdf/PDFPage.tsx` | Modify | Add bookmark indicator |
+| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate bookmarks |
 
 ## Success Criteria
 
-1. [x] `src/hooks/usePDFSearch.ts` exists
-2. [x] usePDFSearch extracts text from all pages
-3. [x] Search is case-insensitive
-4. [x] Search results include page index and text position
-5. [x] `src/components/pdf/PDFSearch.tsx` exists
-6. [x] PDFSearch has input field with placeholder
-7. [x] PDFSearch shows match counter (X of Y)
-8. [x] PDFSearch has previous/next navigation buttons
-9. [x] PDFSearch closes with Escape or X button
-10. [x] Enter goes to next match, Shift+Enter to previous
-11. [x] Ctrl+F opens search bar
-12. [x] Search matches are highlighted in yellow
-13. [x] Active match has pulsing animation
-14. [x] Navigating to match scrolls page into view
-15. [x] Search is debounced (200ms delay)
-16. [x] `npm run type-check` passes
-17. [x] `npm run lint` passes
+1. [x] `src/hooks/useBookmarks.ts` exists
+2. [x] useBookmarks loads bookmarks from localStorage
+3. [x] addBookmark creates bookmark with UUID and timestamp
+4. [x] removeBookmark removes from localStorage and state
+5. [x] updateBookmark allows label editing
+6. [x] isPageBookmarked returns correct boolean
+7. [x] toggleBookmark adds or removes bookmark
+8. [x] Bookmarks are sorted by page number
+9. [x] `src/components/pdf/PDFBookmarks.tsx` exists
+10. [x] PDFBookmarks shows list with page numbers
+11. [x] Double-click allows inline label editing
+12. [x] Delete button removes bookmark
+13. [x] Clicking bookmark navigates to page
+14. [x] Empty state shows helpful message
+15. [x] Bookmark button in toolbar toggles bookmark
+16. [x] B key toggles bookmark on current page
+17. [x] Bookmarked pages show indicator icon
+18. [x] `npm run type-check` passes
+19. [x] `npm run lint` passes
 
 ---
 
