@@ -23,6 +23,10 @@ interface PDFPageProps {
   activeMatchIndex?: number;
   /** All matches for active match calculation */
   allMatches?: SearchMatch[];
+  /** Whether this page is bookmarked */
+  isBookmarked?: boolean;
+  /** Toggle bookmark callback */
+  onBookmarkToggle?: () => void;
 }
 
 export function PDFPage({
@@ -34,6 +38,8 @@ export function PDFPage({
   searchMatches = [],
   activeMatchIndex = -1,
   allMatches = [],
+  isBookmarked,
+  onBookmarkToggle,
 }: PDFPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
@@ -73,6 +79,21 @@ export function PDFPage({
           activeMatchIndex={activeMatchIndex}
           allMatches={allMatches}
         />
+      )}
+      {/* Bookmark indicator */}
+      {isBookmarked && (
+        <div
+          className="absolute top-2 right-2 text-red-500 cursor-pointer hover:scale-110 transition-transform"
+          onClick={(e) => {
+            e.stopPropagation();
+            onBookmarkToggle?.();
+          }}
+          title="Remove bookmark"
+        >
+          <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+          </svg>
+        </div>
       )}
       {/* Highlight layer will be added in later task */}
     </div>

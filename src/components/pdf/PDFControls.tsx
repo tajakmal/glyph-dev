@@ -20,6 +20,10 @@ interface PDFControlsProps {
   onSidebarToggle?: () => void;
   /** Is sidebar open */
   isSidebarOpen?: boolean;
+  /** Is current page bookmarked */
+  isBookmarked?: boolean;
+  /** Toggle bookmark on current page */
+  onBookmarkToggle?: () => void;
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
@@ -33,6 +37,8 @@ export function PDFControls({
   title,
   onSidebarToggle,
   isSidebarOpen,
+  isBookmarked,
+  onBookmarkToggle,
 }: PDFControlsProps) {
   const zoomIn = () => {
     const newZoom = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
@@ -120,23 +126,41 @@ export function PDFControls({
         </button>
       </div>
 
-      {/* Right: Page indicator */}
-      <div className="flex items-center gap-2 text-zinc-400 text-sm">
-        <span>Page</span>
-        <input
-          type="number"
-          min={1}
-          max={pageCount}
-          value={currentPage}
-          onChange={(e) => {
-            const page = parseInt(e.target.value);
-            if (page >= 1 && page <= pageCount) {
-              onPageChange(page);
-            }
-          }}
-          className="w-12 bg-zinc-800 text-zinc-300 text-center rounded px-1 py-0.5 border border-zinc-700"
-        />
-        <span>of {pageCount}</span>
+      {/* Right: Bookmark and Page indicator */}
+      <div className="flex items-center gap-3">
+        {onBookmarkToggle && (
+          <button
+            onClick={onBookmarkToggle}
+            className={`p-2 rounded-lg transition-colors ${
+              isBookmarked
+                ? 'text-red-500 bg-red-500/10'
+                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+            }`}
+            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
+            aria-pressed={isBookmarked}
+          >
+            <svg className="w-5 h-5" fill={isBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          </button>
+        )}
+        <div className="flex items-center gap-2 text-zinc-400 text-sm">
+          <span>Page</span>
+          <input
+            type="number"
+            min={1}
+            max={pageCount}
+            value={currentPage}
+            onChange={(e) => {
+              const page = parseInt(e.target.value);
+              if (page >= 1 && page <= pageCount) {
+                onPageChange(page);
+              }
+            }}
+            className="w-12 bg-zinc-800 text-zinc-300 text-center rounded px-1 py-0.5 border border-zinc-700"
+          />
+          <span>of {pageCount}</span>
+        </div>
       </div>
     </div>
   );
