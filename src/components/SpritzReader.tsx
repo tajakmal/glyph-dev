@@ -2,8 +2,13 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
-export default function SpritzReader() {
-  const [text, setText] = useState('');
+interface SpritzReaderProps {
+  /** Initial text to speed read (optional) */
+  initialText?: string;
+}
+
+export function SpritzReader({ initialText }: SpritzReaderProps) {
+  const [text, setText] = useState(initialText || '');
   const [words, setWords] = useState<string[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -68,6 +73,14 @@ export default function SpritzReader() {
     setIsHolding(false);
     setIsPlaying(false);
   };
+
+  // Auto-start if initialText is provided
+  useEffect(() => {
+    if (initialText && initialText.trim()) {
+      parseText(initialText);
+      setHasStarted(true);
+    }
+  }, [initialText]);
 
   // Extract text from PDF
   const extractPdfText = async (file: File): Promise<string> => {
@@ -556,3 +569,6 @@ export default function SpritzReader() {
     </div>
   );
 }
+
+// Default export for backwards compatibility
+export default SpritzReader;
