@@ -1,341 +1,400 @@
 ---
-task: Text Layer and Selection
+task: Zoom Controls
 priority: 3
-depends_on: ["003-global-css-setup", "005-pdf-viewer-component"]
+depends_on: ["002-shared-ui-components", "005-pdf-viewer-component"]
 ---
 
-# Task: Text Layer and Selection
+# Task: Zoom Controls
 
-Create the PDFTextLayer component that enables text selection within PDF pages.
+Implement zoom controls including toolbar buttons, keyboard shortcuts, and pinch-to-zoom for touch devices.
 
 ## Overview
 
-The text layer is an invisible overlay positioned exactly over the canvas that enables text selection. PDF.js provides text content with position data, which we render as transparent spans. This allows native text selection while the canvas displays the visual content.
+This task adds comprehensive zoom functionality to the PDF viewer. Users can zoom using toolbar buttons, keyboard shortcuts (Ctrl+/-/0), preset zoom levels, and pinch gestures on touch devices. The zoom should preserve scroll position (keeping the center of the viewport stable).
 
 ## Context
 
-- Component goes in `src/components/pdf/PDFTextLayer.tsx`
-- Uses PDF.js text content API
-- CSS for text layer already defined in globals.css (Task 003)
-- Text layer spans must be positioned to match canvas rendering
-- Selection should trigger a callback for highlight creation (future task)
+- Zoom range: 50% to 300%
+- Zoom step: 25%
+- Default zoom: "Fit to width" (calculated based on container width)
+- Keyboard shortcuts follow standard patterns (Ctrl+Plus, Ctrl+Minus, Ctrl+0)
+- Pinch zoom uses touch events
 
 ## Requirements
 
-### PDFTextLayer Component
+### PDFControls Component (Zoom Section)
 
-**File:** `src/components/pdf/PDFTextLayer.tsx`
-
-```typescript
-'use client';
-
-import React, { useRef, useEffect } from 'react';
-import type { PDFPageProxy, TextContent } from 'pdfjs-dist';
-import { getTextContent } from '@/lib/pdf-utils';
-
-interface PDFTextLayerProps {
-  /** PDF page proxy */
-  page: PDFPageProxy;
-  /** Current zoom level */
-  zoom: number;
-  /** Callback when text is selected */
-  onTextSelect?: (selection: TextSelection) => void;
-}
-
-export interface TextSelection {
-  /** Selected text content */
-  text: string;
-  /** Page number (1-based) */
-  page: number;
-  /** Bounding rectangles of selection (page coordinates) */
-  rects: DOMRect[];
-  /** Range object for the selection */
-  range: Range | null;
-}
-
-export function PDFTextLayer({ page, zoom, onTextSelect }: PDFTextLayerProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    let isMounted = true;
-
-    const renderTextLayer = async () => {
-      // Clear existing content
-      container.innerHTML = '';
-
-      // Get text content from PDF
-      const textContent = await getTextContent(page);
-
-      if (!isMounted) return;
-
-      // Get viewport for positioning
-      const viewport = page.getViewport({ scale: zoom });
-
-      // Render each text item as a span
-      textContent.items.forEach((item) => {
-        if (!('str' in item) || !item.str) return;
-
-        const tx = item.transform;
-        // PDF.js transform: [scaleX, skewX, skewY, scaleY, translateX, translateY]
-
-        const span = document.createElement('span');
-        span.textContent = item.str;
-
-        // Calculate position from transform matrix
-        // tx[4] = x position, tx[5] = y position
-        // tx[0] = font size scale
-        const fontSize = Math.sqrt(tx[0] * tx[0] + tx[1] * tx[1]) * zoom;
-        const left = tx[4] * zoom;
-        const top = viewport.height - (tx[5] * zoom) - fontSize;
-
-        span.style.left = `${left}px`;
-        span.style.top = `${top}px`;
-        span.style.fontSize = `${fontSize}px`;
-
-        // Handle text width scaling
-        if (item.width) {
-          const actualWidth = item.width * zoom;
-          const textWidth = span.offsetWidth || fontSize * item.str.length * 0.5;
-          const scaleX = actualWidth / textWidth;
-          if (scaleX > 0 && isFinite(scaleX)) {
-            span.style.transform = `scaleX(${scaleX})`;
-            span.style.transformOrigin = 'left bottom';
-          }
-        }
-
-        container.appendChild(span);
-      });
-    };
-
-    renderTextLayer();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [page, zoom]);
-
-  // Handle selection events
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !onTextSelect) return;
-
-    const handleMouseUp = () => {
-      const selection = window.getSelection();
-      if (!selection || selection.isCollapsed) return;
-
-      const text = selection.toString().trim();
-      if (!text) return;
-
-      // Get selection range
-      const range = selection.getRangeAt(0);
-
-      // Check if selection is within this text layer
-      if (!container.contains(range.commonAncestorContainer)) return;
-
-      // Get bounding rects
-      const rects = Array.from(range.getClientRects());
-
-      // Convert to page coordinates
-      const containerRect = container.getBoundingClientRect();
-      const pageRects = rects.map(rect => new DOMRect(
-        rect.x - containerRect.x,
-        rect.y - containerRect.y,
-        rect.width,
-        rect.height
-      ));
-
-      onTextSelect({
-        text,
-        page: page.pageNumber,
-        rects: pageRects,
-        range: range.cloneRange(),
-      });
-    };
-
-    container.addEventListener('mouseup', handleMouseUp);
-    return () => container.removeEventListener('mouseup', handleMouseUp);
-  }, [page, onTextSelect]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="pdf-text-layer allow-select"
-      data-testid={`pdf-text-layer-${page.pageNumber}`}
-    />
-  );
-}
-```
-
-### Update PDFPage Component
-
-Integrate the text layer into PDFPage:
-
-**File:** `src/components/pdf/PDFPage.tsx` (update)
+**File:** `src/components/pdf/PDFControls.tsx`
 
 ```typescript
 'use client';
 
-import React, { useRef, useEffect, useState } from 'react';
-import type { PDFPageProxy } from 'pdfjs-dist';
-import { renderPage } from '@/lib/pdf-utils';
-import { PDFTextLayer, TextSelection } from './PDFTextLayer';
+import React from 'react';
+import { Button } from '@/components/ui/Button';
+import { VALIDATION } from '@/types';
 
-interface PDFPageProps {
-  page: PDFPageProxy;
-  pageNumber: number;
+interface PDFControlsProps {
+  /** Current zoom level (1 = 100%) */
   zoom: number;
-  onRenderComplete?: () => void;
-  onTextSelect?: (selection: TextSelection) => void;
+  /** Set zoom level */
+  onZoomChange: (zoom: number) => void;
+  /** Current page number (1-based) */
+  currentPage: number;
+  /** Total page count */
+  pageCount: number;
+  /** Go to specific page */
+  onPageChange: (page: number) => void;
+  /** Document title */
+  title?: string;
+  /** Toggle sidebar */
+  onSidebarToggle?: () => void;
+  /** Is sidebar open */
+  isSidebarOpen?: boolean;
 }
 
-export function PDFPage({
-  page,
-  pageNumber,
+const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
+
+export function PDFControls({
   zoom,
-  onRenderComplete,
-  onTextSelect,
-}: PDFPageProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  onZoomChange,
+  currentPage,
+  pageCount,
+  onPageChange,
+  title,
+  onSidebarToggle,
+  isSidebarOpen,
+}: PDFControlsProps) {
+  const zoomIn = () => {
+    const newZoom = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
+    onZoomChange(newZoom);
+  };
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
+  const zoomOut = () => {
+    const newZoom = Math.max(zoom - VALIDATION.ZOOM_STEP, VALIDATION.MIN_ZOOM);
+    onZoomChange(newZoom);
+  };
 
-    renderPage(page, canvasRef.current, zoom).then(() => {
-      // Update dimensions for text layer positioning
-      const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: zoom * dpr });
-      setDimensions({
-        width: viewport.width / dpr,
-        height: viewport.height / dpr,
-      });
-      onRenderComplete?.();
-    });
-  }, [page, zoom, onRenderComplete]);
+  const resetZoom = () => {
+    onZoomChange(1);
+  };
+
+  const zoomPercent = Math.round(zoom * 100);
 
   return (
-    <div
-      className="pdf-page"
-      data-page-number={pageNumber}
-      data-testid={`pdf-page-${pageNumber}`}
-      style={{
-        width: dimensions.width || 'auto',
-        height: dimensions.height || 'auto',
-      }}
-    >
-      <canvas ref={canvasRef} className="pdf-canvas" />
-      {dimensions.width > 0 && (
-        <PDFTextLayer
-          page={page}
-          zoom={zoom}
-          onTextSelect={onTextSelect}
+    <div className="h-12 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4">
+      {/* Left: Sidebar toggle and title */}
+      <div className="flex items-center gap-3">
+        {onSidebarToggle && (
+          <button
+            onClick={onSidebarToggle}
+            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+            aria-label={isSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
+        )}
+        {title && (
+          <span className="text-zinc-300 text-sm font-medium truncate max-w-[200px]" title={title}>
+            {title}
+          </span>
+        )}
+      </div>
+
+      {/* Center: Zoom controls */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={zoomOut}
+          disabled={zoom <= VALIDATION.MIN_ZOOM}
+          className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Zoom out"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+          </svg>
+        </button>
+
+        <select
+          value={zoom}
+          onChange={(e) => onZoomChange(parseFloat(e.target.value))}
+          className="bg-zinc-800 text-zinc-300 text-sm rounded-lg px-2 py-1 border border-zinc-700 focus:outline-none focus:border-zinc-600"
+        >
+          {ZOOM_PRESETS.map((preset) => (
+            <option key={preset} value={preset}>
+              {Math.round(preset * 100)}%
+            </option>
+          ))}
+          {!ZOOM_PRESETS.includes(zoom) && (
+            <option value={zoom}>{zoomPercent}%</option>
+          )}
+        </select>
+
+        <button
+          onClick={zoomIn}
+          disabled={zoom >= VALIDATION.MAX_ZOOM}
+          className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label="Zoom in"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+        </button>
+
+        <button
+          onClick={resetZoom}
+          className="px-2 py-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg text-sm transition-colors"
+          aria-label="Reset zoom to fit width"
+        >
+          Fit
+        </button>
+      </div>
+
+      {/* Right: Page indicator */}
+      <div className="flex items-center gap-2 text-zinc-400 text-sm">
+        <span>Page</span>
+        <input
+          type="number"
+          min={1}
+          max={pageCount}
+          value={currentPage}
+          onChange={(e) => {
+            const page = parseInt(e.target.value);
+            if (page >= 1 && page <= pageCount) {
+              onPageChange(page);
+            }
+          }}
+          className="w-12 bg-zinc-800 text-zinc-300 text-center rounded px-1 py-0.5 border border-zinc-700"
         />
-      )}
-      {/* Highlight layer will be added in later task */}
+        <span>of {pageCount}</span>
+      </div>
     </div>
   );
 }
 ```
 
-### useTextSelection Hook (Optional Helper)
+### Keyboard Shortcuts Hook
 
-**File:** `src/hooks/useTextSelection.ts`
+**File:** `src/hooks/useZoomKeyboard.ts`
 
 ```typescript
 'use client';
 
-import { useState, useCallback } from 'react';
-import type { TextSelection } from '@/components/pdf/PDFTextLayer';
+import { useEffect } from 'react';
+import { VALIDATION } from '@/types';
 
-interface UseTextSelectionReturn {
-  /** Current selection */
-  selection: TextSelection | null;
-  /** Clear the selection */
-  clearSelection: () => void;
-  /** Handle a new selection */
-  handleSelection: (selection: TextSelection) => void;
-  /** Whether there is an active selection */
-  hasSelection: boolean;
+interface UseZoomKeyboardOptions {
+  zoom: number;
+  onZoomChange: (zoom: number) => void;
+  enabled?: boolean;
 }
 
-export function useTextSelection(): UseTextSelectionReturn {
-  const [selection, setSelection] = useState<TextSelection | null>(null);
+export function useZoomKeyboard({
+  zoom,
+  onZoomChange,
+  enabled = true,
+}: UseZoomKeyboardOptions) {
+  useEffect(() => {
+    if (!enabled) return;
 
-  const clearSelection = useCallback(() => {
-    setSelection(null);
-    // Also clear browser selection
-    window.getSelection()?.removeAllRanges();
-  }, []);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Ctrl/Cmd key
+      if (!e.ctrlKey && !e.metaKey) return;
 
-  const handleSelection = useCallback((newSelection: TextSelection) => {
-    setSelection(newSelection);
-  }, []);
+      // Prevent default browser zoom
+      if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '0') {
+        e.preventDefault();
+      }
+
+      switch (e.key) {
+        case '+':
+        case '=': // Plus without shift
+          const newZoomIn = Math.min(zoom + VALIDATION.ZOOM_STEP, VALIDATION.MAX_ZOOM);
+          onZoomChange(newZoomIn);
+          break;
+
+        case '-':
+          const newZoomOut = Math.max(zoom - VALIDATION.ZOOM_STEP, VALIDATION.MIN_ZOOM);
+          onZoomChange(newZoomOut);
+          break;
+
+        case '0':
+          onZoomChange(1); // Reset to 100%
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [zoom, onZoomChange, enabled]);
+}
+```
+
+### Pinch-to-Zoom Hook
+
+**File:** `src/hooks/usePinchZoom.ts`
+
+```typescript
+'use client';
+
+import { useEffect, useRef, RefObject } from 'react';
+import { VALIDATION } from '@/types';
+
+interface UsePinchZoomOptions {
+  /** Element ref to attach gesture handlers */
+  elementRef: RefObject<HTMLElement>;
+  /** Current zoom level */
+  zoom: number;
+  /** Callback when zoom changes */
+  onZoomChange: (zoom: number) => void;
+  /** Minimum zoom */
+  minZoom?: number;
+  /** Maximum zoom */
+  maxZoom?: number;
+  /** Whether pinch zoom is enabled */
+  enabled?: boolean;
+}
+
+interface UsePinchZoomReturn {
+  /** Is currently pinching */
+  isPinching: boolean;
+}
+
+export function usePinchZoom({
+  elementRef,
+  zoom,
+  onZoomChange,
+  minZoom = VALIDATION.MIN_ZOOM,
+  maxZoom = VALIDATION.MAX_ZOOM,
+  enabled = true,
+}: UsePinchZoomOptions): UsePinchZoomReturn {
+  const isPinchingRef = useRef(false);
+  const startDistanceRef = useRef(0);
+  const startZoomRef = useRef(zoom);
+
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element || !enabled) return;
+
+    const getDistance = (touches: TouchList): number => {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        isPinchingRef.current = true;
+        startDistanceRef.current = getDistance(e.touches);
+        startZoomRef.current = zoom;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isPinchingRef.current || e.touches.length !== 2) return;
+
+      e.preventDefault(); // Prevent page zoom
+
+      const currentDistance = getDistance(e.touches);
+      const scale = currentDistance / startDistanceRef.current;
+      const newZoom = Math.min(maxZoom, Math.max(minZoom, startZoomRef.current * scale));
+
+      onZoomChange(newZoom);
+    };
+
+    const handleTouchEnd = () => {
+      isPinchingRef.current = false;
+    };
+
+    element.addEventListener('touchstart', handleTouchStart, { passive: true });
+    element.addEventListener('touchmove', handleTouchMove, { passive: false });
+    element.addEventListener('touchend', handleTouchEnd, { passive: true });
+    element.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    return () => {
+      element.removeEventListener('touchstart', handleTouchStart);
+      element.removeEventListener('touchmove', handleTouchMove);
+      element.removeEventListener('touchend', handleTouchEnd);
+      element.removeEventListener('touchcancel', handleTouchEnd);
+    };
+  }, [elementRef, zoom, onZoomChange, minZoom, maxZoom, enabled]);
 
   return {
-    selection,
-    clearSelection,
-    handleSelection,
-    hasSelection: selection !== null && selection.text.length > 0,
+    isPinching: isPinchingRef.current,
   };
 }
 ```
 
-### Text Layer CSS (Reference from Task 003)
+### Update PDFViewer for Zoom
 
-Ensure these styles exist in `globals.css`:
+Update `PDFViewer.tsx` to integrate zoom controls and preserve scroll position:
 
-```css
-.pdf-text-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  opacity: 0.2;
-  line-height: 1;
-  pointer-events: auto;
-}
+```typescript
+// Add to PDFViewer.tsx
 
-.pdf-text-layer span {
-  position: absolute;
-  white-space: pre;
-  color: transparent;
-  pointer-events: auto;
-}
+// Preserve scroll position when zooming
+const handleZoomChange = useCallback((newZoom: number) => {
+  const container = containerRef.current;
+  if (!container) {
+    setZoom(newZoom);
+    return;
+  }
 
-.pdf-text-layer span::selection {
-  background: rgba(59, 130, 246, 0.3);
-}
+  // Get current scroll center
+  const scrollCenter = container.scrollTop + container.clientHeight / 2;
+  const scrollRatio = scrollCenter / container.scrollHeight;
+
+  setZoom(newZoom);
+
+  // After re-render, restore scroll position
+  requestAnimationFrame(() => {
+    const newScrollCenter = container.scrollHeight * scrollRatio;
+    container.scrollTop = newScrollCenter - container.clientHeight / 2;
+  });
+}, []);
+
+// Add keyboard shortcuts
+useZoomKeyboard({
+  zoom,
+  onZoomChange: handleZoomChange,
+});
+
+// Add pinch zoom
+usePinchZoom({
+  elementRef: containerRef,
+  zoom,
+  onZoomChange: handleZoomChange,
+});
 ```
 
 ## Files to Create/Modify
 
 | File | Action | Description |
 |------|--------|-------------|
-| `src/components/pdf/PDFTextLayer.tsx` | Create | Text layer for selection |
-| `src/components/pdf/PDFPage.tsx` | Modify | Integrate text layer |
-| `src/hooks/useTextSelection.ts` | Create | Selection state management |
+| `src/components/pdf/PDFControls.tsx` | Create | Toolbar with zoom controls |
+| `src/hooks/useZoomKeyboard.ts` | Create | Keyboard shortcut handler |
+| `src/hooks/usePinchZoom.ts` | Create | Touch pinch gesture handler |
+| `src/components/pdf/PDFViewer.tsx` | Modify | Integrate zoom functionality |
 
 ## Success Criteria
 
-1. [x] `src/components/pdf/PDFTextLayer.tsx` exists
-2. [x] Text layer renders text spans from PDF.js text content
-3. [x] Text spans are positioned to align with canvas content
-4. [x] Text is selectable with native browser selection
-5. [x] Selection highlight appears in blue (from CSS)
-6. [x] onTextSelect callback fires with selection data
-7. [x] TextSelection interface includes text, page, rects
-8. [x] PDFPage component integrates PDFTextLayer
-9. [x] Text layer only renders after canvas has dimensions
-10. [x] `src/hooks/useTextSelection.ts` exists
-11. [x] useTextSelection provides clearSelection function
-12. [x] Selection works correctly at different zoom levels
-13. [x] `npm run type-check` passes
-14. [x] `npm run lint` passes
+1. [x] `src/components/pdf/PDFControls.tsx` exists
+2. [x] PDFControls has zoom in/out buttons
+3. [x] PDFControls has zoom preset dropdown (50%, 75%, 100%, 125%, 150%, 200%, 300%)
+4. [x] PDFControls has "Fit" button to reset zoom
+5. [x] PDFControls shows page indicator (Page X of Y)
+6. [x] `src/hooks/useZoomKeyboard.ts` exists
+7. [x] Ctrl+Plus zooms in
+8. [x] Ctrl+Minus zooms out
+9. [x] Ctrl+0 resets zoom to 100%
+10. [x] Keyboard shortcuts prevent browser default zoom
+11. [x] `src/hooks/usePinchZoom.ts` exists
+12. [x] Pinch-to-zoom works on touch devices
+13. [x] Zoom is constrained between 50% and 300%
+14. [x] Scroll position is preserved when zooming
+15. [x] `npm run type-check` passes
+16. [x] `npm run lint` passes
 
 ---
 

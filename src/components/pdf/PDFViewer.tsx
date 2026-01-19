@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import { usePDF } from '@/hooks/usePDF';
+import { useZoomKeyboard } from '@/hooks/useZoomKeyboard';
+import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { PDFPage } from './PDFPage';
+import { PDFControls } from './PDFControls';
 
 interface PDFViewerProps {
   /** Document ID to load */
@@ -12,24 +15,79 @@ interface PDFViewerProps {
   initialPage?: number;
   /** Initial zoom level (default: 1) */
   initialZoom?: number;
+  /** Document title */
+  title?: string;
   /** Callback when page changes */
   onPageChange?: (page: number) => void;
   /** Callback when document loads */
   onDocumentLoad?: (pageCount: number) => void;
+  /** Toggle sidebar */
+  onSidebarToggle?: () => void;
+  /** Is sidebar open */
+  isSidebarOpen?: boolean;
 }
 
 export function PDFViewer({
   documentId,
   initialPage = 1,
   initialZoom = 1,
+  title,
   onPageChange,
   onDocumentLoad,
+  onSidebarToggle,
+  isSidebarOpen,
 }: PDFViewerProps) {
-  const { pdf, isLoading, error, pageCount: _pageCount } = usePDF({ documentId });
-  const [zoom, _setZoom] = useState(initialZoom);
+  const { pdf, isLoading, error } = usePDF({ documentId });
+  const [zoom, setZoom] = useState(initialZoom);
   const [pages, setPages] = useState<PDFPageProxy[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageCount, setPageCount] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  // Preserve scroll position when zooming
+  const handleZoomChange = useCallback((newZoom: number) => {
+    const container = containerRef.current;
+    if (!container) {
+      setZoom(newZoom);
+      return;
+    }
+
+    // Get current scroll center
+    const scrollCenter = container.scrollTop + container.clientHeight / 2;
+    const scrollRatio = scrollCenter / container.scrollHeight;
+
+    setZoom(newZoom);
+
+    // After re-render, restore scroll position
+    requestAnimationFrame(() => {
+      const newScrollCenter = container.scrollHeight * scrollRatio;
+      container.scrollTop = newScrollCenter - container.clientHeight / 2;
+    });
+  }, []);
+
+  // Navigate to specific page
+  const handlePageChange = useCallback((page: number) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const pageElement = container.querySelector(`[data-page-number="${page}"]`);
+    if (pageElement) {
+      pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, []);
+
+  // Add keyboard shortcuts
+  useZoomKeyboard({
+    zoom,
+    onZoomChange: handleZoomChange,
+  });
+
+  // Add pinch zoom
+  usePinchZoom({
+    elementRef: containerRef,
+    zoom,
+    onZoomChange: handleZoomChange,
+  });
 
   // Load all page proxies when PDF is ready
   useEffect(() => {
@@ -42,6 +100,7 @@ export function PDFViewer({
         loadedPages.push(page);
       }
       setPages(loadedPages);
+      setPageCount(pdf.numPages);
       onDocumentLoad?.(pdf.numPages);
     };
 
@@ -100,20 +159,32 @@ export function PDFViewer({
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="pdf-viewer overflow-auto h-full bg-zinc-900"
-      data-testid="pdf-viewer"
-    >
-      <div className="flex flex-col items-center py-4">
-        {pages.map((page, index) => (
-          <PDFPage
-            key={index + 1}
-            page={page}
-            pageNumber={index + 1}
-            zoom={zoom}
-          />
-        ))}
+    <div className="flex flex-col h-full">
+      <PDFControls
+        zoom={zoom}
+        onZoomChange={handleZoomChange}
+        currentPage={currentPage}
+        pageCount={pageCount}
+        onPageChange={handlePageChange}
+        title={title}
+        onSidebarToggle={onSidebarToggle}
+        isSidebarOpen={isSidebarOpen}
+      />
+      <div
+        ref={containerRef}
+        className="pdf-viewer overflow-auto flex-1 bg-zinc-900"
+        data-testid="pdf-viewer"
+      >
+        <div className="flex flex-col items-center py-4">
+          {pages.map((page, index) => (
+            <PDFPage
+              key={index + 1}
+              page={page}
+              pageNumber={index + 1}
+              zoom={zoom}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
