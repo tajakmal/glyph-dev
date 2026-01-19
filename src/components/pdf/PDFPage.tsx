@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import { renderPage } from '@/lib/pdf-utils';
+import { PDFTextLayer, TextSelection } from './PDFTextLayer';
 
 interface PDFPageProps {
   /** PDF page proxy */
@@ -13,15 +14,31 @@ interface PDFPageProps {
   zoom: number;
   /** Optional: callback when rendered */
   onRenderComplete?: () => void;
+  /** Optional: callback when text is selected */
+  onTextSelect?: (selection: TextSelection) => void;
 }
 
-export function PDFPage({ page, pageNumber, zoom, onRenderComplete }: PDFPageProps) {
+export function PDFPage({
+  page,
+  pageNumber,
+  zoom,
+  onRenderComplete,
+  onTextSelect,
+}: PDFPageProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
     if (!canvasRef.current) return;
 
     renderPage(page, canvasRef.current, zoom).then(() => {
+      // Update dimensions for text layer positioning
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: zoom * dpr });
+      setDimensions({
+        width: viewport.width / dpr,
+        height: viewport.height / dpr,
+      });
       onRenderComplete?.();
     });
   }, [page, zoom, onRenderComplete]);
@@ -31,9 +48,20 @@ export function PDFPage({ page, pageNumber, zoom, onRenderComplete }: PDFPagePro
       className="pdf-page"
       data-page-number={pageNumber}
       data-testid={`pdf-page-${pageNumber}`}
+      style={{
+        width: dimensions.width || 'auto',
+        height: dimensions.height || 'auto',
+      }}
     >
       <canvas ref={canvasRef} className="pdf-canvas" />
-      {/* Text layer and highlight layer will be added in later tasks */}
+      {dimensions.width > 0 && (
+        <PDFTextLayer
+          page={page}
+          zoom={zoom}
+          onTextSelect={onTextSelect}
+        />
+      )}
+      {/* Highlight layer will be added in later task */}
     </div>
   );
 }
