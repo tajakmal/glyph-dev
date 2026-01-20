@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import type { HighlightColor, PDFHighlight } from '@/types';
+import type { HighlightColor, Highlight } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
 
 interface SelectionPopoverProps {
@@ -21,7 +21,7 @@ interface SelectionPopoverProps {
 
 interface HighlightPopoverProps {
   /** The highlight being edited */
-  highlight: PDFHighlight;
+  highlight: Highlight;
   /** Anchor position */
   anchorRect: { x: number; y: number };
   /** Update note */

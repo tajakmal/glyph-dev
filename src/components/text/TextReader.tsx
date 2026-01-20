@@ -6,7 +6,7 @@ import type { DocumentMeta, HighlightColor, TextHighlight } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
 import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
-import { SelectionPopover } from '@/components/pdf/PDFHighlightPopover';
+import { SelectionPopover, HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { useTextHighlights } from '@/hooks/useTextHighlights';
 
 interface TextReaderProps {
@@ -51,6 +51,12 @@ export function TextReader({ documentId }: TextReaderProps) {
     startWord: number;
     endWord: number;
     text: string;
+    anchorRect: { x: number; y: number };
+  } | null>(null);
+
+  // Active highlight for popover (when clicking a highlighted word)
+  const [activeHighlight, setActiveHighlight] = useState<{
+    highlight: TextHighlight;
     anchorRect: { x: number; y: number };
   } | null>(null);
 
@@ -223,6 +229,63 @@ export function TextReader({ documentId }: TextReaderProps) {
     console.log('Speed read from:', selection);
     handleCloseSelection();
   }, [selection, handleCloseSelection]);
+
+  // Handle click on highlighted word
+  const handleHighlightClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
+    const target = e.target as HTMLElement;
+    const highlightId = target.getAttribute('data-highlight-id');
+    if (!highlightId) return;
+
+    const highlight = highlights.find((h) => h.id === highlightId);
+    if (!highlight) return;
+
+    // Prevent text selection when clicking a highlight
+    e.stopPropagation();
+
+    // Get anchor position for popover
+    const rect = target.getBoundingClientRect();
+    const anchorX = rect.left + rect.width / 2;
+    const anchorY = rect.top;
+
+    setActiveHighlight({
+      highlight,
+      anchorRect: { x: anchorX, y: anchorY },
+    });
+  }, [highlights]);
+
+  // Close highlight popover
+  const handleCloseHighlightPopover = useCallback(() => {
+    setActiveHighlight(null);
+  }, []);
+
+  // Handle highlight color change
+  const handleHighlightColorChange = useCallback((color: HighlightColor) => {
+    if (activeHighlight) {
+      updateHighlightColor(activeHighlight.highlight.id, color);
+    }
+  }, [activeHighlight, updateHighlightColor]);
+
+  // Handle highlight note update
+  const handleHighlightNoteUpdate = useCallback((note: string) => {
+    if (activeHighlight) {
+      updateHighlightNote(activeHighlight.highlight.id, note);
+    }
+  }, [activeHighlight, updateHighlightNote]);
+
+  // Handle highlight delete
+  const handleHighlightDelete = useCallback(() => {
+    if (activeHighlight) {
+      removeHighlight(activeHighlight.highlight.id);
+      setActiveHighlight(null);
+    }
+  }, [activeHighlight, removeHighlight]);
+
+  // Handle speed read from highlight (placeholder)
+  const handleHighlightSpeedRead = useCallback(() => {
+    // Will be implemented in a later task
+    console.log('Speed read highlight:', activeHighlight?.highlight);
+    handleCloseHighlightPopover();
+  }, [activeHighlight, handleCloseHighlightPopover]);
 
   // Document title
   const documentTitle = meta?.title || 'Untitled Document';
@@ -470,6 +533,7 @@ export function TextReader({ documentId }: TextReaderProps) {
                           data-highlight-id={highlight?.id}
                           style={bgStyle}
                           className={highlight ? 'cursor-pointer rounded-sm' : undefined}
+                          onClick={highlight ? handleHighlightClick : undefined}
                         >
                           {word}
                         </span>
@@ -498,6 +562,19 @@ export function TextReader({ documentId }: TextReaderProps) {
             onCreateHighlight={handleCreateHighlight}
             onSpeedRead={handleSpeedReadSelection}
             onClose={handleCloseSelection}
+          />
+        )}
+
+        {/* Highlight Popover */}
+        {activeHighlight && (
+          <HighlightPopover
+            highlight={activeHighlight.highlight}
+            anchorRect={activeHighlight.anchorRect}
+            onUpdateNote={handleHighlightNoteUpdate}
+            onUpdateColor={handleHighlightColorChange}
+            onDelete={handleHighlightDelete}
+            onSpeedRead={handleHighlightSpeedRead}
+            onClose={handleCloseHighlightPopover}
           />
         )}
       </div>
