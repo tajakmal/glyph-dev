@@ -8,6 +8,7 @@ import {
   getDocuments,
   setDocuments,
   storePDF,
+  storeText,
   deleteDocumentComplete,
 } from '@/lib/storage';
 import {
@@ -15,6 +16,12 @@ import {
   extractPDFMetadata,
   generateThumbnail,
 } from '@/lib/pdf-utils';
+import { tokenize } from '@/lib/tokenize';
+
+interface AddTextDocumentParams {
+  title?: string;
+  content: string;
+}
 
 interface UseDocumentLibraryReturn {
   /** All documents sorted by lastOpenedAt */
@@ -23,8 +30,10 @@ interface UseDocumentLibraryReturn {
   isLoading: boolean;
   /** Error if any operation failed */
   error: Error | null;
-  /** Add a new document from a File */
+  /** Add a new PDF document from a File */
   addDocument: (file: File) => Promise<DocumentMeta>;
+  /** Add a new text document from pasted content */
+  addTextDocument: (params: AddTextDocumentParams) => Promise<DocumentMeta>;
   /** Remove a document and all associated data */
   removeDocument: (id: string) => Promise<void>;
   /** Update document metadata */
@@ -124,6 +133,54 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     return docMeta;
   }, []);
 
+  const addTextDocument = useCallback(async (params: AddTextDocumentParams): Promise<DocumentMeta> => {
+    const { title: providedTitle, content } = params;
+
+    // Compute word count using shared tokenizer
+    const words = tokenize(content);
+    const wordCount = words.length;
+
+    // Determine title: provided title > first non-empty line > "Untitled Text"
+    let title = providedTitle?.trim();
+    if (!title) {
+      // Get first non-empty line
+      const lines = content.split('\n');
+      const firstLine = lines.find(line => line.trim().length > 0);
+      title = firstLine?.trim() || 'Untitled Text';
+    }
+
+    // Create text preview: first ~160 chars, whitespace collapsed
+    const collapsedText = content.replace(/\s+/g, ' ').trim();
+    const textPreview = collapsedText.length > 160
+      ? collapsedText.slice(0, 160).trim()
+      : collapsedText;
+
+    // Create document metadata
+    const now = Date.now();
+    const docMeta: DocumentMeta = {
+      id: uuidv4(),
+      title,
+      kind: 'text',
+      wordCount,
+      textPreview: textPreview || undefined,
+      addedAt: now,
+      lastOpenedAt: now,
+    };
+
+    // Store text content in IndexedDB
+    await storeText(docMeta.id, content);
+
+    // Store metadata in localStorage
+    const docs = getDocuments();
+    docs.push(docMeta);
+    setDocuments(docs);
+
+    // Update local state
+    setLocalDocuments(prev => [docMeta, ...prev]);
+
+    return docMeta;
+  }, []);
+
   const removeDocument = useCallback(async (id: string): Promise<void> => {
     await deleteDocumentComplete(id);
     setLocalDocuments(prev => prev.filter(d => d.id !== id));
@@ -149,6 +206,7 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     isLoading,
     error,
     addDocument,
+    addTextDocument,
     removeDocument,
     updateDocument,
     getDocument,

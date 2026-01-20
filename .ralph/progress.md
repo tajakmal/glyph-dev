@@ -1,37 +1,48 @@
 # Progress Log
 
-Task started: 2026-01-20 17:19:28
+Task started: 2026-01-20 17:22:39
 
-### 2026-01-20 17:19:29
+### 2026-01-20 17:22:39
 **Iteration 1 started**
 
-### 2026-01-20 (continued)
-**Completed: Shared Tokenization and Word Index Mapping**
+### 2026-01-20 (Iteration 1 completed)
+**All criteria completed**
 
-All criteria completed:
+**Changes made:**
 
-1. **Created `src/lib/tokenize.ts`** - Core tokenization utilities:
-   - `tokenize(text)`: Canonical tokenization function (trims, splits on whitespace, filters empty)
-   - `buildWordBoundaries(text)`: Returns char offset ranges for each word
-   - `getWordIndexAtOffset(offset, boundaries)`: Maps char offset to word index
-   - `getSelectionWordRange(selectionRange, boundaries)`: Maps DOM selection to word range
-   - `getTextForWordRange(text, startWord, endWord)`: Extracts text for word range
+1. **Criterion 1: Paste Text Panel on Home page**
+   - Added `textTitle`, `textContent`, and `isSavingText` state variables
+   - Added `wordCount` computed from `textContent` using shared tokenizer
+   - Added `isSaveDisabled` check for empty/whitespace-only content
+   - Added `handleSaveText` function to save text documents
+   - Added Paste Text panel UI with title input, text area, word count display, and Save button
+   - Layout updated to grid with PDF upload and Paste Text side by side on md+ screens
 
-2. **Created `src/lib/word-mapping.ts`** - PDF-specific mapping utilities:
-   - `buildPageWordCounts(pdf)`: Extracts word counts per page using shared tokenize
-   - `mapWordIndexToPage(wordIndex, counts)`: Maps global word index to page/offset
-   - `mapPageToWordIndex(page, indexOnPage, counts)`: Inverse mapping
-   - `getTotalWordCount(counts)`: Sum across all pages
-   - `getCumulativeWordCount(page, counts)`: Words before a page
-   - `mapSelectionToWordIndex(pageText, offset, page, counts)`: Selection to global index
-   - `mapRangeSelectionToWordIndex(range, page, counts, text)`: Range version
+2. **Criterion 2: addTextDocument in useDocumentLibrary.ts**
+   - Added import for `storeText` from storage.ts
+   - Added import for `tokenize` from tokenize.ts
+   - Added `AddTextDocumentParams` interface
+   - Added `addTextDocument` function that:
+     - Computes word count using shared tokenizer
+     - Determines title from provided title, first non-empty line, or "Untitled Text"
+     - Creates text preview (first ~160 chars, whitespace collapsed)
+     - Stores text in IndexedDB via `storeText`
+     - Stores metadata in localStorage via `setDocuments`
+     - Updates local state
 
-3. **Updated `src/components/SpritzReader.tsx`**:
-   - Added import for shared `tokenize` function
-   - Replaced `parseText` local tokenization with shared `tokenize()`
-   - Replaced word count displays (file info and text input) with `tokenize()`
+3. **Criterion 3: Library grid shows PDF and text cards**
+   - Updated DocumentCard.tsx to show different icons for text vs PDF documents
+   - Added "Text" badge on text document thumbnail
+   - Updated info section to show word count and preview for text documents
+   - Preserved page count/file size/last read page for PDFs
 
-4. **Build verified**: `npm run build` completes successfully with no errors
+4. **Criterion 4: Library empty state**
+   - Updated LibraryGrid.tsx empty state message from "Upload a PDF" to "Upload a PDF or paste text"
 
-### 2026-01-20 17:22:37
-**Iteration 1 ended** - TASK COMPLETE
+**Files modified:**
+- `src/app/page.tsx` - Added Paste Text panel UI and state
+- `src/hooks/useDocumentLibrary.ts` - Added `addTextDocument` function
+- `src/components/library/DocumentCard.tsx` - Updated for text document rendering
+- `src/components/library/LibraryGrid.tsx` - Updated empty state message
+- `RALPH_TASK.md` - Marked criteria as completed
+- `.ralph/progress.md` - This file

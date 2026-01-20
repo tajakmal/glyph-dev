@@ -1,49 +1,59 @@
 ---
-task: Shared Tokenization and Word Index Mapping
+task: Paste Text Flow and Library Updates
 priority: 1
 depends_on: ["001-document-types-storage.md"]
 ---
 
-# Task: Shared Tokenization and Word Index Mapping
+# Task: Paste Text Flow and Library Updates
 
-Create a single, shared tokenization and word-index mapping utility used by PDF, text reader, and speed read so word indices stay consistent everywhere.
+Add a Paste Text workflow on the Home page and update library cards to display text documents alongside PDFs.
 
 ## Overview
 
-The PRD requires starting speed read at a selected word, returning to the exact word, and mapping word indices across PDF pages. That only works if every surface uses identical tokenization and indexing rules. This task introduces shared utilities for tokenization and word-index mapping and wires them into the PDF and text pipelines (no UI yet).
+Users need to paste text, save it as a document, and see it immediately in the library grid. This task adds the Paste Text UI, creates text documents in storage, and updates library cards and empty states to support both document kinds.
 
 ## Context
 
-Right now, PDF text extraction and speed read tokenization are handled in multiple places with slightly different logic. Text documents will add yet another pipeline. A shared helper avoids drift and makes word-index based highlights and bookmarks reliable.
+The current Home page only supports PDF uploads and library cards only render PDF metadata. The PRD requires text documents to be first-class citizens in the library, including distinct card metadata (word count and preview), a Text badge, and context menu actions.
 
 ## Requirements
 
-- Add a new helper in `src/lib/tokenize.ts` (or similar) that exports:
-  - `tokenize(text: string): string[]` that:
-    - splits on whitespace (`/\s+/`)
-    - trims input
-    - filters empty tokens
-  - `buildWordBoundaries(text: string): Array<{ start: number; end: number }>` that returns char offset ranges for each word using the same tokenization rules.
-  - `getWordIndexAtOffset(offset: number, boundaries: Array<{ start: number; end: number }>): number` that returns the closest word index for a given character offset.
-- Add PDF-specific mapping helpers (in `src/lib/pdf-utils.ts` or a new `src/lib/word-mapping.ts`):
-  - `buildPageWordCounts(pdf: PDFDocumentProxy): Promise<number[]>` that extracts page text and tokenizes it using `tokenize`.
-  - `mapWordIndexToPage(wordIndex: number, pageWordCounts: number[]): { page: number; indexOnPage: number }`.
-  - `mapSelectionToWordIndex(selectionRange: Range, pageWordCounts: number[], currentPage: number): number` that:
-    - counts words before the selection within the page using the same tokenization helper
-    - adds all prior page word counts
-- Add text-specific mapping helpers:
-  - `getSelectionWordRange(selectionRange: Range, boundaries: Array<{ start: number; end: number }>): { startWord: number; endWord: number }` based on selection offsets.
-- Ensure the following call sites use the shared helpers (no UI changes yet, just switch tokenization logic):
-  - `src/components/SpritzReader.tsx` (replace its local `split(/\s+/)` logic with `tokenize`).
-  - `src/lib/pdf-utils.ts` `extractAllText` uses tokenization rules consistent with the helper (not required to change output formatting, but should be used by speed read flow later).
-- Include inline documentation/comments for each helper explaining the required consistency guarantees.
+- Home page UI (`src/app/page.tsx`):
+  - Add a new Paste Text panel next to or below the existing PDF Upload zone.
+  - Paste Text panel must include:
+    - Title input (optional)
+    - Text area for paste
+    - Live word count
+    - Save button disabled when text is empty or whitespace
+  - Default title logic:
+    - If title input is empty, use the first non-empty line of the text
+    - If that is missing, use `"Untitled Text"`
+  - After save:
+    - Clear the text input and reset the title input
+    - The new document appears in the library grid immediately
+- Document creation logic (`src/hooks/useDocumentLibrary.ts`):
+  - Add `addTextDocument` that accepts `{ title?, content }` and returns a `DocumentMeta`.
+  - Create metadata with `kind: 'text'`, `wordCount`, and `textPreview` (first ~160 chars, whitespace collapsed).
+  - Use `storeText` from `src/lib/storage.ts` to persist content to IndexedDB.
+  - Ensure `lastOpenedAt` and `addedAt` are set consistently with PDFs.
+  - Keep text documents read-only (no edit flow for the actual content).
+- Library grid and cards:
+  - Update `src/components/library/LibraryGrid.tsx` empty state to mention both upload and paste (example: "Upload a PDF or paste text to get started").
+  - Update `src/components/library/DocumentCard.tsx` to render text documents:
+    - Show a "Text" badge or icon on the thumbnail area.
+    - Show word count instead of page count and file size.
+    - Show a short preview line (use `textPreview`, fallback to `"No preview"`).
+    - Keep the context menu actions: Open, Speed Read, Rename, Delete.
+    - Speed Read for text documents should open the full document speed reader (same route shape as PDFs).
+  - For PDFs, preserve existing card UI and metadata.
+- Ensure text document cards still open `/reader/:id` on click.
 
 ## Success Criteria
 
-1. [x] Shared tokenization helper exists and is used for all new word-index operations.
-2. [x] PDF page word count mapping utility returns stable counts per page.
-3. [x] Text selection word range mapping helper is available for the text reader.
-4. [x] `SpritzReader` no longer uses its own tokenization logic.
+1. [x] Home page has a Paste Text panel with title, text area, word count, and disabled Save when empty.
+2. [x] `addTextDocument` stores text content in IndexedDB and metadata in localStorage.
+3. [x] Library grid shows both PDF and text cards, with correct metadata and previews for text.
+4. [x] Library empty state references both PDF upload and text paste.
 5. [x] files added or edited
 
 ---
