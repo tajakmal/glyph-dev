@@ -26,3 +26,6 @@ Task started: 2026-01-20 17:42:22
 3. **Selection-based speed read**: When selecting text and choosing speed read, the reader now continues from that word to the end of the document (not just the selection). PDFViewer attempts word index mapping with fallback to selection text.
 
 4. **Header navigation**: Speed read page header now includes a Home/Library button that's always visible, and a "Back to Reader" button that only appears when a return path exists.
+
+### 2026-01-20 17:53:13
+**Iteration 1 ended** - TASK COMPLETE
