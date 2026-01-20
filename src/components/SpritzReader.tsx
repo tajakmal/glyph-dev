@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { tokenize } from '@/lib/tokenize';
 
 interface SpritzReaderProps {
   /** Initial text to speed read (optional) */
@@ -31,10 +32,8 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
   };
 
   const parseText = (inputText: string) => {
-    const parsed = inputText
-      .trim()
-      .split(/\s+/)
-      .filter(word => word.length > 0);
+    // Use shared tokenize function for consistent word indexing across the app
+    const parsed = tokenize(inputText);
     setWords(parsed);
     setCurrentIndex(0);
     setHasStarted(false);
@@ -369,7 +368,7 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
                 <span className="truncate flex-1">{fileName}</span>
                 {text && (
                   <span className="text-zinc-600 text-xs">
-                    {text.split(/\s+/).length.toLocaleString()} words
+                    {tokenize(text).length.toLocaleString()} words
                   </span>
                 )}
               </div>
@@ -380,7 +379,7 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
         {/* Word count for text input */}
         {inputMode === 'text' && text && (
           <div className="mt-2 text-xs text-zinc-600 text-right">
-            {text.trim().split(/\s+/).filter(w => w.length > 0).length.toLocaleString()} words
+            {tokenize(text).length.toLocaleString()} words
           </div>
         )}
 
