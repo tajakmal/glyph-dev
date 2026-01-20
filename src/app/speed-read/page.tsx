@@ -160,24 +160,45 @@ function SpeedReadContent() {
     );
   }
 
+  const handleGoHome = () => {
+    router.push('/');
+  };
+
   return (
     <div className="h-screen flex flex-col bg-zinc-950">
-      {/* Header with back button */}
-      <div className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800">
-        <button
-          onClick={handleBack}
-          className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          <span>Back to Reader</span>
-        </button>
-        {documentTitle && (
-          <span className="text-zinc-500 text-sm truncate">
-            Reading: {documentTitle}
-          </span>
-        )}
+      {/* Header with navigation */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <div className="flex items-center gap-3">
+          {/* Home/Library button */}
+          <button
+            onClick={handleGoHome}
+            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+            title="Back to Library"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+          </button>
+
+          {/* Back to Reader button - only shows if we have a return path */}
+          {returnPath && (
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              <span>Back to Reader</span>
+            </button>
+          )}
+
+          {documentTitle && (
+            <span className="text-zinc-500 text-sm truncate max-w-[300px]">
+              {documentTitle}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Speed Reader */}
