@@ -1,19 +1,27 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { SpritzReader } from '@/components/SpritzReader';
-import { getPDF } from '@/lib/storage';
+import { getPDF, getText as getTextContent } from '@/lib/storage';
 import { loadPDF, extractAllText } from '@/lib/pdf-utils';
 import { getDocuments } from '@/lib/storage';
+import { tokenize } from '@/lib/tokenize';
+import { saveSpeedReadSession } from '@/lib/speed-read';
 
 function SpeedReadContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [text, setText] = useState<string>('');
+  const [words, setWords] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [documentTitle, setDocumentTitle] = useState<string>('');
   const [returnPath, setReturnPath] = useState<string | null>(null);
+  const [startIndex, setStartIndex] = useState(0);
+  const [documentId, setDocumentId] = useState<string | null>(null);
+  const [documentKind, setDocumentKind] = useState<'pdf' | 'text' | null>(null);
+
+  // Track the last saved index to avoid excessive sessionStorage writes
+  const lastSavedIndexRef = useRef<number>(-1);
 
   useEffect(() => {
     const loadText = async () => {
@@ -29,7 +37,8 @@ function SpeedReadContent() {
         // Check for text in URL params (small text)
         const urlText = searchParams.get('text');
         if (urlText) {
-          setText(decodeURIComponent(urlText));
+          const decoded = decodeURIComponent(urlText);
+          setWords(tokenize(decoded));
           setIsLoading(false);
           return;
         }
@@ -39,7 +48,7 @@ function SpeedReadContent() {
         if (source === 'session') {
           const sessionText = sessionStorage.getItem('glyph:speedread-text');
           if (sessionText) {
-            setText(sessionText);
+            setWords(tokenize(sessionText));
             sessionStorage.removeItem('glyph:speedread-text');
           }
           setIsLoading(false);
@@ -47,22 +56,48 @@ function SpeedReadContent() {
         }
 
         // Check for document ID (full document speed read)
-        const documentId = searchParams.get('documentId');
-        if (documentId) {
-          // Get document metadata
-          const documents = getDocuments();
-          const doc = documents.find(d => d.id === documentId);
-          if (doc) {
-            setDocumentTitle(doc.title);
-            setReturnPath(`/reader/${documentId}`);
+        const docId = searchParams.get('documentId');
+        if (docId) {
+          setDocumentId(docId);
+
+          // Parse startIndex from query params
+          const startIndexParam = searchParams.get('startIndex');
+          if (startIndexParam) {
+            const parsed = parseInt(startIndexParam, 10);
+            if (!isNaN(parsed) && parsed >= 0) {
+              setStartIndex(parsed);
+            }
           }
 
-          // Load PDF and extract text
-          const pdfData = await getPDF(documentId);
-          if (pdfData) {
-            const pdf = await loadPDF(pdfData);
-            const extractedText = await extractAllText(pdf);
-            setText(extractedText);
+          // Parse kind from query params, or infer from document metadata
+          const kindParam = searchParams.get('kind') as 'pdf' | 'text' | null;
+
+          // Get document metadata
+          const documents = getDocuments();
+          const doc = documents.find(d => d.id === docId);
+          if (doc) {
+            setDocumentTitle(doc.title);
+            setReturnPath(`/reader/${docId}`);
+
+            // Determine kind - use param if provided, otherwise use document metadata
+            const kind = kindParam || doc.kind || 'pdf';
+            setDocumentKind(kind);
+
+            if (kind === 'text') {
+              // Load text document
+              const textContent = await getTextContent(docId);
+              if (textContent) {
+                setWords(tokenize(textContent));
+              }
+            } else {
+              // Load PDF and extract text
+              const pdfData = await getPDF(docId);
+              if (pdfData) {
+                const pdf = await loadPDF(pdfData);
+                const extractedText = await extractAllText(pdf);
+                setWords(tokenize(extractedText));
+              }
+            }
           }
           setIsLoading(false);
           return;
@@ -78,6 +113,19 @@ function SpeedReadContent() {
 
     loadText();
   }, [searchParams]);
+
+  // Handle index changes - save to sessionStorage for return-to-word feature
+  const handleIndexChange = useCallback((index: number) => {
+    // Only save if we have document context and index has changed significantly (every 10 words)
+    if (documentId && documentKind && Math.abs(index - lastSavedIndexRef.current) >= 10) {
+      saveSpeedReadSession({
+        documentId,
+        kind: documentKind,
+        wordIndex: index,
+      });
+      lastSavedIndexRef.current = index;
+    }
+  }, [documentId, documentKind]);
 
   const handleBack = () => {
     if (returnPath) {
@@ -98,7 +146,7 @@ function SpeedReadContent() {
     );
   }
 
-  if (!text) {
+  if (words.length === 0) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-zinc-950">
         <p className="text-zinc-400 mb-4">No text to speed read.</p>
@@ -134,7 +182,11 @@ function SpeedReadContent() {
 
       {/* Speed Reader */}
       <div className="flex-1 overflow-hidden">
-        <SpritzReader initialText={text} />
+        <SpritzReader
+          words={words}
+          initialIndex={startIndex}
+          onIndexChange={handleIndexChange}
+        />
       </div>
     </div>
   );

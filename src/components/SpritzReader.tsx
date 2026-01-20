@@ -6,12 +6,34 @@ import { tokenize } from '@/lib/tokenize';
 interface SpritzReaderProps {
   /** Initial text to speed read (optional) */
   initialText?: string;
+  /** Pre-tokenized words (optional, skips internal tokenization if provided) */
+  words?: string[];
+  /** Initial word index to start at (optional, default 0) */
+  initialIndex?: number;
+  /** Callback when the current word index changes (optional) */
+  onIndexChange?: (index: number) => void;
 }
 
-export function SpritzReader({ initialText }: SpritzReaderProps) {
+export function SpritzReader({
+  initialText,
+  words: propsWords,
+  initialIndex = 0,
+  onIndexChange,
+}: SpritzReaderProps) {
   const [text, setText] = useState(initialText || '');
-  const [words, setWords] = useState<string[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
+  const [wordsState, setWordsState] = useState<string[]>(propsWords || []);
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+
+  // Use props words if provided, otherwise use internal state
+  const words = propsWords || wordsState;
+
+  // Memoize the setter to prevent dependency issues
+  const isUsingPropsWords = !!propsWords;
+  const setWords = useCallback((newWords: string[]) => {
+    if (!isUsingPropsWords) {
+      setWordsState(newWords);
+    }
+  }, [isUsingPropsWords]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [wpm, setWpm] = useState(300);
   const [hasStarted, setHasStarted] = useState(false);
@@ -31,14 +53,14 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
     return Math.floor(len / 2) + 1;
   };
 
-  const parseText = (inputText: string) => {
+  const parseText = useCallback((inputText: string) => {
     // Use shared tokenize function for consistent word indexing across the app
     const parsed = tokenize(inputText);
     setWords(parsed);
     setCurrentIndex(0);
     setHasStarted(false);
     setIsPlaying(false);
-  };
+  }, [setWords]);
 
   const handleGo = () => {
     if (text.trim()) {
@@ -55,7 +77,7 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
     } else {
       setIsPlaying(!isPlaying);
     }
-  }, [hasStarted, text, isPlaying]);
+  }, [hasStarted, text, isPlaying, parseText]);
 
   const reset = () => {
     setCurrentIndex(0);
@@ -73,13 +95,28 @@ export function SpritzReader({ initialText }: SpritzReaderProps) {
     setIsPlaying(false);
   };
 
-  // Auto-start if initialText is provided
+  // Auto-start if initialText or propsWords is provided
   useEffect(() => {
-    if (initialText && initialText.trim()) {
+    if (propsWords && propsWords.length > 0) {
+      // Words provided directly, use them
+      setCurrentIndex(initialIndex);
+      setHasStarted(true);
+    } else if (initialText && initialText.trim()) {
       parseText(initialText);
+      // If initialIndex is provided, set it after parsing
+      if (initialIndex > 0) {
+        setCurrentIndex(initialIndex);
+      }
       setHasStarted(true);
     }
-  }, [initialText]);
+  }, [initialText, propsWords, initialIndex, parseText]);
+
+  // Call onIndexChange when currentIndex changes
+  useEffect(() => {
+    if (onIndexChange && hasStarted) {
+      onIndexChange(currentIndex);
+    }
+  }, [currentIndex, onIndexChange, hasStarted]);
 
   // Extract text from PDF
   const extractPdfText = async (file: File): Promise<string> => {

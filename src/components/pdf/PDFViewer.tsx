@@ -571,7 +571,10 @@ export function PDFViewer({
       }));
     }
 
-    navigateToDocumentSpeedRead(router, documentId, `/reader/${documentId}`);
+    navigateToDocumentSpeedRead(router, documentId, {
+      returnPath: `/reader/${documentId}`,
+      kind: 'pdf',
+    });
   }, [router, documentId]);
 
   // Update highlight color
