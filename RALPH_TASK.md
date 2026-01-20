@@ -1,68 +1,44 @@
 ---
-task: Speed Read Selection, Resume, and Focus Return
+task: PDF Page Indicator Accuracy and Home Button
 priority: 2
-depends_on: ["002-tokenization-word-mapping.md", "004-text-reader-scaffold.md", "005-text-render-selection.md"]
+depends_on: ["001-document-types-storage.md"]
 ---
 
-# Task: Speed Read Selection, Resume, and Focus Return
+# Task: PDF Page Indicator Accuracy and Home Button
 
-Enable speed read to start at a selected word, continue to the end, and return to the reader at the exact word with a temporary red focus highlight.
+Fix PDF page indicator accuracy while scrolling and add Home/Library navigation in the PDF reader, plus update PDF selection highlight color.
 
 ## Overview
 
-This task connects selection-based speed reading for both PDFs and text docs, adds session state for returning to a word index, and updates the speed read header with clear navigation back to the reader or library.
+The page indicator currently relies on DOM visibility and can become stale due to virtualization. This task replaces it with scrollTop-based page calculation, ensures bookmarks reflect the correct page, adds a Home/Library action in the top bar, and updates selection highlight color to the red ORP family.
 
 ## Context
 
-Currently speed read only accepts a text snippet or full PDF text and does not maintain a word index. Returning to the reader restores only scroll position. The PRD requires word-accurate resume and a temporary focus highlight on return.
+The PRD calls out inaccurate PDF page indicators and bookmarks when scrolling through virtualized pages. It also requires navigation back to Home/Library and a red selection color.
 
 ## Requirements
 
-- Navigation utilities (`src/lib/speed-read.ts`):
-  - Extend navigation helpers to accept a `startWordIndex` and `documentKind`.
-  - Store `returnPath` and selection metadata in sessionStorage as needed.
-- Speed read page (`src/app/speed-read/page.tsx`):
-  - Accept query params for:
-    - `documentId`
-    - `startIndex` (word index)
-    - `kind` (`pdf` or `text`)
-  - Load text based on kind:
-    - `pdf`: use `getPDF` + `loadPDF` + `extractAllText`
-    - `text`: use `getText`
-  - Use shared `tokenize` helper to parse words.
-  - Start playback at `startIndex` when provided; otherwise start at 0.
-  - Persist current word index and document id to sessionStorage on index changes.
-- SpritzReader updates (`src/components/SpritzReader.tsx`):
-  - Accept props:
-    - `initialIndex?: number`
-    - `onIndexChange?: (index: number) => void`
-    - Optionally `words?: string[]` if you prefer to pass pre-tokenized content.
-  - Use shared `tokenize` helper instead of local splitting.
-  - Call `onIndexChange` whenever `currentIndex` changes (throttle if needed).
-- Launching speed read from selection:
-  - PDF selection:
-    - Use word-index mapping utilities to compute a global `startWordIndex`.
-    - If mapping fails (selection spans pages and mapping is unreliable), fall back to passing the selection text as a snippet (per PRD).
-  - Text selection:
-    - Use selection `startWord` from Task 005.
-  - Ensure speed read continues from the selected word to the end of the document (do not limit to selection range).
-- Return to reader focus:
-  - On reader load, check sessionStorage for `{ documentId, kind, wordIndex }`.
-  - If matches current doc:
-    - Text reader: scroll to `span[data-word-index="wordIndex"]` and add a temporary red focus highlight class.
-    - PDF reader: map `wordIndex` to page using page word counts and scroll to that page. If you can map to a specific word span, highlight it; otherwise highlight the page and document the limitation.
-  - Focus highlight should clear on user scroll or click.
-- Speed read header:
-  - Add a Home/Library action in the speed read header.
-  - Keep "Back to Reader" when a return path exists; otherwise default back to `/`.
+- Page indicator logic in `src/components/pdf/PDFViewer.tsx`:
+  - Replace the "most visible page" calculation with a scrollTop-based calculation using `pageHeights` and `getPageOffset`.
+  - Compute the current page based on the scroll position plus a small offset (example: scrollTop + 20px or scrollTop + viewportHeight * 0.25) so the indicator updates as soon as the user enters a page.
+  - Ensure the calculation works even when pages are virtualized (use known heights, not DOM visibility).
+  - Update `currentPage` state and `onPageChange` accordingly.
+- Bookmark toggle accuracy:
+  - Ensure the bookmark toggle button uses the corrected `currentPage` value and reflects the correct page while scrolling.
+- Home/Library button:
+  - Add a Home/Library button to `PDFControls` (left side of the top bar).
+  - Button should navigate to `/` and have an accessible label.
+  - Preserve existing layout and controls.
+- PDF selection highlight color:
+  - Update `.pdf-text-layer span::selection` in `src/app/globals.css` to a red-family color (example: `rgba(239, 68, 68, 0.45)`).
 
 ## Success Criteria
 
-1. [x] Speed read can start at a specific word index for both PDF and text documents.
-2. [x] Returning from speed read scrolls to the saved word and shows a temporary red focus highlight.
-3. [x] Selection-based speed read continues to the end of the document.
-4. [x] Speed read header includes Home/Library navigation and respects return path.
-5. [x] files added or edited
+1. [x] PDF page indicator updates correctly while scrolling with virtualization enabled.
+2. [ ] Bookmark toggle reflects the correct current page.
+3. [ ] PDF top bar includes a Home/Library button that navigates to `/`.
+4. [ ] PDF selection highlight uses the red ORP color family.
+5. [ ] files added or edited
 
 ---
 

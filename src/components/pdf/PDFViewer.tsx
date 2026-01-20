@@ -415,39 +415,48 @@ export function PDFViewer({
     }
   }, [documentId, pageCount]);
 
-  // Track current page on scroll
+  // Track current page on scroll using scrollTop-based calculation
+  // This works reliably even when pages are virtualized (not rendered in DOM)
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!container || pageCount === 0) return;
+
+    const calculateCurrentPage = () => {
+      const scrollTop = container.scrollTop;
+      // Use a small offset so the indicator updates as soon as user enters a page
+      const viewportOffset = container.clientHeight * 0.25;
+      const scrollPosition = scrollTop + viewportOffset;
+
+      // Find which page contains this scroll position using accumulated heights
+      let accumulatedHeight = PAGE_GAP;
+      for (let i = 1; i <= pageCount; i++) {
+        const pageHeight = pageHeights.get(i) || estimatedPageHeight;
+        const pageBottom = accumulatedHeight + pageHeight;
+
+        if (scrollPosition < pageBottom) {
+          return i;
+        }
+        accumulatedHeight = pageBottom + PAGE_GAP;
+      }
+
+      // If we've scrolled past all pages, return the last page
+      return pageCount;
+    };
 
     const handleScroll = () => {
-      // Find the page that is most visible in the viewport
-      const pageElements = container.querySelectorAll('[data-page-number]');
-      let mostVisiblePage = 1;
-      let maxVisibility = 0;
-
-      pageElements.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
-        const visibleHeight = Math.min(rect.bottom, containerRect.bottom) -
-                             Math.max(rect.top, containerRect.top);
-        const visibility = Math.max(0, visibleHeight / rect.height);
-
-        if (visibility > maxVisibility) {
-          maxVisibility = visibility;
-          mostVisiblePage = parseInt(el.getAttribute('data-page-number') || '1');
-        }
-      });
-
-      if (mostVisiblePage !== currentPage) {
-        setCurrentPage(mostVisiblePage);
-        onPageChange?.(mostVisiblePage);
+      const newPage = calculateCurrentPage();
+      if (newPage !== currentPage) {
+        setCurrentPage(newPage);
+        onPageChange?.(newPage);
       }
     };
 
+    // Calculate initial page
+    handleScroll();
+
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, [currentPage, onPageChange]);
+  }, [currentPage, pageCount, pageHeights, estimatedPageHeight, onPageChange]);
 
   // Sidebar handlers
   const handleBookmarkClick = useCallback((bookmark: PDFBookmark) => {
