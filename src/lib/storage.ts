@@ -42,6 +42,11 @@ export async function getDB(): Promise<IDBDatabase> {
       if (!database.objectStoreNames.contains(INDEXEDDB_CONFIG.STORE_PDFS)) {
         database.createObjectStore(INDEXEDDB_CONFIG.STORE_PDFS);
       }
+
+      // Create object store for text content
+      if (!database.objectStoreNames.contains(INDEXEDDB_CONFIG.STORE_TEXTS)) {
+        database.createObjectStore(INDEXEDDB_CONFIG.STORE_TEXTS);
+      }
     };
   });
 }
