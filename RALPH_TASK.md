@@ -51,8 +51,8 @@ PDF highlights already exist, but text highlights require word-level storage and
 
 ## Success Criteria
 
-1. [ ] Text highlights are created and stored as word-index ranges.
-2. [ ] Overlapping highlights merge using the PRD rules for range, color, and notes.
+1. [x] Text highlights are created and stored as word-index ranges.
+2. [x] Overlapping highlights merge using the PRD rules for range, color, and notes.
 3. [ ] Highlights render inline across the correct word spans.
 4. [ ] Highlight popover supports color change, note edit, delete, and speed read action.
 5. [ ] Notes sidebar lists note-bearing highlights and scrolls to them.
