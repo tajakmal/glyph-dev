@@ -1,30 +1,7 @@
 # CLAUDE
-# AGENT=claude
-# MAX_ITERATIONS=3
-# MODEL=opus
-# YOLO_MODE=true
-
-# =============================================================================
-# Multi-Task Mode
-# =============================================================================
-# Process task queue from tasks directory instead of single RALPH_TASK.md
-# Options: true, false
-# TASK_MODE=true
-
-# Directory containing task files (used when TASK_MODE=true)
-# TASKS_DIR=tasks
-
-# Skip failed tasks and continue to next (instead of stopping)
-# Options: true, false
-# CONTINUE_ON_FAILURE=true
-
-
-
-
-# CODEX
-AGENT=codex
+AGENT=claude
 MAX_ITERATIONS=3
-MODEL=gpt-5.2-codex
+MODEL=opus
 YOLO_MODE=true
 
 # =============================================================================
@@ -41,12 +18,35 @@ TASKS_DIR=ralph/tasks
 # Options: true, false
 CONTINUE_ON_FAILURE=true
 
+
+
+
+# CODEX
+# AGENT=codex
+# MAX_ITERATIONS=3
+# MODEL=gpt-5.2-codex
+# YOLO_MODE=true
+
+# =============================================================================
+# Multi-Task Mode
+# =============================================================================
+# Process task queue from tasks directory instead of single RALPH_TASK.md
+# Options: true, false
+# TASK_MODE=true
+
+# Directory containing task files (used when TASK_MODE=true)
+# TASKS_DIR=ralph/tasks
+
+# Skip failed tasks and continue to next (instead of stopping)
+# Options: true, false
+# CONTINUE_ON_FAILURE=true
+
 # =============================================================================
 # Codex-Specific Options
 # =============================================================================
 # Reasoning effort level for Codex CLI (ignored for Claude)
 # Options: low, medium, high, extra_high
-CODEX_REASONING_LEVEL=extra_high
+# CODEX_REASONING_LEVEL=extra_high
 
 
 
