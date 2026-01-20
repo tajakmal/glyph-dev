@@ -50,9 +50,9 @@ Today the app assumes every document is a PDF and stores only PDF metadata and b
 1. [x] `DocumentMeta`, `Bookmark`, and `Highlight` types compile with new union types and `kind` fields.
 2. [x] IndexedDB version is bumped and the `texts` store is created in `onupgradeneeded`.
 3. [x] `storeText`, `getText`, and `deleteText` are implemented and exported.
-4. [ ] LocalStorage normalization handles missing `kind` and legacy fields without crashing, and writes back normalized data.
-5. [ ] `deleteDocumentComplete` removes both PDF binaries and text content safely.
-6. [ ] files added or edited
+4. [x] LocalStorage normalization handles missing `kind` and legacy fields without crashing, and writes back normalized data.
+5. [x] `deleteDocumentComplete` removes both PDF binaries and text content safely.
+6. [x] files added or edited
 
 ---
 
@@ -68,3 +68,87 @@ When working on this task:
 6. Commit your changes frequently with descriptive messages
 7. When ALL criteria are [x], output: `<ralph>COMPLETE</ralph>`
 8. If stuck 3+ times on same issue, output: `<ralph>GUTTER</ralph>`
+
+---
+
+## Questions From Claude (Please Answer)
+
+2. Then list your questions in markdown format with options
+3. Be specific about what criterion you're working on
+4. The task will move to review for human response
+
+Example:
+```
+<ralph>CLARIFY</ralph>
+
+## Clarification Needed
+
+**Working on:** Criterion 2 - Database setup
+**Blocked because:** Multiple valid approaches, need human decision
+
+### Questions:
+
+1. **Database Choice**
+   Which database should be used?
+   - PostgreSQL (relational, ACID compliant)
+   - MongoDB (document store, flexible schema)
+   - SQLite (embedded, lightweight)
+
+2. **Authentication Method**
+   How should users authenticate?
+   - JWT tokens (stateless)
+   - Session cookies (server-side state)
+```
+
+Only use CLARIFY when you genuinely cannot proceed without human input.
+Do NOT use it for technical questions you can research yourself.
+
+Begin by reading the task and working on the next unchecked criterion.
+
+mcp: context7 starting
+mcp: supabase starting
+mcp: context7 ready
+mcp: supabase ready
+mcp startup: ready: context7, supabase
+
+thinking
+**Confirming approach to instructions compliance**
+exec
+/bin/zsh -lc ls in /Users/tajwar/development/glyph-dev succeeded in 6ms:
+CLAUDE.md
+RALPH_TASK.md
+README.md
+eslint.config.mjs
+next-env.d.ts
+next.config.ts
+node_modules
+package-lock.json
+package.json
+postcss.config.mjs
+public
+ralph
+src
+tsconfig.json
+tsconfig.tsbuildinfo
+
+thinking
+**Checking guardrails directory name**
+
+I'm verifying whether the directory is named `.ralph` or `ralph` since instructions mention `.ralph/guardrails.md` but a directory named `ralph` appears; I'll list the directory to confirm.
+exec
+/bin/zsh -lc 'ls ralph' in /Users/tajwar/development/glyph-dev succeeded in 9ms:
+CLAUDE.md
+EXAMPLES_TEMPLATES
+RALPH_TASK.md.template
+README.md
+adapters
+init-ralph.sh
+ralph.sh
+tasks
+
+---
+
+## Your Answers
+
+_Add your answers below each question above, or in this section._
+

@@ -236,14 +236,188 @@ export function removeFromStorage(key: string): void {
 }
 
 // =============================================================================
+// LocalStorage Normalization Helpers
+// =============================================================================
+
+/**
+ * Normalize a document metadata entry from localStorage.
+ * Fills missing `kind` with 'pdf' and ensures PDF-specific defaults.
+ * Returns null for entries that cannot be normalized (missing required fields).
+ */
+function normalizeDocument(doc: unknown): DocumentMeta | null {
+  if (!doc || typeof doc !== 'object') return null;
+
+  const d = doc as Record<string, unknown>;
+
+  // Required fields for all documents
+  if (typeof d.id !== 'string' || typeof d.title !== 'string') return null;
+  if (typeof d.addedAt !== 'number' || typeof d.lastOpenedAt !== 'number') return null;
+
+  // Determine kind - default to 'pdf' for legacy data
+  const kind = d.kind === 'text' ? 'text' : 'pdf';
+
+  // Base fields
+  const base = {
+    id: d.id,
+    title: d.title,
+    kind,
+    addedAt: d.addedAt,
+    lastOpenedAt: d.lastOpenedAt,
+    wordCount: typeof d.wordCount === 'number' ? d.wordCount : undefined,
+    textPreview: typeof d.textPreview === 'string' ? d.textPreview : undefined,
+    fileName: typeof d.fileName === 'string' ? d.fileName : undefined,
+    pageCount: typeof d.pageCount === 'number' ? d.pageCount : undefined,
+    fileSize: typeof d.fileSize === 'number' ? d.fileSize : undefined,
+    lastReadPage: typeof d.lastReadPage === 'number' ? d.lastReadPage : undefined,
+    thumbnailDataUrl: typeof d.thumbnailDataUrl === 'string' ? d.thumbnailDataUrl : undefined,
+  };
+
+  if (kind === 'pdf') {
+    // For PDFs, ensure required fields have defaults
+    return {
+      ...base,
+      kind: 'pdf',
+      fileName: base.fileName ?? 'unknown.pdf',
+      pageCount: base.pageCount ?? 1,
+      fileSize: base.fileSize ?? 0,
+      lastReadPage: base.lastReadPage ?? 1,
+    };
+  } else {
+    return {
+      ...base,
+      kind: 'text',
+    };
+  }
+}
+
+/**
+ * Normalize a bookmark entry from localStorage.
+ * Fills missing `kind` with 'pdf'.
+ * Returns null for entries that cannot be normalized.
+ */
+function normalizeBookmark(bookmark: unknown): Bookmark | null {
+  if (!bookmark || typeof bookmark !== 'object') return null;
+
+  const b = bookmark as Record<string, unknown>;
+
+  // Required fields
+  if (typeof b.id !== 'string' || typeof b.documentId !== 'string') return null;
+  if (typeof b.createdAt !== 'number') return null;
+
+  // Determine kind - default to 'pdf' for legacy data
+  const kind = b.kind === 'text' ? 'text' : 'pdf';
+
+  const base = {
+    id: b.id,
+    documentId: b.documentId,
+    label: typeof b.label === 'string' ? b.label : undefined,
+    createdAt: b.createdAt,
+  };
+
+  if (kind === 'text') {
+    if (typeof b.wordIndex !== 'number') return null;
+    return {
+      ...base,
+      kind: 'text',
+      wordIndex: b.wordIndex,
+    };
+  } else {
+    // Legacy bookmarks must have page
+    if (typeof b.page !== 'number') return null;
+    return {
+      ...base,
+      kind: 'pdf',
+      page: b.page,
+    };
+  }
+}
+
+/**
+ * Normalize a highlight entry from localStorage.
+ * Fills missing `kind` with 'pdf'.
+ * Returns null for entries that cannot be normalized.
+ */
+function normalizeHighlight(highlight: unknown): Highlight | null {
+  if (!highlight || typeof highlight !== 'object') return null;
+
+  const h = highlight as Record<string, unknown>;
+
+  // Required fields
+  if (typeof h.id !== 'string' || typeof h.documentId !== 'string') return null;
+  if (typeof h.text !== 'string' || typeof h.createdAt !== 'number') return null;
+
+  // Validate color
+  const validColors = ['yellow', 'green', 'blue', 'pink', 'orange'];
+  const color = validColors.includes(h.color as string) ? (h.color as Highlight['color']) : 'yellow';
+
+  // Determine kind - default to 'pdf' for legacy data
+  const kind = h.kind === 'text' ? 'text' : 'pdf';
+
+  const base = {
+    id: h.id,
+    documentId: h.documentId,
+    color,
+    text: h.text,
+    note: typeof h.note === 'string' ? h.note : undefined,
+    createdAt: h.createdAt,
+    updatedAt: typeof h.updatedAt === 'number' ? h.updatedAt : undefined,
+  };
+
+  if (kind === 'text') {
+    if (typeof h.startWord !== 'number' || typeof h.endWord !== 'number') return null;
+    return {
+      ...base,
+      kind: 'text',
+      startWord: h.startWord,
+      endWord: h.endWord,
+    };
+  } else {
+    // Legacy highlights must have page and rects
+    if (typeof h.page !== 'number' || !Array.isArray(h.rects)) return null;
+    return {
+      ...base,
+      kind: 'pdf',
+      page: h.page,
+      rects: h.rects,
+    };
+  }
+}
+
+// =============================================================================
 // Document Metadata Storage (localStorage)
 // =============================================================================
 
 /**
  * Get all document metadata from localStorage.
+ * Normalizes legacy data (missing `kind` defaults to 'pdf') and writes back if changed.
  */
 export function getDocuments(): DocumentMeta[] {
-  return getFromStorage<DocumentMeta[]>(STORAGE_KEYS.DOCUMENTS, []);
+  const raw = getFromStorage<unknown[]>(STORAGE_KEYS.DOCUMENTS, []);
+  if (!Array.isArray(raw)) return [];
+
+  const normalized: DocumentMeta[] = [];
+  let needsWrite = false;
+
+  for (const item of raw) {
+    const doc = normalizeDocument(item);
+    if (doc) {
+      normalized.push(doc);
+      // Check if normalization changed the data
+      if (JSON.stringify(doc) !== JSON.stringify(item)) {
+        needsWrite = true;
+      }
+    } else {
+      // Invalid entry was filtered out
+      needsWrite = true;
+    }
+  }
+
+  // Write back normalized data if changes were made
+  if (needsWrite && normalized.length > 0) {
+    setToStorage(STORAGE_KEYS.DOCUMENTS, normalized);
+  }
+
+  return normalized;
 }
 
 /**
@@ -313,9 +487,32 @@ export function updateLastReadPage(documentId: string, page: number): void {
 
 /**
  * Get all bookmarks from localStorage.
+ * Normalizes legacy data (missing `kind` defaults to 'pdf') and writes back if changed.
  */
 export function getBookmarks(): Bookmark[] {
-  return getFromStorage<Bookmark[]>(STORAGE_KEYS.BOOKMARKS, []);
+  const raw = getFromStorage<unknown[]>(STORAGE_KEYS.BOOKMARKS, []);
+  if (!Array.isArray(raw)) return [];
+
+  const normalized: Bookmark[] = [];
+  let needsWrite = false;
+
+  for (const item of raw) {
+    const bookmark = normalizeBookmark(item);
+    if (bookmark) {
+      normalized.push(bookmark);
+      if (JSON.stringify(bookmark) !== JSON.stringify(item)) {
+        needsWrite = true;
+      }
+    } else {
+      needsWrite = true;
+    }
+  }
+
+  if (needsWrite && normalized.length > 0) {
+    setToStorage(STORAGE_KEYS.BOOKMARKS, normalized);
+  }
+
+  return normalized;
 }
 
 /**
@@ -338,9 +535,32 @@ export function getBookmarksForDocument(documentId: string): Bookmark[] {
 
 /**
  * Get all highlights from localStorage.
+ * Normalizes legacy data (missing `kind` defaults to 'pdf') and writes back if changed.
  */
 export function getHighlights(): Highlight[] {
-  return getFromStorage<Highlight[]>(STORAGE_KEYS.HIGHLIGHTS, []);
+  const raw = getFromStorage<unknown[]>(STORAGE_KEYS.HIGHLIGHTS, []);
+  if (!Array.isArray(raw)) return [];
+
+  const normalized: Highlight[] = [];
+  let needsWrite = false;
+
+  for (const item of raw) {
+    const highlight = normalizeHighlight(item);
+    if (highlight) {
+      normalized.push(highlight);
+      if (JSON.stringify(highlight) !== JSON.stringify(item)) {
+        needsWrite = true;
+      }
+    } else {
+      needsWrite = true;
+    }
+  }
+
+  if (needsWrite && normalized.length > 0) {
+    setToStorage(STORAGE_KEYS.HIGHLIGHTS, normalized);
+  }
+
+  return normalized;
 }
 
 /**
@@ -390,11 +610,17 @@ export function setPreferences(preferences: UserPreferences): void {
 // =============================================================================
 
 /**
- * Delete a document and all associated data (PDF, bookmarks, highlights).
+ * Delete a document and all associated data (PDF/text content, bookmarks, highlights).
+ * Safely attempts to delete both PDF and text content regardless of document kind.
  */
 export async function deleteDocumentComplete(documentId: string): Promise<void> {
-  // Delete PDF from IndexedDB
-  await deletePDF(documentId);
+  // Delete both PDF and text content from IndexedDB
+  // (we don't know the kind, or the document may already be deleted from localStorage)
+  // Both deletes are safe to call even if the content doesn't exist
+  await Promise.all([
+    deletePDF(documentId).catch(() => {}),
+    deleteText(documentId).catch(() => {}),
+  ]);
 
   // Remove from documents list
   const documents = getDocuments();
