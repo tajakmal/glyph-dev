@@ -46,8 +46,8 @@ Bookmarks today are page-based and specific to PDFs. The PRD requires word-index
 ## Success Criteria
 
 1. [x] Text bookmarks are stored with `wordIndex` and load correctly for a document.
-2. [ ] Current word index updates while scrolling and drives the position indicator.
-3. [ ] Bookmark toggle works via button and `B` key.
+2. [x] Current word index updates while scrolling and drives the position indicator.
+3. [x] Bookmark toggle works via button and `B` key.
 4. [ ] Bookmarks sidebar lists snippet + position and scrolls on click.
 5. [ ] files added or edited
 

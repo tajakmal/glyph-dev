@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { DocumentMeta, HighlightColor, TextHighlight } from '@/types';
+import type { DocumentMeta, HighlightColor, TextHighlight, TextBookmark } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
 import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { SelectionPopover, HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { useTextHighlights } from '@/hooks/useTextHighlights';
+import { useTextBookmarks } from '@/hooks/useTextBookmarks';
 
 interface TextReaderProps {
   documentId: string;
@@ -27,7 +28,9 @@ export function TextReader({ documentId }: TextReaderProps) {
     return stored !== null ? JSON.parse(stored) : true;
   });
   const [activeTab, setActiveTab] = useState<SidebarTab>('bookmarks');
-  const [isBookmarked, setIsBookmarked] = useState(false);
+
+  // Current word index for position tracking
+  const [currentWordIndex, setCurrentWordIndex] = useState(0);
 
   // Tokenize text content into words (moved up so we can pass to highlights hook)
   const words = useMemo(() => {
@@ -45,8 +48,21 @@ export function TextReader({ documentId }: TextReaderProps) {
     getHighlightAtWord,
   } = useTextHighlights({ documentId, words });
 
+  // Text bookmarks hook
+  const {
+    bookmarks,
+    toggleBookmark: toggleWordBookmark,
+    isWordBookmarked,
+  } = useTextBookmarks({ documentId });
+
+  // Check if current word is bookmarked
+  const isCurrentWordBookmarked = useMemo(() => {
+    return isWordBookmarked(currentWordIndex);
+  }, [isWordBookmarked, currentWordIndex]);
+
   // Selection state
   const textContainerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{
     startWord: number;
     endWord: number;
@@ -122,11 +138,60 @@ export function TextReader({ documentId }: TextReaderProps) {
   }, []);
 
   const handleBookmarkToggle = useCallback(() => {
-    // Placeholder - will be implemented in a later task
-    setIsBookmarked(prev => !prev);
-  }, []);
+    toggleWordBookmark(currentWordIndex);
+  }, [toggleWordBookmark, currentWordIndex]);
 
-  // Keyboard shortcut for sidebar toggle
+  // Track current word based on scroll position
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) return;
+
+    let rafId: number | null = null;
+
+    const updateCurrentWord = () => {
+      const textContainer = textContainerRef.current;
+      if (!textContainer) return;
+
+      // Get the scroll container's bounding rect
+      const containerRect = scrollContainer.getBoundingClientRect();
+      // Target point: near the top of the visible area with a small offset
+      const targetY = containerRect.top + 80; // 80px offset from top
+      const targetX = containerRect.left + containerRect.width / 2;
+
+      // Find element at this point
+      const element = document.elementFromPoint(targetX, targetY);
+      if (!element) return;
+
+      // Find the nearest word span
+      const wordSpan = element.closest('[data-word-index]') ||
+                       element.querySelector('[data-word-index]');
+
+      if (wordSpan) {
+        const wordIndex = parseInt(wordSpan.getAttribute('data-word-index') || '0', 10);
+        setCurrentWordIndex(wordIndex);
+      }
+    };
+
+    const handleScroll = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      rafId = requestAnimationFrame(updateCurrentWord);
+    };
+
+    // Initial update
+    updateCurrentWord();
+
+    scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      scrollContainer.removeEventListener('scroll', handleScroll);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [textContent]);
+
+  // Keyboard shortcuts for sidebar toggle and bookmark
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -135,11 +200,14 @@ export function TextReader({ documentId }: TextReaderProps) {
       if (e.key === 's' || e.key === 'S') {
         toggleSidebar();
       }
+      if (e.key === 'b' || e.key === 'B') {
+        handleBookmarkToggle();
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
+  }, [toggleSidebar, handleBookmarkToggle]);
 
   // Handle text selection
   const handleMouseUp = useCallback(() => {
@@ -422,9 +490,13 @@ export function TextReader({ documentId }: TextReaderProps) {
           </span>
         </div>
 
-        {/* Center: Position indicator placeholder */}
+        {/* Center: Position indicator */}
         <div className="flex items-center gap-2 text-zinc-500 text-sm">
-          {/* Position indicator will be added in a later task */}
+          {words.length > 0 && (
+            <span>
+              Word {currentWordIndex + 1} / {words.length} ({Math.round(((currentWordIndex + 1) / words.length) * 100)}%)
+            </span>
+          )}
         </div>
 
         {/* Right: Speed Read, Bookmark */}
@@ -442,14 +514,15 @@ export function TextReader({ documentId }: TextReaderProps) {
           <button
             onClick={handleBookmarkToggle}
             className={`p-2 rounded-lg transition-colors ${
-              isBookmarked
+              isCurrentWordBookmarked
                 ? 'text-red-500 bg-red-500/10'
                 : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
             }`}
-            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
-            aria-pressed={isBookmarked}
+            aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
+            aria-pressed={isCurrentWordBookmarked}
+            title={isCurrentWordBookmarked ? 'Remove bookmark (B)' : 'Bookmark this position (B)'}
           >
-            <svg className="w-5 h-5" fill={isBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+            <svg className="w-5 h-5" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
             </svg>
           </button>
@@ -549,7 +622,7 @@ export function TextReader({ documentId }: TextReaderProps) {
         )}
 
         {/* Text Content Area */}
-        <div className="flex-1 overflow-auto bg-zinc-950">
+        <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-zinc-950">
           <div className="max-w-3xl mx-auto px-8 py-12">
             <div
               ref={textContainerRef}
