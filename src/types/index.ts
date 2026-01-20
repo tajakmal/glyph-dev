@@ -269,8 +269,9 @@ export const STORAGE_KEYS = {
  */
 export const INDEXEDDB_CONFIG = {
   DB_NAME: 'glyph-db',
-  DB_VERSION: 1,
+  DB_VERSION: 2,
   STORE_PDFS: 'pdfs',
+  STORE_TEXTS: 'texts',
 } as const;
 
 // =============================================================================
