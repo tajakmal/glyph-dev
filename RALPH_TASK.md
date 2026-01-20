@@ -1,55 +1,68 @@
 ---
-task: Text Bookmarks and Position Indicator
+task: Speed Read Selection, Resume, and Focus Return
 priority: 2
-depends_on: ["001-document-types-storage.md", "005-text-render-selection.md"]
+depends_on: ["002-tokenization-word-mapping.md", "004-text-reader-scaffold.md", "005-text-render-selection.md"]
 ---
 
-# Task: Text Bookmarks and Position Indicator
+# Task: Speed Read Selection, Resume, and Focus Return
 
-Add word-index based bookmarks for text documents and show a live word position indicator while scrolling.
+Enable speed read to start at a selected word, continue to the end, and return to the reader at the exact word with a temporary red focus highlight.
 
 ## Overview
 
-Text bookmarks store a word index and render a snippet label in the sidebar. The reader also needs a position indicator showing word progress and a bookmark toggle that applies to the current word.
+This task connects selection-based speed reading for both PDFs and text docs, adds session state for returning to a word index, and updates the speed read header with clear navigation back to the reader or library.
 
 ## Context
 
-Bookmarks today are page-based and specific to PDFs. The PRD requires word-index bookmarks for text documents and a position indicator of the current word within the text.
+Currently speed read only accepts a text snippet or full PDF text and does not maintain a word index. Returning to the reader restores only scroll position. The PRD requires word-accurate resume and a temporary focus highlight on return.
 
 ## Requirements
 
-- Bookmarks data model:
-  - Ensure `TextBookmark` entries are persisted with `kind: 'text'` and `wordIndex`.
-  - Update or extend `useBookmarks` to support text bookmarks while preserving PDF behavior.
-- Current word tracking:
-  - Track the "current word" based on scroll position in the text container.
-  - Use `elementFromPoint` near the top of the container (with a small vertical offset) to find the nearest `span[data-word-index]`.
-  - Update `currentWordIndex` on scroll with a requestAnimationFrame throttle to avoid jank.
-- Position indicator in the top bar:
-  - Display `Word X / Y (Z%)` where:
-    - `X = currentWordIndex + 1`
-    - `Y = total word count`
-    - `Z = Math.round((X / Y) * 100)`
-  - If word count is missing in metadata, compute it from tokenized words.
-- Bookmark toggle:
-  - Add a bookmark button in the TextReader top bar.
-  - Active state when there is a bookmark at `currentWordIndex`.
-  - Clicking toggles bookmark add/remove at current word.
-  - Add keyboard shortcut `B` to toggle (ignore when focus is in inputs or textareas).
-- Sidebar list:
-  - In Bookmarks tab, list text bookmarks sorted by word index.
-  - Label format: `snippet + position` where:
-    - Snippet is 40-60 characters centered on the bookmarked word.
-    - Position uses the same `Word X / Y (Z%)` format.
-  - Clicking a bookmark scrolls to the word span (`scrollIntoView`).
+- Navigation utilities (`src/lib/speed-read.ts`):
+  - Extend navigation helpers to accept a `startWordIndex` and `documentKind`.
+  - Store `returnPath` and selection metadata in sessionStorage as needed.
+- Speed read page (`src/app/speed-read/page.tsx`):
+  - Accept query params for:
+    - `documentId`
+    - `startIndex` (word index)
+    - `kind` (`pdf` or `text`)
+  - Load text based on kind:
+    - `pdf`: use `getPDF` + `loadPDF` + `extractAllText`
+    - `text`: use `getText`
+  - Use shared `tokenize` helper to parse words.
+  - Start playback at `startIndex` when provided; otherwise start at 0.
+  - Persist current word index and document id to sessionStorage on index changes.
+- SpritzReader updates (`src/components/SpritzReader.tsx`):
+  - Accept props:
+    - `initialIndex?: number`
+    - `onIndexChange?: (index: number) => void`
+    - Optionally `words?: string[]` if you prefer to pass pre-tokenized content.
+  - Use shared `tokenize` helper instead of local splitting.
+  - Call `onIndexChange` whenever `currentIndex` changes (throttle if needed).
+- Launching speed read from selection:
+  - PDF selection:
+    - Use word-index mapping utilities to compute a global `startWordIndex`.
+    - If mapping fails (selection spans pages and mapping is unreliable), fall back to passing the selection text as a snippet (per PRD).
+  - Text selection:
+    - Use selection `startWord` from Task 005.
+  - Ensure speed read continues from the selected word to the end of the document (do not limit to selection range).
+- Return to reader focus:
+  - On reader load, check sessionStorage for `{ documentId, kind, wordIndex }`.
+  - If matches current doc:
+    - Text reader: scroll to `span[data-word-index="wordIndex"]` and add a temporary red focus highlight class.
+    - PDF reader: map `wordIndex` to page using page word counts and scroll to that page. If you can map to a specific word span, highlight it; otherwise highlight the page and document the limitation.
+  - Focus highlight should clear on user scroll or click.
+- Speed read header:
+  - Add a Home/Library action in the speed read header.
+  - Keep "Back to Reader" when a return path exists; otherwise default back to `/`.
 
 ## Success Criteria
 
-1. [x] Text bookmarks are stored with `wordIndex` and load correctly for a document.
-2. [x] Current word index updates while scrolling and drives the position indicator.
-3. [x] Bookmark toggle works via button and `B` key.
-4. [x] Bookmarks sidebar lists snippet + position and scrolls on click.
-5. [x] files added or edited
+1. [ ] Speed read can start at a specific word index for both PDF and text documents.
+2. [ ] Returning from speed read scrolls to the saved word and shows a temporary red focus highlight.
+3. [ ] Selection-based speed read continues to the end of the document.
+4. [ ] Speed read header includes Home/Library navigation and respects return path.
+5. [ ] files added or edited
 
 ---
 
