@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { Bookmark } from '@/types';
+import type { Bookmark, PDFBookmark } from '@/types';
 import { VALIDATION } from '@/types';
 import {
   getBookmarks,
@@ -16,9 +16,9 @@ interface UseBookmarksOptions {
 
 interface UseBookmarksReturn {
   /** Bookmarks for this document */
-  bookmarks: Bookmark[];
+  bookmarks: PDFBookmark[];
   /** Add a bookmark */
-  addBookmark: (page: number, label?: string) => Bookmark;
+  addBookmark: (page: number, label?: string) => PDFBookmark;
   /** Remove a bookmark */
   removeBookmark: (id: string) => void;
   /** Update a bookmark label */
@@ -26,20 +26,26 @@ interface UseBookmarksReturn {
   /** Check if a page is bookmarked */
   isPageBookmarked: (page: number) => boolean;
   /** Get bookmark for a specific page */
-  getBookmarkForPage: (page: number) => Bookmark | undefined;
+  getBookmarkForPage: (page: number) => PDFBookmark | undefined;
   /** Toggle bookmark on a page */
   toggleBookmark: (page: number) => void;
 }
 
 // Helper to get sorted bookmarks for a document
-function getSortedBookmarksForDocument(documentId: string): Bookmark[] {
-  const docs = getBookmarksForDocument(documentId);
+function isPDFBookmark(bookmark: Bookmark): bookmark is PDFBookmark {
+  const kind = (bookmark as { kind?: string }).kind;
+  const page = (bookmark as { page?: unknown }).page;
+  return (kind === 'pdf' || kind == null) && typeof page === 'number';
+}
+
+function getSortedBookmarksForDocument(documentId: string): PDFBookmark[] {
+  const docs = getBookmarksForDocument(documentId).filter(isPDFBookmark);
   return docs.sort((a, b) => a.page - b.page);
 }
 
 export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksReturn {
   // Use lazy initializer to load bookmarks synchronously on first render
-  const [bookmarks, setLocalBookmarks] = useState<Bookmark[]>(() =>
+  const [bookmarks, setLocalBookmarks] = useState<PDFBookmark[]>(() =>
     getSortedBookmarksForDocument(documentId)
   );
 
@@ -52,7 +58,7 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
     setLocalBookmarks(getSortedBookmarksForDocument(currentDocId));
   }
 
-  const addBookmark = useCallback((page: number, label?: string): Bookmark => {
+  const addBookmark = useCallback((page: number, label?: string): PDFBookmark => {
     // Check if already bookmarked
     const existing = bookmarks.find(b => b.page === page);
     if (existing) return existing;
@@ -60,9 +66,10 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
     // Validate label length
     const safeLabel = label?.slice(0, VALIDATION.MAX_LABEL_LENGTH);
 
-    const bookmark: Bookmark = {
+    const bookmark: PDFBookmark = {
       id: uuidv4(),
       documentId,
+      kind: 'pdf',
       page,
       label: safeLabel,
       createdAt: Date.now(),
@@ -113,7 +120,7 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
     return bookmarks.some(b => b.page === page);
   }, [bookmarks]);
 
-  const getBookmarkForPage = useCallback((page: number): Bookmark | undefined => {
+  const getBookmarkForPage = useCallback((page: number): PDFBookmark | undefined => {
     return bookmarks.find(b => b.page === page);
   }, [bookmarks]);
 

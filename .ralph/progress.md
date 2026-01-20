@@ -1,17 +1,10 @@
 # Progress Log
 
-> Updated by the agent after significant work.
+Task started: 2026-01-20 16:57:20
 
-## Summary
+### 2026-01-20 16:57:20
+**Iteration 1 started**
 
-- Iterations completed: 0
-- Current status: Initialized
-
-## How This Works
-
-Progress is tracked in THIS FILE, not in LLM context.
-When context is rotated (fresh agent), the new agent reads this file.
-This is how Ralph maintains continuity across iterations.
-
-## Session History
-
+### 2026-01-20 17:09:52
+- Completed criterion 1: added document/bookmark/highlight kinds and union types; updated PDF paths to use PDF-specific types.
+- Ran `npm run type-check`.

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { Bookmark, Highlight, HighlightColor } from '@/types';
+import type { PDFBookmark, PDFHighlight, HighlightColor } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
 import { usePDFOutline } from '@/hooks/usePDFOutline';
@@ -76,7 +76,7 @@ export function PDFViewer({
 
   // Highlight popover state
   const [highlightPopover, setHighlightPopover] = useState<{
-    highlight: Highlight;
+    highlight: PDFHighlight;
     anchorRect: { x: number; y: number };
   } | null>(null);
 
@@ -403,11 +403,11 @@ export function PDFViewer({
   }, [currentPage, onPageChange]);
 
   // Sidebar handlers
-  const handleBookmarkClick = useCallback((bookmark: Bookmark) => {
+  const handleBookmarkClick = useCallback((bookmark: PDFBookmark) => {
     handlePageChange(bookmark.page);
   }, [handlePageChange]);
 
-  const handleSidebarHighlightClick = useCallback((highlight: Highlight) => {
+  const handleSidebarHighlightClick = useCallback((highlight: PDFHighlight) => {
     handlePageChange(highlight.page);
   }, [handlePageChange]);
 
@@ -459,7 +459,7 @@ export function PDFViewer({
   }, []);
 
   // Handle highlight click from PDFPage
-  const handleHighlightClick = useCallback((highlight: Highlight) => {
+  const handleHighlightClick = useCallback((highlight: PDFHighlight) => {
     // Close any existing selection popover
     setSelectionPopover(null);
 

@@ -1,59 +1,58 @@
 ---
-task: Your Task Name Here
+task: Add Text Document Types and Storage
 priority: 1
 depends_on: []
 ---
 
-# Task: Your Task Title
+# Task: Add Text Document Types and Storage
+
+Introduce text documents as a first-class type in the data model and storage layers, with safe migrations for existing PDF-only data.
 
 ## Overview
 
-Provide a clear, detailed description of what this task accomplishes. Explain:
-- What is being built or changed
-- Why this task is important
-- What the end result should look like
-
-The more context you provide here, the better the AI agent will understand what to do.
+This task upgrades the core data model to support both PDF and text documents, adds IndexedDB storage for text content, and normalizes existing localStorage data so older installs keep working without manual cleanup.
 
 ## Context
 
-Provide background information that helps the agent understand the environment:
-- What existing code or systems does this interact with?
-- Are there architectural patterns to follow?
-- What decisions have already been made?
-- Any relevant constraints or requirements?
+Today the app assumes every document is a PDF and stores only PDF metadata and binary data. The PRD requires text documents stored as strings, additional metadata fields (word count and preview), and union types for bookmarks and highlights. We must also migrate existing local data to avoid runtime errors and avoid data loss.
+
+## Requirements
+
+- Update type definitions in `src/types/index.ts`:
+  - Add `kind: 'pdf' | 'text'` to `DocumentMeta` (required for all documents).
+  - Add text-only metadata fields to `DocumentMeta`:
+    - `wordCount?: number`
+    - `textPreview?: string` (first ~160 characters of the content, trimmed)
+  - Make PDF-only fields tolerant for text docs (use optional fields or a union type):
+    - `pageCount`, `fileSize`, `fileName`, `lastReadPage`, `thumbnailDataUrl` should not be required for text.
+  - Split bookmarks into a union type:
+    - `PDFBookmark`: `{ kind: 'pdf'; page: number; ... }`
+    - `TextBookmark`: `{ kind: 'text'; wordIndex: number; ... }`
+  - Split highlights into a union type:
+    - `PDFHighlight`: existing fields plus `{ kind: 'pdf' }`
+    - `TextHighlight`: `{ kind: 'text'; startWord: number; endWord: number; color; note?; text; createdAt; updatedAt? }`
+- Update `INDEXEDDB_CONFIG` in `src/types/index.ts`:
+  - Bump `DB_VERSION` from 1 to 2.
+  - Add a new store name constant for text content (for example `STORE_TEXTS: 'texts'`).
+- Extend IndexedDB helpers in `src/lib/storage.ts`:
+  - Update `getDB` to create the new `texts` store in `onupgradeneeded`.
+  - Add `storeText(documentId: string, content: string)`, `getText(documentId: string)`, and `deleteText(documentId: string)`.
+  - Update `deleteDocumentComplete` to delete text content in addition to PDFs. If unsure of document kind, attempt both deletes safely.
+- Add localStorage normalization helpers in `src/lib/storage.ts`:
+  - When reading documents, bookmarks, or highlights, fill missing `kind` with `'pdf'`.
+  - Normalize missing fields in legacy data (example: `lastReadPage` defaults to `1` for PDFs).
+  - If normalization changes data, write the corrected arrays back to localStorage to keep future reads clean.
+  - All normalization must be defensive: no thrown errors on malformed storage entries.
+- Do not change UI behavior in this task. This task should only touch types and storage/migration logic.
 
 ## Success Criteria
 
-Each criterion should be specific and verifiable. The agent will work through these in order.
-
-1. [ ] First criterion - describe what needs to be done
-2. [ ] Second criterion - be specific about expected behavior
-3. [ ] Third criterion - include verification steps if helpful
-4. [ ] Fourth criterion - tests pass: `uv run pytest tests/ -v`
-
-## Technical Notes
-
-Provide implementation guidance:
-- Libraries or frameworks to use (or avoid)
-- Code patterns to follow
-- Edge cases to handle
-- Performance considerations
-- Security requirements
-
-## Example Usage (Optional)
-
-```bash
-# Show how the completed feature should work
-example-command --flag value
-Expected output here
-```
-
-```python
-# Or code examples
-from module import function
-result = function(input)
-```
+1. [x] `DocumentMeta`, `Bookmark`, and `Highlight` types compile with new union types and `kind` fields.
+2. [ ] IndexedDB version is bumped and the `texts` store is created in `onupgradeneeded`.
+3. [ ] `storeText`, `getText`, and `deleteText` are implemented and exported.
+4. [ ] LocalStorage normalization handles missing `kind` and legacy fields without crashing, and writes back normalized data.
+5. [ ] `deleteDocumentComplete` removes both PDF binaries and text content safely.
+6. [ ] files added or edited
 
 ---
 

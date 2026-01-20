@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
-import type { SearchMatch, Highlight } from '@/types';
+import type { SearchMatch, PDFHighlight } from '@/types';
 import { renderPage } from '@/lib/pdf-utils';
 import { PDFTextLayer, TextSelection } from './PDFTextLayer';
 import { PDFHighlightLayer } from './PDFHighlightLayer';
@@ -29,9 +29,9 @@ interface PDFPageProps {
   /** Toggle bookmark callback */
   onBookmarkToggle?: () => void;
   /** Highlights for this page */
-  highlights?: Highlight[];
+  highlights?: PDFHighlight[];
   /** Callback when highlight is clicked */
-  onHighlightClick?: (highlight: Highlight) => void;
+  onHighlightClick?: (highlight: PDFHighlight) => void;
   /** Currently selected highlight ID */
   selectedHighlightId?: string;
 }

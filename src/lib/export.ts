@@ -1,11 +1,11 @@
-import type { Highlight, DocumentMeta } from '@/types';
+import type { DocumentMeta, PDFHighlight } from '@/types';
 
 /**
  * Generate Markdown content from highlights
  */
 export function generateAnnotationsMarkdown(
   document: DocumentMeta,
-  highlights: Highlight[]
+  highlights: PDFHighlight[]
 ): string {
   const lines: string[] = [];
 
@@ -27,7 +27,7 @@ export function generateAnnotationsMarkdown(
     if (!acc[h.page]) acc[h.page] = [];
     acc[h.page].push(h);
     return acc;
-  }, {} as Record<number, Highlight[]>);
+  }, {} as Record<number, PDFHighlight[]>);
 
   // Sort pages
   const pages = Object.keys(byPage)
@@ -77,7 +77,7 @@ export function generateAnnotationsMarkdown(
  */
 export function downloadAnnotations(
   documentMeta: DocumentMeta,
-  highlights: Highlight[]
+  highlights: PDFHighlight[]
 ): void {
   const content = generateAnnotationsMarkdown(documentMeta, highlights);
   const filename = sanitizeFilename(documentMeta.title) + '_annotations.md';

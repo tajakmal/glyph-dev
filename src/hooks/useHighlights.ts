@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import type { Highlight, HighlightColor } from '@/types';
+import type { Highlight, HighlightColor, PDFHighlight } from '@/types';
 import { VALIDATION } from '@/types';
 import {
   getHighlights,
@@ -16,11 +16,11 @@ interface UseHighlightsOptions {
 
 interface UseHighlightsReturn {
   /** Highlights for this document */
-  highlights: Highlight[];
+  highlights: PDFHighlight[];
   /** Highlights grouped by page */
-  highlightsByPage: Map<number, Highlight[]>;
+  highlightsByPage: Map<number, PDFHighlight[]>;
   /** Add a highlight */
-  addHighlight: (highlight: Omit<Highlight, 'id' | 'createdAt'>) => Highlight;
+  addHighlight: (highlight: Omit<PDFHighlight, 'id' | 'createdAt' | 'kind'>) => PDFHighlight;
   /** Remove a highlight */
   removeHighlight: (id: string) => void;
   /** Update highlight note */
@@ -28,17 +28,23 @@ interface UseHighlightsReturn {
   /** Update highlight color */
   updateHighlightColor: (id: string, color: HighlightColor) => void;
   /** Get highlights for a specific page */
-  getHighlightsForPage: (page: number) => Highlight[];
+  getHighlightsForPage: (page: number) => PDFHighlight[];
 }
 
 // Helper to get highlights for a document
-function getDocumentHighlights(documentId: string): Highlight[] {
-  return getHighlightsForDocument(documentId);
+function isPDFHighlight(highlight: Highlight): highlight is PDFHighlight {
+  const kind = (highlight as { kind?: string }).kind;
+  const page = (highlight as { page?: unknown }).page;
+  return (kind === 'pdf' || kind == null) && typeof page === 'number';
+}
+
+function getDocumentHighlights(documentId: string): PDFHighlight[] {
+  return getHighlightsForDocument(documentId).filter(isPDFHighlight);
 }
 
 export function useHighlights({ documentId }: UseHighlightsOptions): UseHighlightsReturn {
   // Use lazy initializer to load highlights synchronously on first render
-  const [highlights, setLocalHighlights] = useState<Highlight[]>(() =>
+  const [highlights, setLocalHighlights] = useState<PDFHighlight[]>(() =>
     getDocumentHighlights(documentId)
   );
 
@@ -53,7 +59,7 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
 
   // Compute highlights by page
   const highlightsByPage = useMemo(() => {
-    const map = new Map<number, Highlight[]>();
+    const map = new Map<number, PDFHighlight[]>();
     highlights.forEach(h => {
       if (!map.has(h.page)) {
         map.set(h.page, []);
@@ -64,10 +70,11 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
   }, [highlights]);
 
   const addHighlight = useCallback((
-    data: Omit<Highlight, 'id' | 'createdAt'>
-  ): Highlight => {
-    const highlight: Highlight = {
+    data: Omit<PDFHighlight, 'id' | 'createdAt' | 'kind'>
+  ): PDFHighlight => {
+    const highlight: PDFHighlight = {
       ...data,
+      kind: 'pdf',
       id: uuidv4(),
       createdAt: Date.now(),
     };
@@ -127,7 +134,7 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
     );
   }, []);
 
-  const getHighlightsForPage = useCallback((page: number): Highlight[] => {
+  const getHighlightsForPage = useCallback((page: number): PDFHighlight[] => {
     return highlights.filter(h => h.page === page);
   }, [highlights]);
 

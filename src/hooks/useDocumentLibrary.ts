@@ -90,6 +90,7 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     const docMeta: DocumentMeta = {
       id: uuidv4(),
       title,
+      kind: 'pdf',
       fileName: file.name,
       pageCount,
       fileSize: file.size,
@@ -133,7 +134,7 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
     const index = docs.findIndex(d => d.id === id);
 
     if (index !== -1) {
-      docs[index] = { ...docs[index], ...updates };
+      docs[index] = { ...docs[index], ...updates } as DocumentMeta;
       setDocuments(docs);
       setLocalDocuments([...docs].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt));
     }

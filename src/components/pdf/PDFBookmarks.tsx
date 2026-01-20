@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import type { Bookmark } from '@/types';
+import type { PDFBookmark } from '@/types';
 
 interface PDFBookmarksProps {
-  bookmarks: Bookmark[];
-  onBookmarkClick: (bookmark: Bookmark) => void;
+  bookmarks: PDFBookmark[];
+  onBookmarkClick: (bookmark: PDFBookmark) => void;
   onBookmarkDelete: (id: string) => void;
   onBookmarkRename: (id: string, label: string) => void;
 }
@@ -19,7 +19,7 @@ export function PDFBookmarks({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
 
-  const handleDoubleClick = (bookmark: Bookmark) => {
+  const handleDoubleClick = (bookmark: PDFBookmark) => {
     setEditingId(bookmark.id);
     setEditValue(bookmark.label || `Page ${bookmark.page}`);
   };

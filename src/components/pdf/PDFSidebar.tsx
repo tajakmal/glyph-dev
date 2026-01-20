@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import type { PDFOutlineItem, Bookmark, Highlight } from '@/types';
+import type { PDFOutlineItem, PDFBookmark, PDFHighlight } from '@/types';
 import { PDFOutline } from './PDFOutline';
 import { PDFBookmarks } from './PDFBookmarks';
 
@@ -17,19 +17,19 @@ interface PDFSidebarProps {
   /** Is outline loading */
   isOutlineLoading?: boolean;
   /** Bookmarks */
-  bookmarks: Bookmark[];
+  bookmarks: PDFBookmark[];
   /** Highlights */
-  highlights: Highlight[];
+  highlights: PDFHighlight[];
   /** Callback when outline item clicked */
   onOutlineClick: (page: number) => void;
   /** Callback when bookmark clicked */
-  onBookmarkClick: (bookmark: Bookmark) => void;
+  onBookmarkClick: (bookmark: PDFBookmark) => void;
   /** Callback when bookmark deleted */
   onBookmarkDelete: (id: string) => void;
   /** Callback when bookmark renamed */
   onBookmarkRename: (id: string, label: string) => void;
   /** Callback when highlight clicked */
-  onHighlightClick: (highlight: Highlight) => void;
+  onHighlightClick: (highlight: PDFHighlight) => void;
   /** Callback for export */
   onExport: () => void;
 }
@@ -51,8 +51,8 @@ function PDFHighlightsList({
   highlights,
   onHighlightClick,
 }: {
-  highlights: Highlight[];
-  onHighlightClick: (highlight: Highlight) => void;
+  highlights: PDFHighlight[];
+  onHighlightClick: (highlight: PDFHighlight) => void;
 }) {
   if (highlights.length === 0) {
     return (
@@ -69,7 +69,7 @@ function PDFHighlightsList({
     if (!acc[h.page]) acc[h.page] = [];
     acc[h.page].push(h);
     return acc;
-  }, {} as Record<number, Highlight[]>);
+  }, {} as Record<number, PDFHighlight[]>);
 
   return (
     <div className="py-2">
