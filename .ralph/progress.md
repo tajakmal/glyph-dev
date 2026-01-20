@@ -30,3 +30,9 @@ Added Home/Library button to `src/components/pdf/PDFControls.tsx`:
 - Added Home button with house icon at the left side of the top bar (before sidebar toggle)
 - Button links to `/` (Library page)
 - Has accessible label "Go to Library" and title tooltip "Library"
+
+### Criterion 4: PDF selection highlight uses red ORP color family
+**Status: COMPLETED**
+
+Updated `.pdf-text-layer span::selection` in `src/app/globals.css`:
+- Changed from `rgba(59, 130, 246, 0.3)` (blue) to `rgba(239, 68, 68, 0.45)` (red ORP family)

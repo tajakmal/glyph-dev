@@ -37,7 +37,7 @@ The PRD calls out inaccurate PDF page indicators and bookmarks when scrolling th
 1. [x] PDF page indicator updates correctly while scrolling with virtualization enabled.
 2. [x] Bookmark toggle reflects the correct current page.
 3. [x] PDF top bar includes a Home/Library button that navigates to `/`.
-4. [ ] PDF selection highlight uses the red ORP color family.
+4. [x] PDF selection highlight uses the red ORP color family.
 5. [ ] files added or edited
 
 ---
