@@ -1,47 +1,40 @@
 # Progress Log
 
-Task started: 2026-01-20 17:25:52
+Task started: 2026-01-20 17:28:07
 
-### 2026-01-20 17:25:53
+### 2026-01-20 17:28:08
 **Iteration 1 started**
 
-### 2026-01-20 - Text Reader Scaffold and Navigation
-**Task: 004-text-reader-scaffold**
+### 2026-01-20 - Text Rendering and Selection Mapping
+**Task: 005-text-rendering-selection-mapping**
 
-Completed all success criteria:
+Completed all criteria:
 
-1. **Route switch implemented** - Updated `src/app/reader/[id]/page.tsx`:
-   - Loads document metadata using `getDocument`
-   - If `kind === 'pdf'`, renders `PDFViewer` (existing behavior)
-   - If `kind === 'text'`, renders the new `TextReader` component
-   - If document is missing, shows a friendly error state with "Back to Library" button
+1. **TextReader renders content as word spans with `data-word-index` attributes**
+   - Modified `src/components/text/TextReader.tsx` to use the shared `tokenize` helper
+   - Each word is rendered in a `<span data-word-index={index}>` with a globally unique index
+   - Paragraphs are preserved, with empty paragraphs rendering non-breaking space
+   - Words are separated by text nodes containing spaces
 
-2. **TextReader component created** - New file `src/components/text/TextReader.tsx`:
-   - Layout matches PDF reader: top bar, left sidebar, main content area
-   - Loads text content from IndexedDB via `getText()`
-   - Shows loading spinner while fetching
-   - Handles error states (document not found, text content missing)
-   - Updates `lastOpenedAt` when reader opens document
+2. **Text selection maps to accurate start/end word indices**
+   - Added `handleMouseUp` callback that captures DOM selections
+   - Finds the nearest `span[data-word-index]` for both start and end of selection
+   - Normalizes ordering so `startWord <= endWord`
+   - Stores selection state with `{ startWord, endWord, text, anchorRect }`
 
-3. **Top bar implemented** with:
-   - Sidebar toggle button
-   - Home/Library button (navigates to `/`)
-   - Document title (truncated for long titles)
-   - Speed Read button (placeholder)
-   - Bookmark toggle button (placeholder state)
-   - Position indicator placeholder
+3. **Selection popover appears on selection and can be dismissed**
+   - Reused `SelectionPopover` from `src/components/pdf/PDFHighlightPopover.tsx`
+   - Popover appears anchored to selection bounding rect
+   - Offers highlight color buttons, speed read action, and close action
+   - Closes on outside click and Escape (handled by SelectionPopover)
 
-4. **Sidebar implemented** with:
-   - Two tabs: Bookmarks and Notes (no Contents tab)
-   - Empty state messages for each tab
-   - Keyboard shortcut 'S' to toggle sidebar
-   - Persistent sidebar state via localStorage
+4. **Text selection highlight uses the red ORP color family**
+   - Added `.text-reader-content ::selection` rule to `src/app/globals.css`
+   - Uses `rgba(239, 68, 68, 0.45)` for red selection highlight
+   - Scoped to text reader content only via class selector
 
-5. **Files added/modified**:
-   - Created: `src/components/text/TextReader.tsx`
-   - Modified: `src/app/reader/[id]/page.tsx`
+5. **Files edited:**
+   - `src/components/text/TextReader.tsx` - word span rendering and selection handling
+   - `src/app/globals.css` - red selection highlight styling
 
-Build passes successfully.
-
-### 2026-01-20 17:28:05
-**Iteration 1 ended** - TASK COMPLETE
+Build verified: `npm run build` passes successfully.

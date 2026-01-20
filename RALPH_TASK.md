@@ -1,51 +1,52 @@
 ---
-task: Text Reader Scaffold and Navigation
-priority: 1
-depends_on: ["001-document-types-storage.md", "003-library-paste-text.md"]
+task: Text Rendering and Selection Mapping
+priority: 2
+depends_on: ["002-tokenization-word-mapping.md", "004-text-reader-scaffold.md"]
 ---
 
-# Task: Text Reader Scaffold and Navigation
+# Task: Text Rendering and Selection Mapping
 
-Add a text reader view that mirrors the PDF reader layout and route to it based on document kind.
+Render text content as word spans and map user selections to word indices with a selection popover.
 
 ## Overview
 
-This task introduces a new TextReader component with a top bar, sidebar, and scrollable text content area. The reader should load text content from IndexedDB, handle missing content errors, and support Home/Library navigation. No highlights, bookmarks, or speed read selection logic yet (those come in later tasks).
+Text highlights, bookmarks, and speed read selection all depend on accurate word indices. This task renders every word in the text reader with a word index and implements selection handling that maps a DOM selection to start/end word indices. It also updates selection highlight styling to match the red ORP color family.
 
 ## Context
 
-The current reader route (`/reader/:id`) always renders a PDF viewer. The PRD requires text documents to open in a reader with a similar layout and UI affordances, but without PDF-specific components.
+The PDF reader already has a selection popover, but text documents are currently rendered as plain text. We need word-level spans to support precise navigation and mapping to word indices.
 
 ## Requirements
 
-- Route switch in `src/app/reader/[id]/page.tsx`:
-  - Load document metadata for `id` (use `getDocument` or `getDocuments`).
-  - If `kind === 'pdf'`, render `PDFViewer` (existing behavior).
-  - If `kind === 'text'`, render the new `TextReader` component.
-  - If document is missing, show a friendly error state with a "Back to Library" button.
-- Create `TextReader` in `src/components/text/TextReader.tsx` (new folder is fine):
-  - Layout matches PDF reader: top bar, left sidebar, main content area.
-  - Top bar includes:
-    - Home/Library button (navigates to `/`)
-    - Document title (truncate long titles)
-    - Speed Read button (wired to full document speed read later)
-    - Bookmark toggle button (placeholder state for now)
-    - Position indicator placeholder (for later task)
-  - Sidebar includes two tabs: Bookmarks and Notes (no Contents tab).
-    - Each tab can show "No bookmarks" or "No notes" placeholder text for now.
-  - Main content area:
-    - Scrollable container with read-only text content.
-    - Use a loading state while text is fetched.
-    - If the text content is missing from IndexedDB, show an error message and a Delete action that removes the document (call `deleteDocumentComplete`).
-- Ensure `lastOpenedAt` is updated when the reader opens the document (use existing update logic in storage or `useDocumentLibrary`).
-- Do not implement selection, highlights, bookmarks, or speed read start here. Keep the component ready to integrate in later tasks.
+- Text rendering in `TextReader`:
+  - Use the shared `tokenize` helper to split content into words.
+  - Render each word in its own `span` with `data-word-index` and a stable key.
+  - Preserve readable spacing between words (use a trailing space node or CSS `white-space` handling).
+  - Keep the content read-only (no contenteditable).
+- Selection handling:
+  - Add a selection listener scoped to the text container.
+  - On mouseup selection, compute `{ startWord, endWord, text }` using word span indices:
+    - Use the selection `Range` to find the nearest `span[data-word-index]` for start and end.
+    - Normalize ordering so `startWord <= endWord`.
+  - Store selection state in `TextReader` so later tasks can create highlights and speed read from it.
+- Selection popover:
+  - Add a popover anchored to the selection bounding rect.
+  - The popover should offer:
+    - Highlight color buttons (reuse `SelectionPopover` from `src/components/pdf/PDFHighlightPopover.tsx` if possible)
+    - Speed Read action (to be wired later)
+    - Close action
+  - The popover should close on outside click and Escape.
+- Selection highlight styling:
+  - Update `src/app/globals.css` to define a red selection color for text reader content.
+  - Use a class selector so only text reader content uses the red selection, not all UI.
+  - Example target: `rgba(239, 68, 68, 0.45)`.
 
 ## Success Criteria
 
-1. [x] `/reader/:id` renders PDF or TextReader based on document kind.
-2. [x] TextReader loads text content from IndexedDB with loading and error states.
-3. [x] TextReader top bar includes Home/Library navigation and placeholder controls.
-4. [x] Sidebar shows Bookmarks and Notes tabs with empty states.
+1. [x] TextReader renders content as word spans with `data-word-index` attributes.
+2. [x] Text selection maps to accurate start/end word indices.
+3. [x] Selection popover appears on selection and can be dismissed.
+4. [x] Text selection highlight uses the red ORP color family.
 5. [x] files added or edited
 
 ---

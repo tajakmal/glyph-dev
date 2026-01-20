@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { DocumentMeta } from '@/types';
+import type { DocumentMeta, HighlightColor } from '@/types';
 import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
+import { tokenize } from '@/lib/tokenize';
+import { SelectionPopover } from '@/components/pdf/PDFHighlightPopover';
 
 interface TextReaderProps {
   documentId: string;
@@ -24,6 +26,15 @@ export function TextReader({ documentId }: TextReaderProps) {
   });
   const [activeTab, setActiveTab] = useState<SidebarTab>('bookmarks');
   const [isBookmarked, setIsBookmarked] = useState(false);
+
+  // Selection state
+  const textContainerRef = useRef<HTMLDivElement>(null);
+  const [selection, setSelection] = useState<{
+    startWord: number;
+    endWord: number;
+    text: string;
+    anchorRect: { x: number; y: number };
+  } | null>(null);
 
   // Persist sidebar state
   useEffect(() => {
@@ -105,6 +116,89 @@ export function TextReader({ documentId }: TextReaderProps) {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar]);
+
+  // Tokenize text content into words
+  const words = useMemo(() => {
+    if (!textContent) return [];
+    return tokenize(textContent);
+  }, [textContent]);
+
+  // Handle text selection
+  const handleMouseUp = useCallback(() => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !textContainerRef.current) {
+      return;
+    }
+
+    const range = sel.getRangeAt(0);
+    const selectedText = sel.toString().trim();
+    if (!selectedText) {
+      return;
+    }
+
+    // Find start and end word indices from the selection
+    const container = textContainerRef.current;
+
+    // Get start word index
+    let startNode = range.startContainer;
+    if (startNode.nodeType === Node.TEXT_NODE) {
+      startNode = startNode.parentElement as Node;
+    }
+    const startSpan = (startNode as Element).closest?.('[data-word-index]');
+
+    // Get end word index
+    let endNode = range.endContainer;
+    if (endNode.nodeType === Node.TEXT_NODE) {
+      endNode = endNode.parentElement as Node;
+    }
+    const endSpan = (endNode as Element).closest?.('[data-word-index]');
+
+    if (!startSpan || !endSpan || !container.contains(startSpan) || !container.contains(endSpan)) {
+      return;
+    }
+
+    const startWord = parseInt(startSpan.getAttribute('data-word-index') || '0', 10);
+    const endWord = parseInt(endSpan.getAttribute('data-word-index') || '0', 10);
+
+    // Normalize ordering
+    const normalizedStart = Math.min(startWord, endWord);
+    const normalizedEnd = Math.max(startWord, endWord);
+
+    // Get anchor position for popover (center-top of selection)
+    const rects = range.getClientRects();
+    if (rects.length === 0) return;
+    const firstRect = rects[0];
+    const lastRect = rects[rects.length - 1];
+    const anchorX = (firstRect.left + lastRect.right) / 2;
+    const anchorY = firstRect.top;
+
+    setSelection({
+      startWord: normalizedStart,
+      endWord: normalizedEnd,
+      text: selectedText,
+      anchorRect: { x: anchorX, y: anchorY },
+    });
+  }, []);
+
+  // Close selection popover
+  const handleCloseSelection = useCallback(() => {
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }, []);
+
+  // Handle highlight creation (placeholder for now)
+  const handleCreateHighlight = useCallback((color: HighlightColor, note?: string) => {
+    // Will be implemented in a later task
+    console.log('Create highlight:', { color, note, selection });
+    handleCloseSelection();
+  }, [selection, handleCloseSelection]);
+
+  // Handle speed read from selection (placeholder)
+  const handleSpeedReadSelection = useCallback(() => {
+    // Will be implemented in a later task
+    console.log('Speed read from:', selection);
+    handleCloseSelection();
+  }, [selection, handleCloseSelection]);
 
   // Document title
   const documentTitle = meta?.title || 'Untitled Document';
@@ -315,15 +409,59 @@ export function TextReader({ documentId }: TextReaderProps) {
         {/* Text Content Area */}
         <div className="flex-1 overflow-auto bg-zinc-950">
           <div className="max-w-3xl mx-auto px-8 py-12">
-            <div className="prose prose-invert prose-zinc max-w-none">
-              {textContent?.split('\n').map((paragraph, index) => (
-                <p key={index} className="text-zinc-300 text-base leading-relaxed mb-4 whitespace-pre-wrap">
-                  {paragraph || '\u00A0'}
-                </p>
-              ))}
+            <div
+              ref={textContainerRef}
+              className="prose prose-invert prose-zinc max-w-none text-reader-content"
+              onMouseUp={handleMouseUp}
+            >
+              {(() => {
+                if (!textContent) return null;
+                const paragraphs = textContent.split('\n');
+                let globalWordIndex = 0;
+
+                return paragraphs.map((paragraph, pIndex) => {
+                  const paragraphWords = tokenize(paragraph);
+                  if (paragraphWords.length === 0) {
+                    return (
+                      <p key={pIndex} className="text-zinc-300 text-base leading-relaxed mb-4">
+                        {'\u00A0'}
+                      </p>
+                    );
+                  }
+
+                  const wordElements = paragraphWords.map((word, wIndex) => {
+                    const currentIndex = globalWordIndex;
+                    globalWordIndex++;
+                    return (
+                      <React.Fragment key={`${pIndex}-${wIndex}`}>
+                        <span data-word-index={currentIndex}>{word}</span>
+                        {wIndex < paragraphWords.length - 1 && ' '}
+                      </React.Fragment>
+                    );
+                  });
+
+                  return (
+                    <p key={pIndex} className="text-zinc-300 text-base leading-relaxed mb-4">
+                      {wordElements}
+                    </p>
+                  );
+                });
+              })()}
             </div>
           </div>
         </div>
+
+        {/* Selection Popover */}
+        {selection && (
+          <SelectionPopover
+            text={selection.text}
+            page={0}
+            anchorRect={selection.anchorRect}
+            onCreateHighlight={handleCreateHighlight}
+            onSpeedRead={handleSpeedReadSelection}
+            onClose={handleCloseSelection}
+          />
+        )}
       </div>
     </div>
   );
