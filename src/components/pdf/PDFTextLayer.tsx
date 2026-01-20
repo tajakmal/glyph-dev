@@ -4,6 +4,7 @@ import React, { useRef, useEffect } from 'react';
 import type { PDFPageProxy } from 'pdfjs-dist';
 import type { SearchMatch } from '@/types';
 import { getTextContent } from '@/lib/pdf-utils';
+import { tokenize } from '@/lib/tokenize';
 
 interface PDFTextLayerProps {
   /** PDF page proxy */
@@ -29,6 +30,8 @@ export interface TextSelection {
   rects: DOMRect[];
   /** Range object for the selection */
   range: Range | null;
+  /** Word index on the page where selection starts (0-based, optional) */
+  startWordOnPage?: number;
 }
 
 // Helper function to escape HTML (prevents XSS)
@@ -47,6 +50,8 @@ export function PDFTextLayer({
   allMatches = [],
 }: PDFTextLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // Store full page text for word index calculation
+  const pageTextRef = useRef<string>('');
 
   // Calculate the active match for this page
   const pageIndex = page.pageNumber - 1;
@@ -67,6 +72,11 @@ export function PDFTextLayer({
       const textContent = await getTextContent(page);
 
       if (!isMounted) return;
+
+      // Store full page text for word index calculation
+      pageTextRef.current = textContent.items
+        .map((item) => ('str' in item ? item.str : ''))
+        .join(' ');
 
       // Get viewport for positioning
       const viewport = page.getViewport({ scale: zoom });
@@ -190,11 +200,26 @@ export function PDFTextLayer({
         rect.height
       ));
 
+      // Calculate startWordOnPage by finding how many words precede the selection
+      let startWordOnPage: number | undefined = undefined;
+      const selectedText = text;
+
+      if (pageTextRef.current) {
+        // Find the selection text within the page text
+        const selectionIndex = pageTextRef.current.indexOf(selectedText);
+        if (selectionIndex >= 0) {
+          // Count words before the selection
+          const textBeforeSelection = pageTextRef.current.substring(0, selectionIndex);
+          startWordOnPage = tokenize(textBeforeSelection).length;
+        }
+      }
+
       onTextSelect({
         text,
         page: page.pageNumber,
         rects: pageRects,
         range: range.cloneRange(),
+        startWordOnPage,
       });
     };
 
