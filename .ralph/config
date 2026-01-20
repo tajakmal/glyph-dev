@@ -1,0 +1,118 @@
+# CLAUDE
+# AGENT=claude
+# MAX_ITERATIONS=3
+# MODEL=opus
+# YOLO_MODE=true
+
+# =============================================================================
+# Multi-Task Mode
+# =============================================================================
+# Process task queue from tasks directory instead of single RALPH_TASK.md
+# Options: true, false
+# TASK_MODE=true
+
+# Directory containing task files (used when TASK_MODE=true)
+# TASKS_DIR=tasks
+
+# Skip failed tasks and continue to next (instead of stopping)
+# Options: true, false
+# CONTINUE_ON_FAILURE=true
+
+
+
+
+# CODEX
+AGENT=codex
+MAX_ITERATIONS=3
+MODEL=gpt-5.2-codex
+YOLO_MODE=true
+
+# =============================================================================
+# Multi-Task Mode
+# =============================================================================
+# Process task queue from tasks directory instead of single RALPH_TASK.md
+# Options: true, false
+TASK_MODE=true
+
+# Directory containing task files (used when TASK_MODE=true)
+TASKS_DIR=ralph/tasks
+
+# Skip failed tasks and continue to next (instead of stopping)
+# Options: true, false
+CONTINUE_ON_FAILURE=true
+
+# =============================================================================
+# Codex-Specific Options
+# =============================================================================
+# Reasoning effort level for Codex CLI (ignored for Claude)
+# Options: low, medium, high, extra_high
+CODEX_REASONING_LEVEL=extra_high
+
+
+
+
+# =============================================================================
+# Ralph Configuration
+# =============================================================================
+# Uncomment and modify options as needed. CLI flags override these values.
+
+# =============================================================================
+# Agent Selection
+# =============================================================================
+# Which CLI to use for the autonomous loop
+# Options: claude, codex
+# AGENT=claude
+
+# =============================================================================
+# Iteration Control
+# =============================================================================
+# Maximum iterations before stopping (per task in multi-task mode)
+# SINGLE_ITERATION overrides this to 1 when true
+# MAX_ITERATIONS=3
+
+# Run only one iteration then stop (useful for testing)
+# Options: true, false
+# SINGLE_ITERATION=false
+
+# =============================================================================
+# Model Selection
+# =============================================================================
+# Model to use (passed to the CLI). Leave empty for CLI default.
+#
+# Claude models:
+#   Aliases: sonnet, opus, haiku
+#   Full names: claude-sonnet-4-5-20250929, claude-opus-4-5-20251101, etc.
+#
+# Codex models:
+#   Set in ~/.codex/config.toml or use: o3, gpt-5.2-codex, etc.
+#
+# MODEL=opus
+
+# =============================================================================
+# Permission Mode
+# =============================================================================
+# Skip all permission prompts (autonomous mode)
+# Options: true, false
+# WARNING: Allows agent to run any command without approval
+# YOLO_MODE=true
+
+# =============================================================================
+# Multi-Task Mode
+# =============================================================================
+# Process task queue from tasks directory instead of single RALPH_TASK.md
+# Options: true, false
+# TASK_MODE=true
+
+# Directory containing task files (used when TASK_MODE=true)
+# TASKS_DIR=tasks
+
+# Skip failed tasks and continue to next (instead of stopping)
+# Options: true, false
+# CONTINUE_ON_FAILURE=true
+
+# =============================================================================
+# Codex-Specific Options
+# =============================================================================
+# Reasoning effort level for Codex CLI (ignored for Claude)
+# Options: low, medium, high, extra_high
+# CODEX_REASONING_LEVEL=medium
