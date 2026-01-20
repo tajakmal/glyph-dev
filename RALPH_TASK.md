@@ -55,8 +55,8 @@ PDF highlights already exist, but text highlights require word-level storage and
 2. [x] Overlapping highlights merge using the PRD rules for range, color, and notes.
 3. [x] Highlights render inline across the correct word spans.
 4. [x] Highlight popover supports color change, note edit, delete, and speed read action.
-5. [ ] Notes sidebar lists note-bearing highlights and scrolls to them.
-6. [ ] files added or edited
+5. [x] Notes sidebar lists note-bearing highlights and scrolls to them.
+6. [x] files added or edited
 
 ---
 
