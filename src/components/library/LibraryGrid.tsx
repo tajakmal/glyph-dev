@@ -15,7 +15,7 @@ export function LibraryGrid({ documents, onDelete, onRename }: LibraryGridProps)
     return (
       <div className="text-center py-12 text-zinc-500">
         <p>No documents yet.</p>
-        <p className="text-sm mt-1">Upload a PDF to get started.</p>
+        <p className="text-sm mt-1">Upload a PDF or paste text to get started.</p>
       </div>
     );
   }
