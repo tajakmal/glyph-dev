@@ -1,30 +1,34 @@
 # Progress Log
 
-Task started: 2026-01-20 17:16:53
+Task started: 2026-01-20 17:19:28
 
-### 2026-01-20 17:16:54
+### 2026-01-20 17:19:29
 **Iteration 1 started**
 
-### 2026-01-20 (Continuation)
-**Working on criteria 4-6**: LocalStorage normalization and deleteDocumentComplete
+### 2026-01-20 (continued)
+**Completed: Shared Tokenization and Word Index Mapping**
 
-Reviewed current state:
-- Criterion 1-3 already complete (types defined, IndexedDB updated, text storage functions implemented)
+All criteria completed:
 
-**Completed:**
-- Added `normalizeDocument()`, `normalizeBookmark()`, `normalizeHighlight()` helper functions
-- Updated `getDocuments()`, `getBookmarks()`, `getHighlights()` to normalize legacy data
-- Normalization handles missing `kind` (defaults to 'pdf'), fills in required PDF fields with defaults
-- Write-back logic ensures normalized data is persisted to localStorage
-- All normalization is defensive - returns null for malformed entries, no thrown errors
-- Updated `deleteDocumentComplete()` to attempt both PDF and text deletion safely with `Promise.all` and `.catch(() => {})`
-- Build passes successfully
-- No new lint errors in storage.ts
+1. **Created `src/lib/tokenize.ts`** - Core tokenization utilities:
+   - `tokenize(text)`: Canonical tokenization function (trims, splits on whitespace, filters empty)
+   - `buildWordBoundaries(text)`: Returns char offset ranges for each word
+   - `getWordIndexAtOffset(offset, boundaries)`: Maps char offset to word index
+   - `getSelectionWordRange(selectionRange, boundaries)`: Maps DOM selection to word range
+   - `getTextForWordRange(text, startWord, endWord)`: Extracts text for word range
 
-Files edited:
-- `src/lib/storage.ts` - Added normalization helpers, updated getter functions, updated deleteDocumentComplete
+2. **Created `src/lib/word-mapping.ts`** - PDF-specific mapping utilities:
+   - `buildPageWordCounts(pdf)`: Extracts word counts per page using shared tokenize
+   - `mapWordIndexToPage(wordIndex, counts)`: Maps global word index to page/offset
+   - `mapPageToWordIndex(page, indexOnPage, counts)`: Inverse mapping
+   - `getTotalWordCount(counts)`: Sum across all pages
+   - `getCumulativeWordCount(page, counts)`: Words before a page
+   - `mapSelectionToWordIndex(pageText, offset, page, counts)`: Selection to global index
+   - `mapRangeSelectionToWordIndex(range, page, counts, text)`: Range version
 
-All 6 criteria now complete!
+3. **Updated `src/components/SpritzReader.tsx`**:
+   - Added import for shared `tokenize` function
+   - Replaced `parseText` local tokenization with shared `tokenize()`
+   - Replaced word count displays (file info and text input) with `tokenize()`
 
-### 2026-01-20 17:19:26
-**Iteration 1 ended** - TASK COMPLETE
+4. **Build verified**: `npm run build` completes successfully with no errors

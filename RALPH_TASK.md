@@ -1,58 +1,50 @@
 ---
-task: Add Text Document Types and Storage
+task: Shared Tokenization and Word Index Mapping
 priority: 1
-depends_on: []
+depends_on: ["001-document-types-storage.md"]
 ---
 
-# Task: Add Text Document Types and Storage
+# Task: Shared Tokenization and Word Index Mapping
 
-Introduce text documents as a first-class type in the data model and storage layers, with safe migrations for existing PDF-only data.
+Create a single, shared tokenization and word-index mapping utility used by PDF, text reader, and speed read so word indices stay consistent everywhere.
 
 ## Overview
 
-This task upgrades the core data model to support both PDF and text documents, adds IndexedDB storage for text content, and normalizes existing localStorage data so older installs keep working without manual cleanup.
+The PRD requires starting speed read at a selected word, returning to the exact word, and mapping word indices across PDF pages. That only works if every surface uses identical tokenization and indexing rules. This task introduces shared utilities for tokenization and word-index mapping and wires them into the PDF and text pipelines (no UI yet).
 
 ## Context
 
-Today the app assumes every document is a PDF and stores only PDF metadata and binary data. The PRD requires text documents stored as strings, additional metadata fields (word count and preview), and union types for bookmarks and highlights. We must also migrate existing local data to avoid runtime errors and avoid data loss.
+Right now, PDF text extraction and speed read tokenization are handled in multiple places with slightly different logic. Text documents will add yet another pipeline. A shared helper avoids drift and makes word-index based highlights and bookmarks reliable.
 
 ## Requirements
 
-- Update type definitions in `src/types/index.ts`:
-  - Add `kind: 'pdf' | 'text'` to `DocumentMeta` (required for all documents).
-  - Add text-only metadata fields to `DocumentMeta`:
-    - `wordCount?: number`
-    - `textPreview?: string` (first ~160 characters of the content, trimmed)
-  - Make PDF-only fields tolerant for text docs (use optional fields or a union type):
-    - `pageCount`, `fileSize`, `fileName`, `lastReadPage`, `thumbnailDataUrl` should not be required for text.
-  - Split bookmarks into a union type:
-    - `PDFBookmark`: `{ kind: 'pdf'; page: number; ... }`
-    - `TextBookmark`: `{ kind: 'text'; wordIndex: number; ... }`
-  - Split highlights into a union type:
-    - `PDFHighlight`: existing fields plus `{ kind: 'pdf' }`
-    - `TextHighlight`: `{ kind: 'text'; startWord: number; endWord: number; color; note?; text; createdAt; updatedAt? }`
-- Update `INDEXEDDB_CONFIG` in `src/types/index.ts`:
-  - Bump `DB_VERSION` from 1 to 2.
-  - Add a new store name constant for text content (for example `STORE_TEXTS: 'texts'`).
-- Extend IndexedDB helpers in `src/lib/storage.ts`:
-  - Update `getDB` to create the new `texts` store in `onupgradeneeded`.
-  - Add `storeText(documentId: string, content: string)`, `getText(documentId: string)`, and `deleteText(documentId: string)`.
-  - Update `deleteDocumentComplete` to delete text content in addition to PDFs. If unsure of document kind, attempt both deletes safely.
-- Add localStorage normalization helpers in `src/lib/storage.ts`:
-  - When reading documents, bookmarks, or highlights, fill missing `kind` with `'pdf'`.
-  - Normalize missing fields in legacy data (example: `lastReadPage` defaults to `1` for PDFs).
-  - If normalization changes data, write the corrected arrays back to localStorage to keep future reads clean.
-  - All normalization must be defensive: no thrown errors on malformed storage entries.
-- Do not change UI behavior in this task. This task should only touch types and storage/migration logic.
+- Add a new helper in `src/lib/tokenize.ts` (or similar) that exports:
+  - `tokenize(text: string): string[]` that:
+    - splits on whitespace (`/\s+/`)
+    - trims input
+    - filters empty tokens
+  - `buildWordBoundaries(text: string): Array<{ start: number; end: number }>` that returns char offset ranges for each word using the same tokenization rules.
+  - `getWordIndexAtOffset(offset: number, boundaries: Array<{ start: number; end: number }>): number` that returns the closest word index for a given character offset.
+- Add PDF-specific mapping helpers (in `src/lib/pdf-utils.ts` or a new `src/lib/word-mapping.ts`):
+  - `buildPageWordCounts(pdf: PDFDocumentProxy): Promise<number[]>` that extracts page text and tokenizes it using `tokenize`.
+  - `mapWordIndexToPage(wordIndex: number, pageWordCounts: number[]): { page: number; indexOnPage: number }`.
+  - `mapSelectionToWordIndex(selectionRange: Range, pageWordCounts: number[], currentPage: number): number` that:
+    - counts words before the selection within the page using the same tokenization helper
+    - adds all prior page word counts
+- Add text-specific mapping helpers:
+  - `getSelectionWordRange(selectionRange: Range, boundaries: Array<{ start: number; end: number }>): { startWord: number; endWord: number }` based on selection offsets.
+- Ensure the following call sites use the shared helpers (no UI changes yet, just switch tokenization logic):
+  - `src/components/SpritzReader.tsx` (replace its local `split(/\s+/)` logic with `tokenize`).
+  - `src/lib/pdf-utils.ts` `extractAllText` uses tokenization rules consistent with the helper (not required to change output formatting, but should be used by speed read flow later).
+- Include inline documentation/comments for each helper explaining the required consistency guarantees.
 
 ## Success Criteria
 
-1. [x] `DocumentMeta`, `Bookmark`, and `Highlight` types compile with new union types and `kind` fields.
-2. [x] IndexedDB version is bumped and the `texts` store is created in `onupgradeneeded`.
-3. [x] `storeText`, `getText`, and `deleteText` are implemented and exported.
-4. [x] LocalStorage normalization handles missing `kind` and legacy fields without crashing, and writes back normalized data.
-5. [x] `deleteDocumentComplete` removes both PDF binaries and text content safely.
-6. [x] files added or edited
+1. [x] Shared tokenization helper exists and is used for all new word-index operations.
+2. [x] PDF page word count mapping utility returns stable counts per page.
+3. [x] Text selection word range mapping helper is available for the text reader.
+4. [x] `SpritzReader` no longer uses its own tokenization logic.
+5. [x] files added or edited
 
 ---
 
@@ -68,87 +60,3 @@ When working on this task:
 6. Commit your changes frequently with descriptive messages
 7. When ALL criteria are [x], output: `<ralph>COMPLETE</ralph>`
 8. If stuck 3+ times on same issue, output: `<ralph>GUTTER</ralph>`
-
----
-
-## Questions From Claude (Please Answer)
-
-2. Then list your questions in markdown format with options
-3. Be specific about what criterion you're working on
-4. The task will move to review for human response
-
-Example:
-```
-<ralph>CLARIFY</ralph>
-
-## Clarification Needed
-
-**Working on:** Criterion 2 - Database setup
-**Blocked because:** Multiple valid approaches, need human decision
-
-### Questions:
-
-1. **Database Choice**
-   Which database should be used?
-   - PostgreSQL (relational, ACID compliant)
-   - MongoDB (document store, flexible schema)
-   - SQLite (embedded, lightweight)
-
-2. **Authentication Method**
-   How should users authenticate?
-   - JWT tokens (stateless)
-   - Session cookies (server-side state)
-```
-
-Only use CLARIFY when you genuinely cannot proceed without human input.
-Do NOT use it for technical questions you can research yourself.
-
-Begin by reading the task and working on the next unchecked criterion.
-
-mcp: context7 starting
-mcp: supabase starting
-mcp: context7 ready
-mcp: supabase ready
-mcp startup: ready: context7, supabase
-
-thinking
-**Confirming approach to instructions compliance**
-exec
-/bin/zsh -lc ls in /Users/tajwar/development/glyph-dev succeeded in 6ms:
-CLAUDE.md
-RALPH_TASK.md
-README.md
-eslint.config.mjs
-next-env.d.ts
-next.config.ts
-node_modules
-package-lock.json
-package.json
-postcss.config.mjs
-public
-ralph
-src
-tsconfig.json
-tsconfig.tsbuildinfo
-
-thinking
-**Checking guardrails directory name**
-
-I'm verifying whether the directory is named `.ralph` or `ralph` since instructions mention `.ralph/guardrails.md` but a directory named `ralph` appears; I'll list the directory to confirm.
-exec
-/bin/zsh -lc 'ls ralph' in /Users/tajwar/development/glyph-dev succeeded in 9ms:
-CLAUDE.md
-EXAMPLES_TEMPLATES
-RALPH_TASK.md.template
-README.md
-adapters
-init-ralph.sh
-ralph.sh
-tasks
-
----
-
-## Your Answers
-
-_Add your answers below each question above, or in this section._
-
