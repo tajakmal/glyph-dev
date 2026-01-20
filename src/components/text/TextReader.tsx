@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DocumentMeta, HighlightColor, TextHighlight } from '@/types';
+import { HIGHLIGHT_COLORS } from '@/types';
 import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { SelectionPopover } from '@/components/pdf/PDFHighlightPopover';
@@ -455,9 +456,23 @@ export function TextReader({ documentId }: TextReaderProps) {
                   const wordElements = paragraphWords.map((word, wIndex) => {
                     const currentIndex = globalWordIndex;
                     globalWordIndex++;
+
+                    // Check if this word is part of a highlight
+                    const highlight = getHighlightAtWord(currentIndex);
+                    const bgStyle = highlight
+                      ? { backgroundColor: HIGHLIGHT_COLORS[highlight.color].bg }
+                      : undefined;
+
                     return (
                       <React.Fragment key={`${pIndex}-${wIndex}`}>
-                        <span data-word-index={currentIndex}>{word}</span>
+                        <span
+                          data-word-index={currentIndex}
+                          data-highlight-id={highlight?.id}
+                          style={bgStyle}
+                          className={highlight ? 'cursor-pointer rounded-sm' : undefined}
+                        >
+                          {word}
+                        </span>
                         {wIndex < paragraphWords.length - 1 && ' '}
                       </React.Fragment>
                     );
