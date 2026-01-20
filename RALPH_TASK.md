@@ -1,62 +1,55 @@
 ---
-task: Text Highlights and Notes
+task: Text Bookmarks and Position Indicator
 priority: 2
 depends_on: ["001-document-types-storage.md", "005-text-render-selection.md"]
 ---
 
-# Task: Text Highlights and Notes
+# Task: Text Bookmarks and Position Indicator
 
-Implement text highlights stored as word-index ranges, including overlap merging and note handling.
+Add word-index based bookmarks for text documents and show a live word position indicator while scrolling.
 
 ## Overview
 
-Text highlights are stored by word index ranges, rendered inline in the reader, and editable via a popover. This task adds the highlight creation and merge logic as well as the Notes sidebar list for text documents.
+Text bookmarks store a word index and render a snippet label in the sidebar. The reader also needs a position indicator showing word progress and a bookmark toggle that applies to the current word.
 
 ## Context
 
-PDF highlights already exist, but text highlights require word-level storage and merging rules. The PRD defines how overlapping highlights should merge and how notes should be preserved or combined.
+Bookmarks today are page-based and specific to PDFs. The PRD requires word-index bookmarks for text documents and a position indicator of the current word within the text.
 
 ## Requirements
 
-- Data model and storage integration:
-  - Ensure `TextHighlight` is persisted in localStorage with `kind: 'text'`, `startWord`, `endWord`, and `text`.
-  - Reuse `useHighlights` or create a `useTextHighlights` hook that filters by `documentId` and `kind: 'text'`.
-- Highlight creation from selection:
-  - Use `startWord` and `endWord` from the selection state (Task 005).
-  - Build the highlight `text` from the selected word range using the tokenized word array.
-- Merge logic for overlapping highlights:
-  - Two highlights overlap if their word ranges intersect.
-  - Merge behavior:
-    - New range = union of overlapping ranges.
-    - Color = newly selected color.
-    - Notes:
-      - If the new highlight includes a note, use it.
-      - Else if exactly one overlapping highlight has a note, keep that note.
-      - Else if multiple overlapping highlights have notes, concatenate them separated by a blank line and truncate to `VALIDATION.MAX_NOTE_LENGTH`.
-  - Replace overlapping highlights in storage with the merged result.
-- Inline rendering in text reader:
-  - Apply background color to word spans for highlights (use `HIGHLIGHT_COLORS[color].bg`).
-  - When multiple highlights exist, ensure merged range renders as a single contiguous highlight.
-- Highlight popover for text:
-  - Clicking a highlighted word opens a popover allowing:
-    - Color change
-    - Note edit
-    - Delete
-    - Speed Read action (wired later)
-  - Reuse `HighlightPopover` from PDF if possible, but ensure it accepts text highlights.
-- Notes sidebar:
-  - Populate Notes tab with text highlights that have notes.
-  - Show a snippet of highlighted text and the note.
-  - Clicking a note scrolls to the highlight range in the text reader.
+- Bookmarks data model:
+  - Ensure `TextBookmark` entries are persisted with `kind: 'text'` and `wordIndex`.
+  - Update or extend `useBookmarks` to support text bookmarks while preserving PDF behavior.
+- Current word tracking:
+  - Track the "current word" based on scroll position in the text container.
+  - Use `elementFromPoint` near the top of the container (with a small vertical offset) to find the nearest `span[data-word-index]`.
+  - Update `currentWordIndex` on scroll with a requestAnimationFrame throttle to avoid jank.
+- Position indicator in the top bar:
+  - Display `Word X / Y (Z%)` where:
+    - `X = currentWordIndex + 1`
+    - `Y = total word count`
+    - `Z = Math.round((X / Y) * 100)`
+  - If word count is missing in metadata, compute it from tokenized words.
+- Bookmark toggle:
+  - Add a bookmark button in the TextReader top bar.
+  - Active state when there is a bookmark at `currentWordIndex`.
+  - Clicking toggles bookmark add/remove at current word.
+  - Add keyboard shortcut `B` to toggle (ignore when focus is in inputs or textareas).
+- Sidebar list:
+  - In Bookmarks tab, list text bookmarks sorted by word index.
+  - Label format: `snippet + position` where:
+    - Snippet is 40-60 characters centered on the bookmarked word.
+    - Position uses the same `Word X / Y (Z%)` format.
+  - Clicking a bookmark scrolls to the word span (`scrollIntoView`).
 
 ## Success Criteria
 
-1. [x] Text highlights are created and stored as word-index ranges.
-2. [x] Overlapping highlights merge using the PRD rules for range, color, and notes.
-3. [x] Highlights render inline across the correct word spans.
-4. [x] Highlight popover supports color change, note edit, delete, and speed read action.
-5. [x] Notes sidebar lists note-bearing highlights and scrolls to them.
-6. [x] files added or edited
+1. [x] Text bookmarks are stored with `wordIndex` and load correctly for a document.
+2. [ ] Current word index updates while scrolling and drives the position indicator.
+3. [ ] Bookmark toggle works via button and `B` key.
+4. [ ] Bookmarks sidebar lists snippet + position and scrolls on click.
+5. [ ] files added or edited
 
 ---
 
