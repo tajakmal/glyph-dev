@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import type { DocumentMeta, HighlightColor } from '@/types';
+import type { DocumentMeta, HighlightColor, TextHighlight } from '@/types';
 import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { SelectionPopover } from '@/components/pdf/PDFHighlightPopover';
+import { useTextHighlights } from '@/hooks/useTextHighlights';
 
 interface TextReaderProps {
   documentId: string;
@@ -26,6 +27,22 @@ export function TextReader({ documentId }: TextReaderProps) {
   });
   const [activeTab, setActiveTab] = useState<SidebarTab>('bookmarks');
   const [isBookmarked, setIsBookmarked] = useState(false);
+
+  // Tokenize text content into words (moved up so we can pass to highlights hook)
+  const words = useMemo(() => {
+    if (!textContent) return [];
+    return tokenize(textContent);
+  }, [textContent]);
+
+  // Text highlights hook
+  const {
+    highlights,
+    addHighlight,
+    removeHighlight,
+    updateHighlightNote,
+    updateHighlightColor,
+    getHighlightAtWord,
+  } = useTextHighlights({ documentId, words });
 
   // Selection state
   const textContainerRef = useRef<HTMLDivElement>(null);
@@ -117,12 +134,6 @@ export function TextReader({ documentId }: TextReaderProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar]);
 
-  // Tokenize text content into words
-  const words = useMemo(() => {
-    if (!textContent) return [];
-    return tokenize(textContent);
-  }, [textContent]);
-
   // Handle text selection
   const handleMouseUp = useCallback(() => {
     const sel = window.getSelection();
@@ -186,12 +197,24 @@ export function TextReader({ documentId }: TextReaderProps) {
     window.getSelection()?.removeAllRanges();
   }, []);
 
-  // Handle highlight creation (placeholder for now)
+  // Handle highlight creation
   const handleCreateHighlight = useCallback((color: HighlightColor, note?: string) => {
-    // Will be implemented in a later task
-    console.log('Create highlight:', { color, note, selection });
+    if (!selection) return;
+
+    // Build the text from the selected word range
+    const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
+    const text = selectedWords.join(' ');
+
+    addHighlight({
+      startWord: selection.startWord,
+      endWord: selection.endWord,
+      text,
+      color,
+      note,
+    });
+
     handleCloseSelection();
-  }, [selection, handleCloseSelection]);
+  }, [selection, words, addHighlight, handleCloseSelection]);
 
   // Handle speed read from selection (placeholder)
   const handleSpeedReadSelection = useCallback(() => {

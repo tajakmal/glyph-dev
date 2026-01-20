@@ -1,53 +1,62 @@
 ---
-task: Text Rendering and Selection Mapping
+task: Text Highlights and Notes
 priority: 2
-depends_on: ["002-tokenization-word-mapping.md", "004-text-reader-scaffold.md"]
+depends_on: ["001-document-types-storage.md", "005-text-render-selection.md"]
 ---
 
-# Task: Text Rendering and Selection Mapping
+# Task: Text Highlights and Notes
 
-Render text content as word spans and map user selections to word indices with a selection popover.
+Implement text highlights stored as word-index ranges, including overlap merging and note handling.
 
 ## Overview
 
-Text highlights, bookmarks, and speed read selection all depend on accurate word indices. This task renders every word in the text reader with a word index and implements selection handling that maps a DOM selection to start/end word indices. It also updates selection highlight styling to match the red ORP color family.
+Text highlights are stored by word index ranges, rendered inline in the reader, and editable via a popover. This task adds the highlight creation and merge logic as well as the Notes sidebar list for text documents.
 
 ## Context
 
-The PDF reader already has a selection popover, but text documents are currently rendered as plain text. We need word-level spans to support precise navigation and mapping to word indices.
+PDF highlights already exist, but text highlights require word-level storage and merging rules. The PRD defines how overlapping highlights should merge and how notes should be preserved or combined.
 
 ## Requirements
 
-- Text rendering in `TextReader`:
-  - Use the shared `tokenize` helper to split content into words.
-  - Render each word in its own `span` with `data-word-index` and a stable key.
-  - Preserve readable spacing between words (use a trailing space node or CSS `white-space` handling).
-  - Keep the content read-only (no contenteditable).
-- Selection handling:
-  - Add a selection listener scoped to the text container.
-  - On mouseup selection, compute `{ startWord, endWord, text }` using word span indices:
-    - Use the selection `Range` to find the nearest `span[data-word-index]` for start and end.
-    - Normalize ordering so `startWord <= endWord`.
-  - Store selection state in `TextReader` so later tasks can create highlights and speed read from it.
-- Selection popover:
-  - Add a popover anchored to the selection bounding rect.
-  - The popover should offer:
-    - Highlight color buttons (reuse `SelectionPopover` from `src/components/pdf/PDFHighlightPopover.tsx` if possible)
-    - Speed Read action (to be wired later)
-    - Close action
-  - The popover should close on outside click and Escape.
-- Selection highlight styling:
-  - Update `src/app/globals.css` to define a red selection color for text reader content.
-  - Use a class selector so only text reader content uses the red selection, not all UI.
-  - Example target: `rgba(239, 68, 68, 0.45)`.
+- Data model and storage integration:
+  - Ensure `TextHighlight` is persisted in localStorage with `kind: 'text'`, `startWord`, `endWord`, and `text`.
+  - Reuse `useHighlights` or create a `useTextHighlights` hook that filters by `documentId` and `kind: 'text'`.
+- Highlight creation from selection:
+  - Use `startWord` and `endWord` from the selection state (Task 005).
+  - Build the highlight `text` from the selected word range using the tokenized word array.
+- Merge logic for overlapping highlights:
+  - Two highlights overlap if their word ranges intersect.
+  - Merge behavior:
+    - New range = union of overlapping ranges.
+    - Color = newly selected color.
+    - Notes:
+      - If the new highlight includes a note, use it.
+      - Else if exactly one overlapping highlight has a note, keep that note.
+      - Else if multiple overlapping highlights have notes, concatenate them separated by a blank line and truncate to `VALIDATION.MAX_NOTE_LENGTH`.
+  - Replace overlapping highlights in storage with the merged result.
+- Inline rendering in text reader:
+  - Apply background color to word spans for highlights (use `HIGHLIGHT_COLORS[color].bg`).
+  - When multiple highlights exist, ensure merged range renders as a single contiguous highlight.
+- Highlight popover for text:
+  - Clicking a highlighted word opens a popover allowing:
+    - Color change
+    - Note edit
+    - Delete
+    - Speed Read action (wired later)
+  - Reuse `HighlightPopover` from PDF if possible, but ensure it accepts text highlights.
+- Notes sidebar:
+  - Populate Notes tab with text highlights that have notes.
+  - Show a snippet of highlighted text and the note.
+  - Clicking a note scrolls to the highlight range in the text reader.
 
 ## Success Criteria
 
-1. [x] TextReader renders content as word spans with `data-word-index` attributes.
-2. [x] Text selection maps to accurate start/end word indices.
-3. [x] Selection popover appears on selection and can be dismissed.
-4. [x] Text selection highlight uses the red ORP color family.
-5. [x] files added or edited
+1. [ ] Text highlights are created and stored as word-index ranges.
+2. [ ] Overlapping highlights merge using the PRD rules for range, color, and notes.
+3. [ ] Highlights render inline across the correct word spans.
+4. [ ] Highlight popover supports color change, note edit, delete, and speed read action.
+5. [ ] Notes sidebar lists note-bearing highlights and scrolls to them.
+6. [ ] files added or edited
 
 ---
 
