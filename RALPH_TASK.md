@@ -61,8 +61,8 @@ Currently speed read only accepts a text snippet or full PDF text and does not m
 1. [x] Speed read can start at a specific word index for both PDF and text documents.
 2. [x] Returning from speed read scrolls to the saved word and shows a temporary red focus highlight.
 3. [x] Selection-based speed read continues to the end of the document.
-4. [ ] Speed read header includes Home/Library navigation and respects return path.
-5. [ ] files added or edited
+4. [x] Speed read header includes Home/Library navigation and respects return path.
+5. [x] files added or edited
 
 ---
 
