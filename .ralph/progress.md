@@ -36,3 +36,17 @@ Added Home/Library button to `src/components/pdf/PDFControls.tsx`:
 
 Updated `.pdf-text-layer span::selection` in `src/app/globals.css`:
 - Changed from `rgba(59, 130, 246, 0.3)` (blue) to `rgba(239, 68, 68, 0.45)` (red ORP family)
+
+### Criterion 5: Files added or edited
+**Status: COMPLETED**
+
+Files modified:
+- `src/components/pdf/PDFViewer.tsx` - scrollTop-based page indicator calculation
+- `src/components/pdf/PDFControls.tsx` - Home/Library navigation button
+- `src/app/globals.css` - red ORP selection color for PDF text
+
+---
+
+## Task Complete
+
+All 5 criteria have been completed successfully.

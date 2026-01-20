@@ -38,7 +38,10 @@ The PRD calls out inaccurate PDF page indicators and bookmarks when scrolling th
 2. [x] Bookmark toggle reflects the correct current page.
 3. [x] PDF top bar includes a Home/Library button that navigates to `/`.
 4. [x] PDF selection highlight uses the red ORP color family.
-5. [ ] files added or edited
+5. [x] files added or edited
+   - `src/components/pdf/PDFViewer.tsx` - scrollTop-based page indicator
+   - `src/components/pdf/PDFControls.tsx` - Home/Library button
+   - `src/app/globals.css` - red ORP selection color
 
 ---
 
