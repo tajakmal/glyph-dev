@@ -9,6 +9,7 @@ import { tokenize } from '@/lib/tokenize';
 import { SelectionPopover, HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { useTextHighlights } from '@/hooks/useTextHighlights';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
+import { getSpeedReadSession, clearSpeedReadSession } from '@/lib/speed-read';
 
 interface TextReaderProps {
   documentId: string;
@@ -119,6 +120,47 @@ export function TextReader({ documentId }: TextReaderProps) {
 
     loadDocument();
   }, [documentId]);
+
+  // Check for speed read session and scroll to the word with focus highlight
+  useEffect(() => {
+    if (isLoading || !textContent) return;
+
+    const session = getSpeedReadSession();
+    if (!session || session.documentId !== documentId || session.kind !== 'text') {
+      return;
+    }
+
+    // Clear the session to prevent re-triggering
+    clearSpeedReadSession();
+
+    // Wait for next frame to ensure DOM is ready
+    requestAnimationFrame(() => {
+      const wordSpan = textContainerRef.current?.querySelector(
+        `[data-word-index="${session.wordIndex}"]`
+      );
+      if (!wordSpan) return;
+
+      // Scroll to the word
+      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Add temporary red focus highlight
+      wordSpan.classList.add('ring-2', 'ring-red-500', 'bg-red-500/20', 'rounded');
+
+      // Remove highlight on user interaction or after 3 seconds
+      const clearHighlight = () => {
+        wordSpan.classList.remove('ring-2', 'ring-red-500', 'bg-red-500/20', 'rounded');
+        scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
+        document.removeEventListener('click', clearHighlight);
+      };
+
+      // Set up listeners to clear on interaction
+      scrollContainerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
+      document.addEventListener('click', clearHighlight, { once: true });
+
+      // Also clear after 3 seconds
+      setTimeout(clearHighlight, 3000);
+    });
+  }, [isLoading, textContent, documentId]);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev: boolean) => !prev);
