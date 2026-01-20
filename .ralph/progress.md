@@ -16,3 +16,17 @@ Changes made:
 - Uses `scrollTop + viewportHeight * 0.25` offset so indicator updates as user enters a page
 - Works correctly even when pages are virtualized (not rendered in DOM)
 - Added `pageCount`, `pageHeights`, `estimatedPageHeight` to useEffect dependencies
+
+### Criterion 2: Bookmark toggle reflects the correct current page
+**Status: COMPLETED**
+
+No additional code changes required. The bookmark toggle in `PDFControls` (line 727-728) and the B keyboard shortcut (line 204) both use `currentPage` state, which is now correctly calculated via scrollTop-based logic from criterion 1.
+
+### Criterion 3: PDF top bar includes a Home/Library button
+**Status: COMPLETED**
+
+Added Home/Library button to `src/components/pdf/PDFControls.tsx`:
+- Added `import Link from 'next/link'` at the top
+- Added Home button with house icon at the left side of the top bar (before sidebar toggle)
+- Button links to `/` (Library page)
+- Has accessible label "Go to Library" and title tooltip "Library"
