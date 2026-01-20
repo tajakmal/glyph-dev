@@ -1,51 +1,44 @@
 # Progress Log
 
-Task started: 2026-01-20 17:22:39
+Task started: 2026-01-20 17:25:52
 
-### 2026-01-20 17:22:39
+### 2026-01-20 17:25:53
 **Iteration 1 started**
 
-### 2026-01-20 (Iteration 1 completed)
-**All criteria completed**
+### 2026-01-20 - Text Reader Scaffold and Navigation
+**Task: 004-text-reader-scaffold**
 
-**Changes made:**
+Completed all success criteria:
 
-1. **Criterion 1: Paste Text Panel on Home page**
-   - Added `textTitle`, `textContent`, and `isSavingText` state variables
-   - Added `wordCount` computed from `textContent` using shared tokenizer
-   - Added `isSaveDisabled` check for empty/whitespace-only content
-   - Added `handleSaveText` function to save text documents
-   - Added Paste Text panel UI with title input, text area, word count display, and Save button
-   - Layout updated to grid with PDF upload and Paste Text side by side on md+ screens
+1. **Route switch implemented** - Updated `src/app/reader/[id]/page.tsx`:
+   - Loads document metadata using `getDocument`
+   - If `kind === 'pdf'`, renders `PDFViewer` (existing behavior)
+   - If `kind === 'text'`, renders the new `TextReader` component
+   - If document is missing, shows a friendly error state with "Back to Library" button
 
-2. **Criterion 2: addTextDocument in useDocumentLibrary.ts**
-   - Added import for `storeText` from storage.ts
-   - Added import for `tokenize` from tokenize.ts
-   - Added `AddTextDocumentParams` interface
-   - Added `addTextDocument` function that:
-     - Computes word count using shared tokenizer
-     - Determines title from provided title, first non-empty line, or "Untitled Text"
-     - Creates text preview (first ~160 chars, whitespace collapsed)
-     - Stores text in IndexedDB via `storeText`
-     - Stores metadata in localStorage via `setDocuments`
-     - Updates local state
+2. **TextReader component created** - New file `src/components/text/TextReader.tsx`:
+   - Layout matches PDF reader: top bar, left sidebar, main content area
+   - Loads text content from IndexedDB via `getText()`
+   - Shows loading spinner while fetching
+   - Handles error states (document not found, text content missing)
+   - Updates `lastOpenedAt` when reader opens document
 
-3. **Criterion 3: Library grid shows PDF and text cards**
-   - Updated DocumentCard.tsx to show different icons for text vs PDF documents
-   - Added "Text" badge on text document thumbnail
-   - Updated info section to show word count and preview for text documents
-   - Preserved page count/file size/last read page for PDFs
+3. **Top bar implemented** with:
+   - Sidebar toggle button
+   - Home/Library button (navigates to `/`)
+   - Document title (truncated for long titles)
+   - Speed Read button (placeholder)
+   - Bookmark toggle button (placeholder state)
+   - Position indicator placeholder
 
-4. **Criterion 4: Library empty state**
-   - Updated LibraryGrid.tsx empty state message from "Upload a PDF" to "Upload a PDF or paste text"
+4. **Sidebar implemented** with:
+   - Two tabs: Bookmarks and Notes (no Contents tab)
+   - Empty state messages for each tab
+   - Keyboard shortcut 'S' to toggle sidebar
+   - Persistent sidebar state via localStorage
 
-**Files modified:**
-- `src/app/page.tsx` - Added Paste Text panel UI and state
-- `src/hooks/useDocumentLibrary.ts` - Added `addTextDocument` function
-- `src/components/library/DocumentCard.tsx` - Updated for text document rendering
-- `src/components/library/LibraryGrid.tsx` - Updated empty state message
-- `RALPH_TASK.md` - Marked criteria as completed
-- `.ralph/progress.md` - This file
+5. **Files added/modified**:
+   - Created: `src/components/text/TextReader.tsx`
+   - Modified: `src/app/reader/[id]/page.tsx`
 
-### 2026-01-20 17:25:50
-**Iteration 1 ended** - TASK COMPLETE
+Build passes successfully.

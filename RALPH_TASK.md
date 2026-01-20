@@ -1,59 +1,51 @@
 ---
-task: Paste Text Flow and Library Updates
+task: Text Reader Scaffold and Navigation
 priority: 1
-depends_on: ["001-document-types-storage.md"]
+depends_on: ["001-document-types-storage.md", "003-library-paste-text.md"]
 ---
 
-# Task: Paste Text Flow and Library Updates
+# Task: Text Reader Scaffold and Navigation
 
-Add a Paste Text workflow on the Home page and update library cards to display text documents alongside PDFs.
+Add a text reader view that mirrors the PDF reader layout and route to it based on document kind.
 
 ## Overview
 
-Users need to paste text, save it as a document, and see it immediately in the library grid. This task adds the Paste Text UI, creates text documents in storage, and updates library cards and empty states to support both document kinds.
+This task introduces a new TextReader component with a top bar, sidebar, and scrollable text content area. The reader should load text content from IndexedDB, handle missing content errors, and support Home/Library navigation. No highlights, bookmarks, or speed read selection logic yet (those come in later tasks).
 
 ## Context
 
-The current Home page only supports PDF uploads and library cards only render PDF metadata. The PRD requires text documents to be first-class citizens in the library, including distinct card metadata (word count and preview), a Text badge, and context menu actions.
+The current reader route (`/reader/:id`) always renders a PDF viewer. The PRD requires text documents to open in a reader with a similar layout and UI affordances, but without PDF-specific components.
 
 ## Requirements
 
-- Home page UI (`src/app/page.tsx`):
-  - Add a new Paste Text panel next to or below the existing PDF Upload zone.
-  - Paste Text panel must include:
-    - Title input (optional)
-    - Text area for paste
-    - Live word count
-    - Save button disabled when text is empty or whitespace
-  - Default title logic:
-    - If title input is empty, use the first non-empty line of the text
-    - If that is missing, use `"Untitled Text"`
-  - After save:
-    - Clear the text input and reset the title input
-    - The new document appears in the library grid immediately
-- Document creation logic (`src/hooks/useDocumentLibrary.ts`):
-  - Add `addTextDocument` that accepts `{ title?, content }` and returns a `DocumentMeta`.
-  - Create metadata with `kind: 'text'`, `wordCount`, and `textPreview` (first ~160 chars, whitespace collapsed).
-  - Use `storeText` from `src/lib/storage.ts` to persist content to IndexedDB.
-  - Ensure `lastOpenedAt` and `addedAt` are set consistently with PDFs.
-  - Keep text documents read-only (no edit flow for the actual content).
-- Library grid and cards:
-  - Update `src/components/library/LibraryGrid.tsx` empty state to mention both upload and paste (example: "Upload a PDF or paste text to get started").
-  - Update `src/components/library/DocumentCard.tsx` to render text documents:
-    - Show a "Text" badge or icon on the thumbnail area.
-    - Show word count instead of page count and file size.
-    - Show a short preview line (use `textPreview`, fallback to `"No preview"`).
-    - Keep the context menu actions: Open, Speed Read, Rename, Delete.
-    - Speed Read for text documents should open the full document speed reader (same route shape as PDFs).
-  - For PDFs, preserve existing card UI and metadata.
-- Ensure text document cards still open `/reader/:id` on click.
+- Route switch in `src/app/reader/[id]/page.tsx`:
+  - Load document metadata for `id` (use `getDocument` or `getDocuments`).
+  - If `kind === 'pdf'`, render `PDFViewer` (existing behavior).
+  - If `kind === 'text'`, render the new `TextReader` component.
+  - If document is missing, show a friendly error state with a "Back to Library" button.
+- Create `TextReader` in `src/components/text/TextReader.tsx` (new folder is fine):
+  - Layout matches PDF reader: top bar, left sidebar, main content area.
+  - Top bar includes:
+    - Home/Library button (navigates to `/`)
+    - Document title (truncate long titles)
+    - Speed Read button (wired to full document speed read later)
+    - Bookmark toggle button (placeholder state for now)
+    - Position indicator placeholder (for later task)
+  - Sidebar includes two tabs: Bookmarks and Notes (no Contents tab).
+    - Each tab can show "No bookmarks" or "No notes" placeholder text for now.
+  - Main content area:
+    - Scrollable container with read-only text content.
+    - Use a loading state while text is fetched.
+    - If the text content is missing from IndexedDB, show an error message and a Delete action that removes the document (call `deleteDocumentComplete`).
+- Ensure `lastOpenedAt` is updated when the reader opens the document (use existing update logic in storage or `useDocumentLibrary`).
+- Do not implement selection, highlights, bookmarks, or speed read start here. Keep the component ready to integrate in later tasks.
 
 ## Success Criteria
 
-1. [x] Home page has a Paste Text panel with title, text area, word count, and disabled Save when empty.
-2. [x] `addTextDocument` stores text content in IndexedDB and metadata in localStorage.
-3. [x] Library grid shows both PDF and text cards, with correct metadata and previews for text.
-4. [x] Library empty state references both PDF upload and text paste.
+1. [x] `/reader/:id` renders PDF or TextReader based on document kind.
+2. [x] TextReader loads text content from IndexedDB with loading and error states.
+3. [x] TextReader top bar includes Home/Library navigation and placeholder controls.
+4. [x] Sidebar shows Bookmarks and Notes tabs with empty states.
 5. [x] files added or edited
 
 ---
