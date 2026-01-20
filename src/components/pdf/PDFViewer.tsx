@@ -18,7 +18,8 @@ import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
 import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
-import { navigateToSpeedRead, navigateToDocumentSpeedRead } from '@/lib/speed-read';
+import { navigateToSpeedRead, navigateToDocumentSpeedRead, getSpeedReadSession, clearSpeedReadSession } from '@/lib/speed-read';
+import { mapWordIndexToPage, buildPageWordCounts } from '@/lib/word-mapping';
 
 // Number of pages to render beyond the visible viewport
 const OVERSCAN_PAGES = 2;
@@ -279,6 +280,52 @@ export function PDFViewer({
       onDocumentLoad?.(pageCount);
     }
   }, [pageCount, onDocumentLoad]);
+
+  // Check for speed read session and scroll to the page with focus highlight
+  useEffect(() => {
+    if (!pdf || isLoading || pageCount === 0) return;
+
+    const session = getSpeedReadSession();
+    if (!session || session.documentId !== documentId || session.kind !== 'pdf') {
+      return;
+    }
+
+    // Clear the session to prevent re-triggering
+    clearSpeedReadSession();
+
+    // Build page word counts to map word index to page
+    buildPageWordCounts(pdf).then((pageWordCounts) => {
+      const { page } = mapWordIndexToPage(session.wordIndex, pageWordCounts);
+
+      // Navigate to the page
+      const container = containerRef.current;
+      if (!container) return;
+
+      const pageElement = container.querySelector(`[data-page-number="${page}"]`);
+      if (pageElement) {
+        pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Add temporary red focus highlight to the page
+        // Note: For PDFs, we highlight the page since mapping to specific word positions
+        // within the rendered text layer is complex and may not be reliable
+        pageElement.classList.add('ring-4', 'ring-red-500', 'ring-offset-2', 'ring-offset-zinc-950');
+
+        // Remove highlight on user interaction or after 3 seconds
+        const clearHighlight = () => {
+          pageElement.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2', 'ring-offset-zinc-950');
+          container.removeEventListener('scroll', clearHighlight);
+          document.removeEventListener('click', clearHighlight);
+        };
+
+        // Set up listeners to clear on interaction
+        container.addEventListener('scroll', clearHighlight, { once: true });
+        document.addEventListener('click', clearHighlight, { once: true });
+
+        // Also clear after 3 seconds
+        setTimeout(clearHighlight, 3000);
+      }
+    });
+  }, [pdf, isLoading, pageCount, documentId]);
 
   // Calculate visible range based on scroll position
   useEffect(() => {

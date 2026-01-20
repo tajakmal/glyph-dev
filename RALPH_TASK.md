@@ -58,7 +58,7 @@ Currently speed read only accepts a text snippet or full PDF text and does not m
 
 ## Success Criteria
 
-1. [ ] Speed read can start at a specific word index for both PDF and text documents.
+1. [x] Speed read can start at a specific word index for both PDF and text documents.
 2. [ ] Returning from speed read scrolls to the saved word and shows a temporary red focus highlight.
 3. [ ] Selection-based speed read continues to the end of the document.
 4. [ ] Speed read header includes Home/Library navigation and respects return path.
