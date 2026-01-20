@@ -59,6 +59,7 @@ export function usePDF(options: UsePDFOptions): UsePDFReturn {
         setMeta({
           id: documentId,
           title: extractedMeta.title,
+          kind: 'pdf',
           fileName: 'document.pdf',
           pageCount: extractedMeta.pageCount,
           fileSize: pdfData.byteLength,

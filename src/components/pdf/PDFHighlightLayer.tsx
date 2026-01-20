@@ -1,19 +1,19 @@
 'use client';
 
 import React from 'react';
-import type { Highlight } from '@/types';
+import type { PDFHighlight } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
 import { denormalizeRects } from '@/lib/highlight-utils';
 
 interface PDFHighlightLayerProps {
   /** Highlights for this page */
-  highlights: Highlight[];
+  highlights: PDFHighlight[];
   /** Page width in pixels */
   pageWidth: number;
   /** Page height in pixels */
   pageHeight: number;
   /** Callback when highlight is clicked */
-  onHighlightClick?: (highlight: Highlight) => void;
+  onHighlightClick?: (highlight: PDFHighlight) => void;
   /** Currently selected highlight ID */
   selectedHighlightId?: string;
 }

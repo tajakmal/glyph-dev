@@ -7,51 +7,94 @@
 // Document & Library Types
 // =============================================================================
 
+export type DocumentKind = 'pdf' | 'text';
+
 /**
- * Metadata for a PDF document in the library.
- * Stores information about the document for display and resume functionality.
+ * Shared metadata for documents in the library.
  */
-export interface DocumentMeta {
+interface DocumentMetaBase {
   /** Unique identifier (UUID v4) */
   id: string;
   /** Display title (from PDF metadata or filename) */
   title: string;
-  /** Original filename with extension */
-  fileName: string;
-  /** Total number of pages */
-  pageCount: number;
-  /** File size in bytes */
-  fileSize: number;
+  /** Document kind */
+  kind: DocumentKind;
   /** Unix timestamp (ms) when added to library */
   addedAt: number;
   /** Unix timestamp (ms) when last opened */
   lastOpenedAt: number;
+  /** Word count (text documents only) */
+  wordCount?: number;
+  /** Preview text (first ~160 chars, trimmed) */
+  textPreview?: string;
+  /** Original filename with extension (PDF docs) */
+  fileName?: string;
+  /** Total number of pages (PDF docs) */
+  pageCount?: number;
+  /** File size in bytes (PDF docs) */
+  fileSize?: number;
   /** Last read page (1-based), for resume functionality */
-  lastReadPage: number;
+  lastReadPage?: number;
   /** Base64 JPEG data URL of first page thumbnail */
   thumbnailDataUrl?: string;
 }
+
+/**
+ * Metadata for a PDF document in the library.
+ * Stores information about the document for display and resume functionality.
+ */
+export interface PDFDocumentMeta extends DocumentMetaBase {
+  kind: 'pdf';
+  fileName: string;
+  pageCount: number;
+  fileSize: number;
+  lastReadPage: number;
+}
+
+/**
+ * Metadata for a text document in the library.
+ */
+export interface TextDocumentMeta extends DocumentMetaBase {
+  kind: 'text';
+}
+
+export type DocumentMeta = PDFDocumentMeta | TextDocumentMeta;
 
 // =============================================================================
 // Bookmark Types
 // =============================================================================
 
-/**
- * A bookmark within a PDF document.
- * Allows users to save and quickly navigate to specific pages.
- */
-export interface Bookmark {
+interface BookmarkBase {
   /** Unique identifier (UUID v4) */
   id: string;
   /** Foreign key to DocumentMeta.id */
   documentId: string;
-  /** Page number (1-based) */
-  page: number;
   /** Optional user-defined label */
   label?: string;
   /** Unix timestamp (ms) when created */
   createdAt: number;
 }
+
+/**
+ * A bookmark within a PDF document.
+ * Allows users to save and quickly navigate to specific pages.
+ */
+export interface PDFBookmark extends BookmarkBase {
+  kind: 'pdf';
+  /** Page number (1-based) */
+  page: number;
+}
+
+/**
+ * A bookmark within a text document.
+ */
+export interface TextBookmark extends BookmarkBase {
+  kind: 'text';
+  /** Word index (0-based) */
+  wordIndex: number;
+}
+
+export type Bookmark = PDFBookmark | TextBookmark;
 
 // =============================================================================
 // Highlight Types
@@ -77,23 +120,17 @@ export interface HighlightRect {
   height: number;
 }
 
-/**
- * A text highlight within a PDF document.
- * Includes the highlighted text, visual rectangles, and optional notes.
- */
-export interface Highlight {
+interface HighlightBase {
   /** Unique identifier (UUID v4) */
   id: string;
   /** Foreign key to DocumentMeta.id */
   documentId: string;
-  /** Page number (1-based) */
-  page: number;
+  /** Highlight kind */
+  kind: 'pdf' | 'text';
   /** Highlight color */
   color: HighlightColor;
   /** The highlighted text content */
   text: string;
-  /** Bounding rectangles for the highlight (normalized coordinates) */
-  rects: HighlightRect[];
   /** Optional user note/annotation */
   note?: string;
   /** Unix timestamp (ms) when created */
@@ -101,6 +138,31 @@ export interface Highlight {
   /** Unix timestamp (ms) when last modified */
   updatedAt?: number;
 }
+
+/**
+ * A text highlight within a PDF document.
+ * Includes the highlighted text, visual rectangles, and optional notes.
+ */
+export interface PDFHighlight extends HighlightBase {
+  kind: 'pdf';
+  /** Page number (1-based) */
+  page: number;
+  /** Bounding rectangles for the highlight (normalized coordinates) */
+  rects: HighlightRect[];
+}
+
+/**
+ * A text highlight within a text document.
+ */
+export interface TextHighlight extends HighlightBase {
+  kind: 'text';
+  /** Start word index (0-based) */
+  startWord: number;
+  /** End word index (0-based, inclusive) */
+  endWord: number;
+}
+
+export type Highlight = PDFHighlight | TextHighlight;
 
 // =============================================================================
 // PDF Viewer State Types

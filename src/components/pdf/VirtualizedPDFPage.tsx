@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
-import type { SearchMatch, Highlight } from '@/types';
+import type { SearchMatch, PDFHighlight } from '@/types';
 import { PDFTextLayer, TextSelection } from './PDFTextLayer';
 import { PDFHighlightLayer } from './PDFHighlightLayer';
 
@@ -14,9 +14,9 @@ interface VirtualizedPDFPageProps {
   /** Zoom level (1 = 100%) */
   zoom: number;
   /** Highlights for this page */
-  highlights?: Highlight[];
+  highlights?: PDFHighlight[];
   /** Callback when highlight is clicked */
-  onHighlightClick?: (highlight: Highlight) => void;
+  onHighlightClick?: (highlight: PDFHighlight) => void;
   /** Currently selected highlight ID */
   selectedHighlightId?: string;
   /** Callback when text is selected */
