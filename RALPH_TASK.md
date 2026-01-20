@@ -49,7 +49,7 @@ Today the app assumes every document is a PDF and stores only PDF metadata and b
 
 1. [x] `DocumentMeta`, `Bookmark`, and `Highlight` types compile with new union types and `kind` fields.
 2. [x] IndexedDB version is bumped and the `texts` store is created in `onupgradeneeded`.
-3. [ ] `storeText`, `getText`, and `deleteText` are implemented and exported.
+3. [x] `storeText`, `getText`, and `deleteText` are implemented and exported.
 4. [ ] LocalStorage normalization handles missing `kind` and legacy fields without crashing, and writes back normalized data.
 5. [ ] `deleteDocumentComplete` removes both PDF binaries and text content safely.
 6. [ ] files added or edited

@@ -117,6 +117,63 @@ export async function deletePDF(documentId: string): Promise<void> {
 // Alias for backwards compatibility
 export const deletePDFFromStorage = deletePDF;
 
+// =============================================================================
+// Text Storage (IndexedDB)
+// =============================================================================
+
+/**
+ * Store text content in IndexedDB.
+ */
+export async function storeText(
+  documentId: string,
+  content: string
+): Promise<void> {
+  const database = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_TEXTS, 'readwrite');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_TEXTS);
+    const request = store.put(content, documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
+/**
+ * Get text content from IndexedDB.
+ */
+export async function getText(
+  documentId: string
+): Promise<string | null> {
+  const database = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_TEXTS, 'readonly');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_TEXTS);
+    const request = store.get(documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve(request.result ?? null);
+  });
+}
+
+/**
+ * Delete text content from IndexedDB.
+ */
+export async function deleteText(documentId: string): Promise<void> {
+  const database = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(INDEXEDDB_CONFIG.STORE_TEXTS, 'readwrite');
+    const store = transaction.objectStore(INDEXEDDB_CONFIG.STORE_TEXTS);
+    const request = store.delete(documentId);
+
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => resolve();
+  });
+}
+
 /**
  * Check if storage quota is available.
  */

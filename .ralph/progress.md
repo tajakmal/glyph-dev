@@ -12,3 +12,7 @@ Task started: 2026-01-20 16:57:20
 ### 2026-01-20 17:11:40
 - Completed criterion 2: bumped IndexedDB version and added texts store creation.
 - Ran `npm run type-check`.
+
+### 2026-01-20 17:12:39
+- Completed criterion 3: added text storage helpers in IndexedDB.
+- Ran `npm run type-check`.
