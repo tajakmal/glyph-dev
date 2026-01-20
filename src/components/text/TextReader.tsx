@@ -378,6 +378,75 @@ export function TextReader({ documentId }: TextReaderProps) {
     }
   }, []);
 
+  // Scroll to a bookmark by finding the word span
+  const scrollToBookmark = useCallback((bookmark: TextBookmark) => {
+    if (!textContainerRef.current) return;
+
+    const wordSpan = textContainerRef.current.querySelector(
+      `[data-word-index="${bookmark.wordIndex}"]`
+    );
+    if (wordSpan) {
+      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Flash effect to indicate the bookmarked word
+      wordSpan.classList.add('ring-2', 'ring-red-500', 'rounded');
+      setTimeout(() => {
+        wordSpan.classList.remove('ring-2', 'ring-red-500', 'rounded');
+      }, 1500);
+    }
+  }, []);
+
+  // Generate a snippet for a bookmark (40-60 chars centered on the word)
+  const getBookmarkSnippet = useCallback((wordIndex: number): string => {
+    if (words.length === 0) return '';
+
+    // Target around 50 characters, centered on the bookmarked word
+    const targetLength = 50;
+    const wordsPerSide = 5; // Approximate words on each side
+
+    const startIdx = Math.max(0, wordIndex - wordsPerSide);
+    const endIdx = Math.min(words.length - 1, wordIndex + wordsPerSide);
+
+    let snippet = words.slice(startIdx, endIdx + 1).join(' ');
+
+    // Trim to target length if needed
+    if (snippet.length > 60) {
+      // Find the bookmarked word position in the snippet
+      const beforeWords = words.slice(startIdx, wordIndex).join(' ');
+      const targetWord = words[wordIndex];
+      const afterWords = words.slice(wordIndex + 1, endIdx + 1).join(' ');
+
+      // Build a centered snippet
+      const halfTarget = Math.floor((targetLength - targetWord.length) / 2);
+      const beforeSnippet = beforeWords.length > halfTarget
+        ? '...' + beforeWords.slice(-halfTarget + 3)
+        : beforeWords;
+      const afterSnippet = afterWords.length > halfTarget
+        ? afterWords.slice(0, halfTarget - 3) + '...'
+        : afterWords;
+
+      snippet = `${beforeSnippet} ${targetWord} ${afterSnippet}`.trim();
+    }
+
+    // Add ellipsis if not at the start/end
+    if (startIdx > 0 && !snippet.startsWith('...')) {
+      snippet = '...' + snippet;
+    }
+    if (endIdx < words.length - 1 && !snippet.endsWith('...')) {
+      snippet = snippet + '...';
+    }
+
+    return snippet;
+  }, [words]);
+
+  // Get position string for a bookmark
+  const getBookmarkPosition = useCallback((wordIndex: number): string => {
+    const totalWords = words.length;
+    if (totalWords === 0) return '';
+    const percent = Math.round(((wordIndex + 1) / totalWords) * 100);
+    return `Word ${wordIndex + 1} / ${totalWords} (${percent}%)`;
+  }, [words]);
+
   // Filter highlights to only those with notes
   const highlightsWithNotes = useMemo(() => {
     return highlights.filter((h) => h.note && h.note.trim().length > 0);
@@ -577,11 +646,37 @@ export function TextReader({ documentId }: TextReaderProps) {
             {/* Sidebar Content */}
             <div className="flex-1 overflow-y-auto">
               {activeTab === 'bookmarks' && (
-                <div className="p-4 text-zinc-500 text-sm text-center">
-                  No bookmarks yet.
-                  <br />
-                  Use the bookmark button to save your position.
-                </div>
+                bookmarks.length === 0 ? (
+                  <div className="p-4 text-zinc-500 text-sm text-center">
+                    No bookmarks yet.
+                    <br />
+                    Use the bookmark button to save your position.
+                  </div>
+                ) : (
+                  <div className="p-2">
+                    {bookmarks.map((bookmark) => (
+                      <button
+                        key={bookmark.id}
+                        onClick={() => scrollToBookmark(bookmark)}
+                        className="w-full text-left p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2"
+                      >
+                        <div className="flex items-start gap-2">
+                          <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                          </svg>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-zinc-300 text-sm line-clamp-2 mb-1">
+                              &quot;{getBookmarkSnippet(bookmark.wordIndex)}&quot;
+                            </p>
+                            <p className="text-zinc-500 text-xs">
+                              {getBookmarkPosition(bookmark.wordIndex)}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
               )}
               {activeTab === 'notes' && (
                 highlightsWithNotes.length === 0 ? (
