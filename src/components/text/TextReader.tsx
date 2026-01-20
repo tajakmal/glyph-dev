@@ -9,7 +9,7 @@ import { tokenize } from '@/lib/tokenize';
 import { SelectionPopover, HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { useTextHighlights } from '@/hooks/useTextHighlights';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
-import { getSpeedReadSession, clearSpeedReadSession } from '@/lib/speed-read';
+import { getSpeedReadSession, clearSpeedReadSession, navigateToDocumentSpeedRead } from '@/lib/speed-read';
 
 interface TextReaderProps {
   documentId: string;
@@ -333,12 +333,20 @@ export function TextReader({ documentId }: TextReaderProps) {
     handleCloseSelection();
   }, [selection, words, addHighlight, handleCloseSelection]);
 
-  // Handle speed read from selection (placeholder)
+  // Handle speed read from selection - starts at selected word and continues to end
   const handleSpeedReadSelection = useCallback(() => {
-    // Will be implemented in a later task
-    console.log('Speed read from:', selection);
+    if (!selection) return;
+
+    // Navigate to speed read starting at the selection's start word
+    // This continues to the end of the document (not just the selection range)
+    navigateToDocumentSpeedRead(router, documentId, {
+      returnPath: `/reader/${documentId}`,
+      startWordIndex: selection.startWord,
+      kind: 'text',
+    });
+
     handleCloseSelection();
-  }, [selection, handleCloseSelection]);
+  }, [selection, documentId, router, handleCloseSelection]);
 
   // Handle click on highlighted word
   const handleHighlightClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
@@ -390,12 +398,19 @@ export function TextReader({ documentId }: TextReaderProps) {
     }
   }, [activeHighlight, removeHighlight]);
 
-  // Handle speed read from highlight (placeholder)
+  // Handle speed read from highlight - starts at highlight's start word and continues to end
   const handleHighlightSpeedRead = useCallback(() => {
-    // Will be implemented in a later task
-    console.log('Speed read highlight:', activeHighlight?.highlight);
+    if (!activeHighlight) return;
+
+    // Navigate to speed read starting at the highlight's start word
+    navigateToDocumentSpeedRead(router, documentId, {
+      returnPath: `/reader/${documentId}`,
+      startWordIndex: activeHighlight.highlight.startWord,
+      kind: 'text',
+    });
+
     handleCloseHighlightPopover();
-  }, [activeHighlight, handleCloseHighlightPopover]);
+  }, [activeHighlight, documentId, router, handleCloseHighlightPopover]);
 
   // Scroll to a highlight by finding the first word span
   const scrollToHighlight = useCallback((highlight: TextHighlight) => {

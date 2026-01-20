@@ -570,8 +570,10 @@ export function PDFViewer({
   }, []);
 
   // Speed read handler for selection
-  const handleSpeedReadSelection = useCallback(() => {
-    if (!selectionPopover) return;
+  // Attempts to map selection to word index for full document reading,
+  // falls back to selection text if mapping is not possible
+  const handleSpeedReadSelection = useCallback(async () => {
+    if (!selectionPopover || !pdf) return;
 
     // Save scroll position before navigating
     if (containerRef.current) {
@@ -581,13 +583,42 @@ export function PDFViewer({
       }));
     }
 
+    const { page, startWordOnPage } = selectionPopover.selection;
+
+    // Try to map selection to global word index for full document speed read
+    if (page !== undefined && startWordOnPage !== undefined) {
+      try {
+        const pageWordCounts = await buildPageWordCounts(pdf);
+        // Calculate cumulative word count up to this page
+        let startWordIndex = 0;
+        for (let i = 0; i < page - 1; i++) {
+          startWordIndex += pageWordCounts[i] || 0;
+        }
+        startWordIndex += startWordOnPage;
+
+        // Navigate to full document speed read starting at word index
+        navigateToDocumentSpeedRead(router, documentId, {
+          returnPath: `/reader/${documentId}`,
+          startWordIndex,
+          kind: 'pdf',
+        });
+
+        setSelectionPopover(null);
+        window.getSelection()?.removeAllRanges();
+        return;
+      } catch (error) {
+        console.warn('Failed to map selection to word index, falling back to selection text:', error);
+      }
+    }
+
+    // Fallback: speed read just the selection text
     navigateToSpeedRead(router, selectionPopover.selection.text, {
       returnPath: `/reader/${documentId}`,
     });
 
     setSelectionPopover(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionPopover, router, documentId]);
+  }, [selectionPopover, pdf, router, documentId]);
 
   // Speed read handler for highlight
   const handleSpeedReadHighlight = useCallback(() => {
