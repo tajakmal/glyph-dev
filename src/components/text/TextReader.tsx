@@ -287,6 +287,34 @@ export function TextReader({ documentId }: TextReaderProps) {
     handleCloseHighlightPopover();
   }, [activeHighlight, handleCloseHighlightPopover]);
 
+  // Scroll to a highlight by finding the first word span
+  const scrollToHighlight = useCallback((highlight: TextHighlight) => {
+    if (!textContainerRef.current) return;
+
+    const wordSpan = textContainerRef.current.querySelector(
+      `[data-word-index="${highlight.startWord}"]`
+    );
+    if (wordSpan) {
+      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Flash effect to indicate the highlight
+      const highlightSpans = textContainerRef.current.querySelectorAll(
+        `[data-highlight-id="${highlight.id}"]`
+      );
+      highlightSpans.forEach((span) => {
+        span.classList.add('ring-2', 'ring-red-500');
+        setTimeout(() => {
+          span.classList.remove('ring-2', 'ring-red-500');
+        }, 1500);
+      });
+    }
+  }, []);
+
+  // Filter highlights to only those with notes
+  const highlightsWithNotes = useMemo(() => {
+    return highlights.filter((h) => h.note && h.note.trim().length > 0);
+  }, [highlights]);
+
   // Document title
   const documentTitle = meta?.title || 'Untitled Document';
 
@@ -483,11 +511,38 @@ export function TextReader({ documentId }: TextReaderProps) {
                 </div>
               )}
               {activeTab === 'notes' && (
-                <div className="p-4 text-zinc-500 text-sm text-center">
-                  No notes yet.
-                  <br />
-                  Select text to add highlights and notes.
-                </div>
+                highlightsWithNotes.length === 0 ? (
+                  <div className="p-4 text-zinc-500 text-sm text-center">
+                    No notes yet.
+                    <br />
+                    Select text to add highlights and notes.
+                  </div>
+                ) : (
+                  <div className="p-2">
+                    {highlightsWithNotes.map((highlight) => (
+                      <button
+                        key={highlight.id}
+                        onClick={() => scrollToHighlight(highlight)}
+                        className="w-full text-left p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2"
+                      >
+                        <div className="flex items-start gap-2">
+                          <div
+                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                            style={{ backgroundColor: HIGHLIGHT_COLORS[highlight.color].hex }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-zinc-300 text-sm line-clamp-2 mb-1">
+                              &quot;{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}&quot;
+                            </p>
+                            <p className="text-zinc-500 text-xs line-clamp-2">
+                              {highlight.note}
+                            </p>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )
               )}
             </div>
           </div>
