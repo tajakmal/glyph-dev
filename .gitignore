@@ -40,5 +40,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# Ralph iteration state (not tracked)
-.ralph/.iteration
+# Ralph (development task runner - not part of app)
+/ralph
