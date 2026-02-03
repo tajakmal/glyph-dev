@@ -144,12 +144,12 @@ export function TextReader({ documentId }: TextReaderProps) {
       // Scroll to the word
       wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-      // Add temporary red focus highlight
-      wordSpan.classList.add('ring-2', 'ring-red-500', 'bg-red-500/20', 'rounded');
+      // Add temporary focus highlight
+      wordSpan.classList.add('ring-2', 'ring-zinc-400', 'bg-zinc-400/20', 'rounded');
 
       // Remove highlight on user interaction or after 3 seconds
       const clearHighlight = () => {
-        wordSpan.classList.remove('ring-2', 'ring-red-500', 'bg-red-500/20', 'rounded');
+        wordSpan.classList.remove('ring-2', 'ring-zinc-400', 'bg-zinc-400/20', 'rounded');
         scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
         document.removeEventListener('click', clearHighlight);
       };
@@ -428,9 +428,9 @@ export function TextReader({ documentId }: TextReaderProps) {
         `[data-highlight-id="${highlight.id}"]`
       );
       highlightSpans.forEach((span) => {
-        span.classList.add('ring-2', 'ring-red-500');
+        span.classList.add('ring-2', 'ring-zinc-400');
         setTimeout(() => {
-          span.classList.remove('ring-2', 'ring-red-500');
+          span.classList.remove('ring-2', 'ring-zinc-400');
         }, 1500);
       });
     }
@@ -447,9 +447,9 @@ export function TextReader({ documentId }: TextReaderProps) {
       wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
       // Flash effect to indicate the bookmarked word
-      wordSpan.classList.add('ring-2', 'ring-red-500', 'rounded');
+      wordSpan.classList.add('ring-2', 'ring-zinc-400', 'rounded');
       setTimeout(() => {
-        wordSpan.classList.remove('ring-2', 'ring-red-500', 'rounded');
+        wordSpan.classList.remove('ring-2', 'ring-zinc-400', 'rounded');
       }, 1500);
     }
   }, []);
@@ -518,7 +518,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     return (
       <div className="flex flex-col h-full bg-zinc-950">
         <div className="flex items-center justify-center h-full">
-          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full animate-spin" />
+          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
         </div>
       </div>
     );
@@ -642,7 +642,7 @@ export function TextReader({ documentId }: TextReaderProps) {
             onClick={handleBookmarkToggle}
             className={`p-2 rounded-lg transition-colors ${
               isCurrentWordBookmarked
-                ? 'text-red-500 bg-red-500/10'
+                ? 'text-orange-500 bg-orange-500/10'
                 : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
             }`}
             aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
@@ -684,7 +684,7 @@ export function TextReader({ documentId }: TextReaderProps) {
                 onClick={() => setActiveTab('bookmarks')}
                 className={`flex-1 py-2 text-sm transition-colors ${
                   activeTab === 'bookmarks'
-                    ? 'text-red-500 border-b-2 border-red-500'
+                    ? 'text-zinc-900 dark:text-white border-b-2 border-zinc-400'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -694,7 +694,7 @@ export function TextReader({ documentId }: TextReaderProps) {
                 onClick={() => setActiveTab('notes')}
                 className={`flex-1 py-2 text-sm transition-colors ${
                   activeTab === 'notes'
-                    ? 'text-red-500 border-b-2 border-red-500'
+                    ? 'text-zinc-900 dark:text-white border-b-2 border-zinc-400'
                     : 'text-zinc-400 hover:text-zinc-200'
                 }`}
               >
@@ -720,7 +720,7 @@ export function TextReader({ documentId }: TextReaderProps) {
                         className="w-full text-left p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2"
                       >
                         <div className="flex items-start gap-2">
-                          <svg className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                          <svg className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
                           <div className="flex-1 min-w-0">

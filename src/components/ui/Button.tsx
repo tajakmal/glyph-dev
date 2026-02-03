@@ -13,7 +13,7 @@ export interface ButtonProps
 
 const variantStyles: Record<NonNullable<ButtonProps["variant"]>, string> = {
   primary:
-    "bg-red-500 hover:bg-red-400 text-white disabled:bg-zinc-800 disabled:text-zinc-600",
+    "bg-zinc-100 hover:bg-zinc-200 text-zinc-900 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-white disabled:bg-zinc-800 disabled:text-zinc-600",
   secondary:
     "bg-zinc-800 hover:bg-zinc-700 text-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-600",
   ghost:
@@ -73,7 +73,7 @@ export function Button({
         inline-flex items-center justify-center
         font-medium rounded-lg
         transition-all duration-200
-        focus:outline-none focus:ring-2 focus:ring-red-500/50 focus:ring-offset-2 focus:ring-offset-zinc-950
+        focus:outline-none focus:ring-2 focus:ring-zinc-400/50 focus:ring-offset-2 focus:ring-offset-zinc-950
         disabled:cursor-not-allowed
         ${variantStyles[variant]}
         ${sizeStyles[size]}

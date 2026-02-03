@@ -305,14 +305,14 @@ export function PDFViewer({
       if (pageElement) {
         pageElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // Add temporary red focus highlight to the page
+        // Add temporary focus highlight to the page
         // Note: For PDFs, we highlight the page since mapping to specific word positions
         // within the rendered text layer is complex and may not be reliable
-        pageElement.classList.add('ring-4', 'ring-red-500', 'ring-offset-2', 'ring-offset-zinc-950');
+        pageElement.classList.add('ring-4', 'ring-zinc-400', 'ring-offset-2', 'ring-offset-zinc-950');
 
         // Remove highlight on user interaction or after 3 seconds
         const clearHighlight = () => {
-          pageElement.classList.remove('ring-4', 'ring-red-500', 'ring-offset-2', 'ring-offset-zinc-950');
+          pageElement.classList.remove('ring-4', 'ring-zinc-400', 'ring-offset-2', 'ring-offset-zinc-950');
           container.removeEventListener('scroll', clearHighlight);
           document.removeEventListener('click', clearHighlight);
         };
@@ -699,7 +699,7 @@ export function PDFViewer({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
+        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full" />
       </div>
     );
   }

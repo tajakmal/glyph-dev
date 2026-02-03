@@ -160,7 +160,7 @@ export function PDFControls({
             onClick={onBookmarkToggle}
             className={`p-2 rounded-lg transition-colors ${
               isBookmarked
-                ? 'text-red-500 bg-red-500/10'
+                ? 'text-orange-500 bg-orange-500/10'
                 : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
             }`}
             aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this page'}
