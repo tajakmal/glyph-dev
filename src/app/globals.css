@@ -16,8 +16,8 @@
   --text-muted: #52525b;
 
   /* Accent */
-  --accent-primary: #ef4444;
-  --accent-hover: #f87171;
+  --accent-primary: #a1a1aa;
+  --accent-hover: #d4d4d8;
 
   /* Highlight Colors */
   --highlight-yellow: #fde047;
@@ -128,7 +128,7 @@ html, body {
 }
 
 .pdf-text-layer span::selection {
-  background: rgba(239, 68, 68, 0.45);
+  background: rgba(161, 161, 170, 0.3);
 }
 
 /* Search highlight styling */
@@ -244,12 +244,12 @@ html, body {
 
 /* ============================================
    Text Reader Selection Styling
-   Red ORP color family for text selection
+   Neutral color for text selection
    ============================================ */
 .text-reader-content ::selection {
-  background: rgba(239, 68, 68, 0.45);
+  background: rgba(161, 161, 170, 0.3);
 }
 
 .text-reader-content ::-moz-selection {
-  background: rgba(239, 68, 68, 0.45);
+  background: rgba(161, 161, 170, 0.3);
 }

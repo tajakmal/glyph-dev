@@ -423,7 +423,7 @@ export function SpritzReader({
         <button
           onClick={handleGo}
           disabled={!text.trim() || isLoading}
-          className="mt-4 w-full py-3.5 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 disabled:from-zinc-800 disabled:to-zinc-800 disabled:text-zinc-600 rounded-xl font-medium transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:hover:scale-100 shadow-lg shadow-red-900/20 disabled:shadow-none"
+          className="mt-4 w-full py-3.5 bg-white text-zinc-900 hover:bg-zinc-100 disabled:bg-zinc-800 disabled:text-zinc-600 rounded-xl font-medium transition-all duration-300 transform hover:scale-[1.02] active:scale-[0.98] disabled:hover:scale-100 shadow-lg shadow-black/20 disabled:shadow-none"
         >
           Ready
         </button>
@@ -482,7 +482,7 @@ export function SpritzReader({
             }}
             className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer transition-all duration-300"
             style={{
-              background: `linear-gradient(to right, #ef4444 0%, #ef4444 ${progress}%, #27272a ${progress}%, #27272a 100%)`
+              background: `linear-gradient(to right, #a1a1aa 0%, #a1a1aa ${progress}%, #27272a ${progress}%, #27272a 100%)`
             }}
           />
           <div className="flex justify-between text-xs text-zinc-500 mt-2 font-light">
@@ -526,7 +526,7 @@ export function SpritzReader({
               className={`p-5 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg ${
                 isPlaying
                   ? 'bg-zinc-700 hover:bg-zinc-600 shadow-black/30'
-                  : 'bg-gradient-to-br from-red-500 to-red-600 hover:from-red-400 hover:to-red-500 shadow-red-900/30'
+                  : 'bg-white hover:bg-zinc-100 text-zinc-900 shadow-black/20'
               }`}
               title="Play/Pause"
             >
@@ -562,7 +562,7 @@ export function SpritzReader({
           <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-4 border border-zinc-800/50">
             <div className="flex items-center justify-between mb-3">
               <span className="text-zinc-500 text-sm font-light">Speed</span>
-              <span className="text-red-400 font-mono font-semibold tabular-nums">{wpm} WPM</span>
+              <span className="text-zinc-400 font-mono font-semibold tabular-nums">{wpm} WPM</span>
             </div>
             <input
               type="range"
@@ -571,7 +571,7 @@ export function SpritzReader({
               step="25"
               value={wpm}
               onChange={(e) => setWpm(Number(e.target.value))}
-              className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-red-500"
+              className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-400"
             />
             <div className="flex justify-between text-xs text-zinc-600 mt-2">
               <span>100</span>
@@ -588,7 +588,7 @@ export function SpritzReader({
             onTouchEnd={handleHoldEnd}
             className={`w-full py-4 rounded-xl font-medium transition-all duration-200 select-none touch-none transform active:scale-[0.98] ${
               isHolding
-                ? 'bg-gradient-to-r from-red-600 to-red-500 shadow-lg shadow-red-900/30'
+                ? 'bg-zinc-200 dark:bg-zinc-700 shadow-lg shadow-black/20'
                 : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
             }`}
           >
