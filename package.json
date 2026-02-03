@@ -2,6 +2,12 @@
   "name": "prometheus",
   "version": "0.1.0",
   "private": true,
+  "overrides": {
+    "epubjs": {
+      "@xmldom/xmldom": "^0.9.0",
+      "@types/localforage": "npm:noop-package@^1.0.0"
+    }
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -12,7 +18,7 @@
   },
   "dependencies": {
     "epubjs": "^0.3.93",
-    "next": "16.1.3",
+    "next": "^16.1.6",
     "pdfjs-dist": "^5.4.530",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -25,7 +31,7 @@
     "@types/react-dom": "^19",
     "@types/uuid": "^10.0.0",
     "eslint": "^9",
-    "eslint-config-next": "16.1.3",
+    "eslint-config-next": "^16.1.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
