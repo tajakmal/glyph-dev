@@ -8,6 +8,7 @@ import { loadPDF, extractAllText } from '@/lib/pdf-utils';
 import { getDocuments } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { saveSpeedReadSession } from '@/lib/speed-read';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 function SpeedReadContent() {
   const searchParams = useSearchParams();
@@ -199,6 +200,7 @@ function SpeedReadContent() {
             </span>
           )}
         </div>
+        <ThemeToggle />
       </div>
 
       {/* Speed Reader */}
