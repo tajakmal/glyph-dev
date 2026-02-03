@@ -435,8 +435,8 @@ export function SpritzReader({
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
             <div className="relative">
-              <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-red-500 to-transparent rounded-full"></div>
-              <div className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-0.5 h-3 bg-gradient-to-t from-red-500 to-transparent rounded-full"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-orange-400 to-transparent rounded-full"></div>
+              <div className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-0.5 h-3 bg-gradient-to-t from-orange-400 to-transparent rounded-full"></div>
 
               <div className="h-24 flex items-center justify-center font-mono text-5xl relative">
                 <div className="absolute left-1/2 -translate-x-1/2 h-full w-px bg-gradient-to-b from-transparent via-zinc-800 to-transparent"></div>
@@ -449,9 +449,11 @@ export function SpritzReader({
                     {beforeORP}
                   </span>
                   <span
-                    className="text-red-500 font-bold w-8 text-center transition-all duration-75"
+                    className="text-orange-400 font-bold w-8 text-center transition-all duration-75"
                     style={{
-                      textShadow: isPlaying ? '0 0 20px rgba(239, 68, 68, 0.5), 0 0 40px rgba(239, 68, 68, 0.3)' : '0 0 10px rgba(239, 68, 68, 0.3)'
+                      textShadow: isPlaying
+                        ? '0 0 20px rgba(251, 146, 60, 0.5), 0 0 40px rgba(251, 146, 60, 0.3)'
+                        : '0 0 10px rgba(251, 146, 60, 0.3)'
                     }}
                   >
                     {orpLetter}
@@ -495,7 +497,7 @@ export function SpritzReader({
                 {words.slice(Math.max(0, currentIndex - 5), currentIndex).join(' ')}
               </span>
               {currentIndex > 0 && ' '}
-              <span className="text-red-400/90 font-normal">{words[currentIndex]}</span>
+              <span className="text-orange-400/90 font-normal">{words[currentIndex]}</span>
               {currentIndex < words.length - 1 && ' '}
               <span className="text-zinc-700 transition-colors duration-150">
                 {words.slice(currentIndex + 1, currentIndex + 6).join(' ')}

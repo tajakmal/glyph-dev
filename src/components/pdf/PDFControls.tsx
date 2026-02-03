@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { VALIDATION } from '@/types';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 interface PDFControlsProps {
   /** Current zoom level (1 = 100%) */
@@ -187,6 +188,7 @@ export function PDFControls({
           />
           <span>of {pageCount}</span>
         </div>
+        <ThemeToggle />
       </div>
     </div>
   );

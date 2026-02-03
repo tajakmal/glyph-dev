@@ -5,6 +5,7 @@ import { useDocumentLibrary } from '@/hooks/useDocumentLibrary';
 import { UploadZone } from '@/components/library/UploadZone';
 import { LibraryGrid } from '@/components/library/LibraryGrid';
 import { tokenize } from '@/lib/tokenize';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 export default function HomePage() {
   const { documents, isLoading, addDocument, addTextDocument, removeDocument, updateDocument } = useDocumentLibrary();
@@ -60,7 +61,10 @@ export default function HomePage() {
     <main className="min-h-screen bg-zinc-950 px-4 py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <header className="text-center mb-8">
+        <header className="relative text-center mb-8">
+          <div className="absolute right-0 top-0">
+            <ThemeToggle />
+          </div>
           <h1 className="text-4xl font-bold text-zinc-100 tracking-tight">GLYPH</h1>
           <p className="text-zinc-500 mt-2">Speed reading, one word at a time</p>
         </header>
