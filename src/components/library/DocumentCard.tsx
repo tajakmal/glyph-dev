@@ -52,6 +52,15 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
         "
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleClick();
+          }
+        }}
+        aria-label={`Open ${document.title}`}
       >
         {/* Thumbnail */}
         <div className="relative aspect-[0.714] bg-zinc-800 rounded-t-xl overflow-hidden">

@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useSyncExternalStore } from 'react';
 
 const STORAGE_KEY = 'glyph:theme';
+const THEME_CHANGE_EVENT = 'glyph:theme-change';
 
 type Theme = 'light' | 'dark';
 
@@ -11,22 +12,39 @@ function getThemeFromDom(): Theme {
   return document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 }
 
+function subscribeTheme(callback: () => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const handler = () => callback();
+  window.addEventListener(THEME_CHANGE_EVENT, handler);
+  return () => window.removeEventListener(THEME_CHANGE_EVENT, handler);
+}
+
+function subscribeHydration(): () => void {
+  return () => {};
+}
+
 function applyTheme(theme: Theme) {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
   root.dataset.theme = theme;
   root.style.colorScheme = theme;
+  window.dispatchEvent(new Event(THEME_CHANGE_EVENT));
 }
 
 export function ThemeToggle({ className = '' }: { className?: string }) {
-  const [theme, setTheme] = useState<Theme>('dark');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    const current = getThemeFromDom();
-    setTheme(current);
-    setMounted(true);
-  }, []);
+  const mounted = useSyncExternalStore(
+    subscribeHydration,
+    () => true,
+    () => false
+  );
+  const theme = useSyncExternalStore(
+    subscribeTheme,
+    getThemeFromDom,
+    () => 'dark'
+  );
 
   const handleToggle = () => {
     const nextTheme: Theme = theme === 'dark' ? 'light' : 'dark';
@@ -36,7 +54,6 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     } catch {
       // Ignore storage errors (private mode, etc.)
     }
-    setTheme(nextTheme);
   };
 
   if (!mounted) {

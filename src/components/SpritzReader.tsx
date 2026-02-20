@@ -484,6 +484,7 @@ export function SpritzReader({
             style={{
               background: `linear-gradient(to right, #a1a1aa 0%, #a1a1aa ${progress}%, #27272a ${progress}%, #27272a 100%)`
             }}
+            aria-label="Reading progress"
           />
           <div className="flex justify-between text-xs text-zinc-500 mt-2 font-light">
             <span className="tabular-nums">{currentIndex + 1} / {words.length.toLocaleString()} words</span>
@@ -514,6 +515,7 @@ export function SpritzReader({
               onClick={reset}
               className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
               title="Reset (R)"
+              aria-label="Reset to start"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
@@ -529,6 +531,7 @@ export function SpritzReader({
                   : 'bg-white hover:bg-zinc-100 text-zinc-900 shadow-black/20'
               }`}
               title="Play/Pause"
+              aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
             >
               {isPlaying ? (
                 <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
@@ -550,6 +553,7 @@ export function SpritzReader({
               }}
               className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
               title="New Text"
+              aria-label="Load new text"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
@@ -572,6 +576,7 @@ export function SpritzReader({
               value={wpm}
               onChange={(e) => setWpm(Number(e.target.value))}
               className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-400"
+              aria-label="Words per minute speed"
             />
             <div className="flex justify-between text-xs text-zinc-600 mt-2">
               <span>100</span>
@@ -591,6 +596,7 @@ export function SpritzReader({
                 ? 'bg-zinc-200 dark:bg-zinc-700 shadow-lg shadow-black/20'
                 : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
             }`}
+            aria-label="Hold to play"
           >
             <span className={`transition-colors duration-200 ${isHolding ? 'text-white' : 'text-zinc-400'}`}>
               {isHolding ? 'Playing...' : 'Hold to Play'}
