@@ -9,6 +9,8 @@ import {
   setHighlights,
   getHighlightsForDocument,
 } from '@/lib/storage';
+import { getSyncQueue } from '@/lib/sync/queue';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface UseHighlightsOptions {
   documentId: string;
@@ -52,6 +54,23 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
   const currentDocId = useMemo(() => documentId, [documentId]);
   const [lastDocId, setLastDocId] = useState(documentId);
 
+  const enqueueSync = useCallback((op: {
+    id: string;
+    type: 'UPSERT_HIGHLIGHT' | 'DELETE_HIGHLIGHT';
+    payload: unknown;
+  }) => {
+    const queue = getSyncQueue();
+    queue.enqueue({
+      id: op.id,
+      type: op.type,
+      documentId,
+      payload: op.payload,
+    });
+    if (getFeatureFlag('sync_enabled')) {
+      void queue.flush();
+    }
+  }, [documentId]);
+
   if (currentDocId !== lastDocId) {
     setLastDocId(currentDocId);
     setLocalHighlights(getDocumentHighlights(currentDocId));
@@ -86,9 +105,14 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
 
     // Update local state
     setLocalHighlights(prev => [...prev, highlight]);
+    enqueueSync({
+      id: `highlight-upsert:${highlight.id}:${Date.now()}`,
+      type: 'UPSERT_HIGHLIGHT',
+      payload: highlight,
+    });
 
     return highlight;
-  }, []);
+  }, [enqueueSync]);
 
   const removeHighlight = useCallback((id: string) => {
     // Update localStorage
@@ -97,7 +121,12 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
 
     // Update local state
     setLocalHighlights(prev => prev.filter(h => h.id !== id));
-  }, []);
+    enqueueSync({
+      id: `highlight-delete:${id}:${Date.now()}`,
+      type: 'DELETE_HIGHLIGHT',
+      payload: { id },
+    });
+  }, [enqueueSync]);
 
   const updateHighlightNote = useCallback((id: string, note: string) => {
     // Validate note length
@@ -116,7 +145,12 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
     setLocalHighlights(prev =>
       prev.map(h => (h.id === id ? { ...h, note: safeNote, updatedAt: Date.now() } : h))
     );
-  }, []);
+    enqueueSync({
+      id: `highlight-upsert:${id}:${Date.now()}`,
+      type: 'UPSERT_HIGHLIGHT',
+      payload: { id, note: safeNote },
+    });
+  }, [enqueueSync]);
 
   const updateHighlightColor = useCallback((id: string, color: HighlightColor) => {
     // Update localStorage
@@ -132,7 +166,12 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
     setLocalHighlights(prev =>
       prev.map(h => (h.id === id ? { ...h, color, updatedAt: Date.now() } : h))
     );
-  }, []);
+    enqueueSync({
+      id: `highlight-upsert:${id}:${Date.now()}`,
+      type: 'UPSERT_HIGHLIGHT',
+      payload: { id, color },
+    });
+  }, [enqueueSync]);
 
   const getHighlightsForPage = useCallback((page: number): PDFHighlight[] => {
     return highlights.filter(h => h.page === page);

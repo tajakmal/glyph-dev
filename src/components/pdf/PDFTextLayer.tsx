@@ -5,6 +5,7 @@ import type { PDFPageProxy } from 'pdfjs-dist';
 import type { SearchMatch } from '@/types';
 import { getTextContent } from '@/lib/pdf-utils';
 import { tokenize } from '@/lib/tokenize';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface PDFTextLayerProps {
   /** PDF page proxy */
@@ -52,6 +53,7 @@ export function PDFTextLayer({
   const containerRef = useRef<HTMLDivElement>(null);
   // Store full page text for word index calculation
   const pageTextRef = useRef<string>('');
+  const useMappingV2 = getFeatureFlag('pdf_selection_mapping_v2');
 
   // Calculate the active match for this page
   const pageIndex = page.pageNumber - 1;
@@ -83,6 +85,8 @@ export function PDFTextLayer({
 
       // Track cumulative character position for search highlighting
       let charPosition = 0;
+      // Track cumulative word position for selection mapping
+      let wordPosition = 0;
 
       // Render each text item as a span
       textContent.items.forEach((item) => {
@@ -147,6 +151,10 @@ export function PDFTextLayer({
           span.textContent = item.str;
         }
 
+        const itemWordCount = tokenize(item.str).length;
+        span.dataset.wordStart = String(wordPosition);
+        span.dataset.wordEnd = String(Math.max(wordPosition, wordPosition + itemWordCount - 1));
+
         // Handle text width scaling
         if (item.width) {
           const actualWidth = item.width * zoom;
@@ -160,6 +168,7 @@ export function PDFTextLayer({
 
         container.appendChild(span);
         charPosition += item.str.length;
+        wordPosition += itemWordCount;
       });
     };
 
@@ -204,11 +213,38 @@ export function PDFTextLayer({
       let startWordOnPage: number | undefined = undefined;
       const selectedText = text;
 
-      if (pageTextRef.current) {
-        // Find the selection text within the page text
+      if (useMappingV2) {
+        let startElement: Element | null = null;
+
+        if (range.startContainer.nodeType === Node.TEXT_NODE) {
+          startElement = (range.startContainer.parentElement as Element | null);
+        } else {
+          startElement = range.startContainer as Element;
+        }
+
+        const startSpan = startElement?.closest?.('span[data-word-start]') as HTMLSpanElement | null;
+        if (startSpan) {
+          const spanWordStart = parseInt(startSpan.dataset.wordStart || '', 10);
+          const spanWordEnd = parseInt(startSpan.dataset.wordEnd || '', 10);
+
+          let localPrefix = '';
+          if (range.startContainer.nodeType === Node.TEXT_NODE) {
+            localPrefix = range.startContainer.textContent?.slice(0, range.startOffset) || '';
+          } else {
+            localPrefix = startSpan.textContent?.slice(0, range.startOffset) || '';
+          }
+
+          const localOffset = tokenize(localPrefix).length;
+          if (Number.isFinite(spanWordStart) && Number.isFinite(spanWordEnd)) {
+            startWordOnPage = Math.min(spanWordEnd, spanWordStart + localOffset);
+          }
+        }
+      }
+
+      if (startWordOnPage === undefined && pageTextRef.current) {
+        // Fallback for low-confidence mapping.
         const selectionIndex = pageTextRef.current.indexOf(selectedText);
         if (selectionIndex >= 0) {
-          // Count words before the selection
           const textBeforeSelection = pageTextRef.current.substring(0, selectionIndex);
           startWordOnPage = tokenize(textBeforeSelection).length;
         }
@@ -225,7 +261,7 @@ export function PDFTextLayer({
 
     container.addEventListener('mouseup', handleMouseUp);
     return () => container.removeEventListener('mouseup', handleMouseUp);
-  }, [page, onTextSelect]);
+  }, [page, onTextSelect, useMappingV2]);
 
   return (
     <div

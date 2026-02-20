@@ -1,11 +1,10 @@
 'use client';
 
-import { use, useState, useEffect } from 'react';
+import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { PDFViewer } from '@/components/pdf/PDFViewer';
 import { TextReader } from '@/components/text/TextReader';
 import { getDocument } from '@/lib/storage';
-import type { DocumentMeta } from '@/types';
 
 interface ReaderPageProps {
   params: Promise<{ id: string }>;
@@ -14,27 +13,9 @@ interface ReaderPageProps {
 export default function ReaderPage({ params }: ReaderPageProps) {
   const { id } = use(params);
   const router = useRouter();
-  const [documentMeta, setDocumentMeta] = useState<DocumentMeta | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    const meta = getDocument(id);
-    setDocumentMeta(meta);
-    setIsLoading(false);
-  }, [id]);
+  const documentMeta = getDocument(id);
 
   // Loading state
-  if (isLoading) {
-    return (
-      <main className="h-screen flex flex-col bg-zinc-950">
-        <div className="flex items-center justify-center h-full">
-          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full animate-spin" />
-        </div>
-      </main>
-    );
-  }
-
-  // Document not found
   if (!documentMeta) {
     return (
       <main className="h-screen flex flex-col bg-zinc-950">

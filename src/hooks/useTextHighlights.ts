@@ -9,6 +9,8 @@ import {
   setHighlights,
   getHighlightsForDocument,
 } from '@/lib/storage';
+import { getSyncQueue } from '@/lib/sync/queue';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface UseTextHighlightsOptions {
   documentId: string;
@@ -171,6 +173,23 @@ export function useTextHighlights({
   const currentDocId = useMemo(() => documentId, [documentId]);
   const [lastDocId, setLastDocId] = useState(documentId);
 
+  const enqueueSync = useCallback((op: {
+    id: string;
+    type: 'UPSERT_HIGHLIGHT' | 'DELETE_HIGHLIGHT';
+    payload: unknown;
+  }) => {
+    const queue = getSyncQueue();
+    queue.enqueue({
+      id: op.id,
+      type: op.type,
+      documentId,
+      payload: op.payload,
+    });
+    if (getFeatureFlag('sync_enabled')) {
+      void queue.flush();
+    }
+  }, [documentId]);
+
   if (currentDocId !== lastDocId) {
     setLastDocId(currentDocId);
     setLocalHighlights(getDocumentTextHighlights(currentDocId));
@@ -208,10 +227,15 @@ export function useTextHighlights({
         const filtered = prev.filter((h) => !toRemove.includes(h.id));
         return [...filtered, merged];
       });
+      enqueueSync({
+        id: `highlight-upsert:${merged.id}:${Date.now()}`,
+        type: 'UPSERT_HIGHLIGHT',
+        payload: merged,
+      });
 
       return merged;
     },
-    [documentId, words]
+    [documentId, words, enqueueSync]
   );
 
   const removeHighlight = useCallback((id: string) => {
@@ -221,7 +245,12 @@ export function useTextHighlights({
 
     // Update local state
     setLocalHighlights((prev) => prev.filter((h) => h.id !== id));
-  }, []);
+    enqueueSync({
+      id: `highlight-delete:${id}:${Date.now()}`,
+      type: 'DELETE_HIGHLIGHT',
+      payload: { id },
+    });
+  }, [enqueueSync]);
 
   const updateHighlightNote = useCallback((id: string, note: string) => {
     // Validate note length
@@ -242,7 +271,12 @@ export function useTextHighlights({
         h.id === id ? { ...h, note: safeNote, updatedAt: Date.now() } : h
       )
     );
-  }, []);
+    enqueueSync({
+      id: `highlight-upsert:${id}:${Date.now()}`,
+      type: 'UPSERT_HIGHLIGHT',
+      payload: { id, note: safeNote },
+    });
+  }, [enqueueSync]);
 
   const updateHighlightColor = useCallback((id: string, color: HighlightColor) => {
     // Update localStorage
@@ -260,7 +294,12 @@ export function useTextHighlights({
         h.id === id ? { ...h, color, updatedAt: Date.now() } : h
       )
     );
-  }, []);
+    enqueueSync({
+      id: `highlight-upsert:${id}:${Date.now()}`,
+      type: 'UPSERT_HIGHLIGHT',
+      payload: { id, color },
+    });
+  }, [enqueueSync]);
 
   const getHighlightAtWord = useCallback(
     (wordIndex: number): TextHighlight | null => {
