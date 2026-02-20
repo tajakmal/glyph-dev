@@ -9,6 +9,8 @@ import {
   setBookmarks,
   getBookmarksForDocument,
 } from '@/lib/storage';
+import { getSyncQueue } from '@/lib/sync/queue';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface UseBookmarksOptions {
   documentId: string;
@@ -53,6 +55,19 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
   const currentDocId = useMemo(() => documentId, [documentId]);
   const [lastDocId, setLastDocId] = useState(documentId);
 
+  const enqueueSync = useCallback((id: string, payload: unknown) => {
+    const queue = getSyncQueue();
+    queue.enqueue({
+      id,
+      type: 'UPSERT_BOOKMARK',
+      documentId,
+      payload,
+    });
+    if (getFeatureFlag('sync_enabled')) {
+      void queue.flush();
+    }
+  }, [documentId]);
+
   if (currentDocId !== lastDocId) {
     setLastDocId(currentDocId);
     setLocalBookmarks(getSortedBookmarksForDocument(currentDocId));
@@ -85,9 +100,10 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
       const updated = [...prev, bookmark];
       return updated.sort((a, b) => a.page - b.page);
     });
+    enqueueSync(`bookmark-upsert:${bookmark.id}:${Date.now()}`, bookmark);
 
     return bookmark;
-  }, [documentId, bookmarks]);
+  }, [documentId, bookmarks, enqueueSync]);
 
   const removeBookmark = useCallback((id: string) => {
     // Update localStorage
@@ -96,7 +112,8 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
 
     // Update local state
     setLocalBookmarks(prev => prev.filter(b => b.id !== id));
-  }, []);
+    enqueueSync(`bookmark-upsert:${id}:${Date.now()}`, { id, deleted: true });
+  }, [enqueueSync]);
 
   const updateBookmark = useCallback((id: string, label: string) => {
     // Validate label length
@@ -114,7 +131,8 @@ export function useBookmarks({ documentId }: UseBookmarksOptions): UseBookmarksR
     setLocalBookmarks(prev =>
       prev.map(b => (b.id === id ? { ...b, label: safeLabel } : b))
     );
-  }, []);
+    enqueueSync(`bookmark-upsert:${id}:${Date.now()}`, { id, label: safeLabel });
+  }, [enqueueSync]);
 
   const isPageBookmarked = useCallback((page: number): boolean => {
     return bookmarks.some(b => b.page === page);
