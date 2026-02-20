@@ -4,11 +4,12 @@ import { useEffect, useState, Suspense, useCallback, useRef } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { SpritzReader } from '@/components/SpritzReader';
 import { getPDF, getText as getTextContent } from '@/lib/storage';
-import { loadPDF, extractAllText } from '@/lib/pdf-utils';
+import { loadPDF, extractAllTextCached } from '@/lib/pdf-utils';
 import { getDocuments } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { saveSpeedReadSession } from '@/lib/speed-read';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { trackEvent } from '@/lib/telemetry';
 
 function SpeedReadContent() {
   const searchParams = useSearchParams();
@@ -88,15 +89,27 @@ function SpeedReadContent() {
               // Load text document
               const textContent = await getTextContent(docId);
               if (textContent) {
-                setWords(tokenize(textContent));
+                const tokenized = tokenize(textContent);
+                setWords(tokenized);
+                trackEvent('speedread_document_loaded', {
+                  documentId: docId,
+                  kind: 'text',
+                  wordCount: tokenized.length,
+                });
               }
             } else {
               // Load PDF and extract text
               const pdfData = await getPDF(docId);
               if (pdfData) {
                 const pdf = await loadPDF(pdfData);
-                const extractedText = await extractAllText(pdf);
-                setWords(tokenize(extractedText));
+                const extractedText = await extractAllTextCached(pdf, docId);
+                const tokenized = tokenize(extractedText);
+                setWords(tokenized);
+                trackEvent('speedread_document_loaded', {
+                  documentId: docId,
+                  kind: 'pdf',
+                  wordCount: tokenized.length,
+                });
               }
             }
           }

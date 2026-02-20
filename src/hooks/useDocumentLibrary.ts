@@ -17,6 +17,8 @@ import {
   generateThumbnail,
 } from '@/lib/pdf-utils';
 import { tokenize } from '@/lib/tokenize';
+import { getSyncQueue } from '@/lib/sync/queue';
+import { getFeatureFlag } from '@/lib/feature-flags';
 
 interface AddTextDocumentParams {
   title?: string;
@@ -48,6 +50,19 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
   const [documents, setLocalDocuments] = useState<DocumentMeta[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const enqueueDocumentSync = useCallback((document: Partial<DocumentMeta> & { id: string }, opId: string) => {
+    const queue = getSyncQueue();
+    queue.enqueue({
+      id: opId,
+      type: 'UPSERT_DOCUMENT',
+      documentId: document.id,
+      payload: document,
+    });
+    if (getFeatureFlag('sync_enabled')) {
+      void queue.flush();
+    }
+  }, []);
 
   // Load documents on mount
   useEffect(() => {
@@ -118,6 +133,7 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
 
     // Update local state
     setLocalDocuments(prev => [docMeta, ...prev]);
+    enqueueDocumentSync(docMeta, `doc-upsert:${docMeta.id}:${Date.now()}`);
 
     // Generate thumbnail asynchronously (non-blocking)
     generateThumbnail(pdf).then(thumbnailDataUrl => {
@@ -127,11 +143,12 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
         updatedDocs[index].thumbnailDataUrl = thumbnailDataUrl;
         setDocuments(updatedDocs);
         setLocalDocuments([...updatedDocs].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt));
+        enqueueDocumentSync(updatedDocs[index], `doc-thumbnail:${docMeta.id}:${Date.now()}`);
       }
     }).catch(console.error);
 
     return docMeta;
-  }, []);
+  }, [enqueueDocumentSync]);
 
   const addTextDocument = useCallback(async (params: AddTextDocumentParams): Promise<DocumentMeta> => {
     const { title: providedTitle, content } = params;
@@ -177,14 +194,22 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
 
     // Update local state
     setLocalDocuments(prev => [docMeta, ...prev]);
+    enqueueDocumentSync(docMeta, `doc-upsert:${docMeta.id}:${Date.now()}`);
 
     return docMeta;
-  }, []);
+  }, [enqueueDocumentSync]);
 
   const removeDocument = useCallback(async (id: string): Promise<void> => {
     await deleteDocumentComplete(id);
     setLocalDocuments(prev => prev.filter(d => d.id !== id));
-  }, []);
+    enqueueDocumentSync(
+      {
+        id,
+        title: 'deleted',
+      },
+      `doc-delete:${id}:${Date.now()}`
+    );
+  }, [enqueueDocumentSync]);
 
   const updateDocument = useCallback((id: string, updates: Partial<DocumentMeta>): void => {
     const docs = getDocuments();
@@ -194,8 +219,9 @@ export function useDocumentLibrary(): UseDocumentLibraryReturn {
       docs[index] = { ...docs[index], ...updates } as DocumentMeta;
       setDocuments(docs);
       setLocalDocuments([...docs].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt));
+      enqueueDocumentSync(docs[index], `doc-upsert:${id}:${Date.now()}`);
     }
-  }, []);
+  }, [enqueueDocumentSync]);
 
   const getDocument = useCallback((id: string): DocumentMeta | undefined => {
     return documents.find(d => d.id === id);

@@ -173,3 +173,38 @@ export async function extractAllText(pdf: PDFDocumentProxy): Promise<string> {
 
   return texts.join('\n\n');
 }
+
+/**
+ * Extract all text with lightweight session-level caching.
+ * Useful for repeated speed-read launches on the same PDF.
+ */
+export async function extractAllTextCached(
+  pdf: PDFDocumentProxy,
+  cacheKey?: string
+): Promise<string> {
+  const storageKey = cacheKey ? `glyph:pdf-text-cache:${cacheKey}` : null;
+
+  if (storageKey && typeof window !== 'undefined') {
+    try {
+      const cached = sessionStorage.getItem(storageKey);
+      if (cached) return cached;
+    } catch {
+      // ignore cache reads
+    }
+  }
+
+  const extracted = await extractAllText(pdf);
+
+  if (storageKey && typeof window !== 'undefined') {
+    try {
+      // Avoid oversized session storage writes.
+      if (extracted.length <= 1_000_000) {
+        sessionStorage.setItem(storageKey, extracted);
+      }
+    } catch {
+      // ignore cache writes
+    }
+  }
+
+  return extracted;
+}

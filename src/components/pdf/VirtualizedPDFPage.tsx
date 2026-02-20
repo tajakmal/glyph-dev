@@ -63,7 +63,9 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
 
     // Use ref for callback to avoid infinite render loops
     const onDimensionsReadyRef = useRef(onDimensionsReady);
-    onDimensionsReadyRef.current = onDimensionsReady;
+    useEffect(() => {
+      onDimensionsReadyRef.current = onDimensionsReady;
+    }, [onDimensionsReady]);
 
     // Forward ref
     useImperativeHandle(ref, () => containerRef.current!, []);

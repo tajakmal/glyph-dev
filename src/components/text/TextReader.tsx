@@ -11,6 +11,8 @@ import { useTextHighlights } from '@/hooks/useTextHighlights';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
 import { getSpeedReadSession, clearSpeedReadSession, navigateToDocumentSpeedRead } from '@/lib/speed-read';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { getFeatureFlag } from '@/lib/feature-flags';
+import { trackEvent } from '@/lib/telemetry';
 
 interface TextReaderProps {
   documentId: string;
@@ -30,6 +32,8 @@ export function TextReader({ documentId }: TextReaderProps) {
     return stored !== null ? JSON.parse(stored) : true;
   });
   const [activeTab, setActiveTab] = useState<SidebarTab>('bookmarks');
+  const isTopbarSpeedReadEnabled = getFeatureFlag('textreader_topbar_speedread_enabled');
+  const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
 
   // Current word index for position tracking
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
@@ -177,12 +181,39 @@ export function TextReader({ documentId }: TextReaderProps) {
   }, [documentId, router]);
 
   const handleSpeedRead = useCallback(() => {
-    // Placeholder - will be implemented in a later task
-  }, []);
+    if (!isTopbarSpeedReadEnabled) return;
+
+    navigateToDocumentSpeedRead(router, documentId, {
+      returnPath: `/reader/${documentId}`,
+      startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
+      kind: 'text',
+    });
+    trackEvent('text_reader_speedread_started', {
+      documentId,
+      startWordIndex: currentWordIndex,
+      source: 'topbar',
+    });
+  }, [isTopbarSpeedReadEnabled, router, documentId, currentWordIndex]);
 
   const handleBookmarkToggle = useCallback(() => {
     toggleWordBookmark(currentWordIndex);
-  }, [toggleWordBookmark, currentWordIndex]);
+    trackEvent('text_reader_bookmark_toggled', {
+      documentId,
+      wordIndex: currentWordIndex,
+    });
+  }, [toggleWordBookmark, currentWordIndex, documentId]);
+
+  // Persist live text reading position for future unified progress sync.
+  useEffect(() => {
+    if (!isProgressTrackingEnabled || words.length === 0) return;
+    sessionStorage.setItem(
+      `glyph:text-last-word:${documentId}`,
+      JSON.stringify({
+        wordIndex: currentWordIndex,
+        updatedAt: Date.now(),
+      })
+    );
+  }, [isProgressTrackingEnabled, currentWordIndex, words.length, documentId]);
 
   // Track current word based on scroll position
   useEffect(() => {
@@ -330,9 +361,16 @@ export function TextReader({ documentId }: TextReaderProps) {
       color,
       note,
     });
+    trackEvent('text_reader_highlight_created', {
+      documentId,
+      color,
+      startWord: selection.startWord,
+      endWord: selection.endWord,
+      hasNote: Boolean(note && note.trim()),
+    });
 
     handleCloseSelection();
-  }, [selection, words, addHighlight, handleCloseSelection]);
+  }, [selection, words, addHighlight, handleCloseSelection, documentId]);
 
   // Handle speed read from selection - starts at selected word and continues to end
   const handleSpeedReadSelection = useCallback(() => {
@@ -344,6 +382,11 @@ export function TextReader({ documentId }: TextReaderProps) {
       returnPath: `/reader/${documentId}`,
       startWordIndex: selection.startWord,
       kind: 'text',
+    });
+    trackEvent('text_reader_speedread_started', {
+      documentId,
+      startWordIndex: selection.startWord,
+      source: 'selection',
     });
 
     handleCloseSelection();
@@ -381,23 +424,37 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleHighlightColorChange = useCallback((color: HighlightColor) => {
     if (activeHighlight) {
       updateHighlightColor(activeHighlight.highlight.id, color);
+      trackEvent('text_reader_highlight_color_changed', {
+        documentId,
+        highlightId: activeHighlight.highlight.id,
+        color,
+      });
     }
-  }, [activeHighlight, updateHighlightColor]);
+  }, [activeHighlight, updateHighlightColor, documentId]);
 
   // Handle highlight note update
   const handleHighlightNoteUpdate = useCallback((note: string) => {
     if (activeHighlight) {
       updateHighlightNote(activeHighlight.highlight.id, note);
+      trackEvent('text_reader_highlight_note_updated', {
+        documentId,
+        highlightId: activeHighlight.highlight.id,
+        noteLength: note.length,
+      });
     }
-  }, [activeHighlight, updateHighlightNote]);
+  }, [activeHighlight, updateHighlightNote, documentId]);
 
   // Handle highlight delete
   const handleHighlightDelete = useCallback(() => {
     if (activeHighlight) {
       removeHighlight(activeHighlight.highlight.id);
+      trackEvent('text_reader_highlight_deleted', {
+        documentId,
+        highlightId: activeHighlight.highlight.id,
+      });
       setActiveHighlight(null);
     }
-  }, [activeHighlight, removeHighlight]);
+  }, [activeHighlight, removeHighlight, documentId]);
 
   // Handle speed read from highlight - starts at highlight's start word and continues to end
   const handleHighlightSpeedRead = useCallback(() => {
@@ -408,6 +465,11 @@ export function TextReader({ documentId }: TextReaderProps) {
       returnPath: `/reader/${documentId}`,
       startWordIndex: activeHighlight.highlight.startWord,
       kind: 'text',
+    });
+    trackEvent('text_reader_speedread_started', {
+      documentId,
+      startWordIndex: activeHighlight.highlight.startWord,
+      source: 'highlight',
     });
 
     handleCloseHighlightPopover();
@@ -517,8 +579,8 @@ export function TextReader({ documentId }: TextReaderProps) {
   if (isLoading) {
     return (
       <div className="flex flex-col h-full bg-zinc-950">
-        <div className="flex items-center justify-center h-full">
-          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-full">
+          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" aria-label="Loading text reader" />
         </div>
       </div>
     );
@@ -620,7 +682,7 @@ export function TextReader({ documentId }: TextReaderProps) {
         {/* Center: Position indicator */}
         <div className="flex items-center gap-2 text-zinc-500 text-sm">
           {words.length > 0 && (
-            <span>
+            <span aria-live="polite">
               Word {currentWordIndex + 1} / {words.length} ({Math.round(((currentWordIndex + 1) / words.length) * 100)}%)
             </span>
           )}
@@ -630,7 +692,8 @@ export function TextReader({ documentId }: TextReaderProps) {
         <div className="flex items-center gap-3">
           <button
             onClick={handleSpeedRead}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
+            disabled={!isTopbarSpeedReadEnabled}
+            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             aria-label="Speed read document"
             title="Speed read document"
           >

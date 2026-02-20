@@ -20,6 +20,9 @@ import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
 import { navigateToSpeedRead, navigateToDocumentSpeedRead, getSpeedReadSession, clearSpeedReadSession } from '@/lib/speed-read';
 import { mapWordIndexToPage, buildPageWordCounts } from '@/lib/word-mapping';
+import { updateLastReadPage } from '@/lib/storage';
+import { getFeatureFlag } from '@/lib/feature-flags';
+import { trackEvent } from '@/lib/telemetry';
 
 // Number of pages to render beyond the visible viewport
 const OVERSCAN_PAGES = 2;
@@ -55,10 +58,13 @@ export function PDFViewer({
 }: PDFViewerProps) {
   const router = useRouter();
   const { pdf, isLoading, error, meta, pageCount } = usePDF({ documentId });
+  const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
   const [zoom, setZoom] = useState(initialZoom);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const pageWordCountsRef = useRef<number[] | null>(null);
+  const pageWordCountsPromiseRef = useRef<Promise<number[]> | null>(null);
 
   // Virtualization state - which pages are currently visible
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 5 });
@@ -166,6 +172,30 @@ export function PDFViewer({
     }
   }, []);
 
+  const getPageWordCounts = useCallback(async (): Promise<number[]> => {
+    if (!pdf) return [];
+    if (pageWordCountsRef.current) return pageWordCountsRef.current;
+    if (pageWordCountsPromiseRef.current) return pageWordCountsPromiseRef.current;
+
+    pageWordCountsPromiseRef.current = buildPageWordCounts(pdf)
+      .then((counts) => {
+        pageWordCountsRef.current = counts;
+        pageWordCountsPromiseRef.current = null;
+        return counts;
+      })
+      .catch((error) => {
+        pageWordCountsPromiseRef.current = null;
+        throw error;
+      });
+
+    return pageWordCountsPromiseRef.current;
+  }, [pdf]);
+
+  useEffect(() => {
+    pageWordCountsRef.current = null;
+    pageWordCountsPromiseRef.current = null;
+  }, [documentId, pdf]);
+
   // Add keyboard shortcuts
   useZoomKeyboard({
     zoom,
@@ -202,12 +232,17 @@ export function PDFViewer({
 
       if (e.key === 'b' || e.key === 'B') {
         toggleBookmark(currentPage);
+        trackEvent('pdf_reader_bookmark_toggled', {
+          documentId,
+          page: currentPage,
+          source: 'keyboard',
+        });
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [currentPage, toggleBookmark]);
+  }, [currentPage, toggleBookmark, documentId]);
 
   // Handle S key to toggle sidebar
   useEffect(() => {
@@ -281,6 +316,11 @@ export function PDFViewer({
     }
   }, [pageCount, onDocumentLoad]);
 
+  useEffect(() => {
+    if (!isProgressTrackingEnabled || pageCount === 0) return;
+    updateLastReadPage(documentId, currentPage);
+  }, [isProgressTrackingEnabled, documentId, currentPage, pageCount]);
+
   // Check for speed read session and scroll to the page with focus highlight
   useEffect(() => {
     if (!pdf || isLoading || pageCount === 0) return;
@@ -294,7 +334,7 @@ export function PDFViewer({
     clearSpeedReadSession();
 
     // Build page word counts to map word index to page
-    buildPageWordCounts(pdf).then((pageWordCounts) => {
+    getPageWordCounts().then((pageWordCounts) => {
       const { page } = mapWordIndexToPage(session.wordIndex, pageWordCounts);
 
       // Navigate to the page
@@ -325,7 +365,7 @@ export function PDFViewer({
         setTimeout(clearHighlight, 3000);
       }
     });
-  }, [pdf, isLoading, pageCount, documentId]);
+  }, [pdf, isLoading, pageCount, documentId, getPageWordCounts]);
 
   // Calculate visible range based on scroll position
   useEffect(() => {
@@ -472,7 +512,11 @@ export function PDFViewer({
       return;
     }
     downloadAnnotations(meta, highlights);
-  }, [highlights, meta]);
+    trackEvent('pdf_reader_export_annotations', {
+      documentId,
+      highlightCount: highlights.length,
+    });
+  }, [highlights, meta, documentId]);
 
   // Handle Ctrl+Shift+E for export
   useEffect(() => {
@@ -561,6 +605,12 @@ export function PDFViewer({
       rects: normalizedRects,
       note: note || undefined,
     });
+    trackEvent('pdf_reader_highlight_created', {
+      documentId,
+      page: selection.page,
+      color,
+      hasNote: Boolean(note && note.trim()),
+    });
 
     // Clear selection
     setSelectionPopover(null);
@@ -597,7 +647,7 @@ export function PDFViewer({
     // Try to map selection to global word index for full document speed read
     if (page !== undefined && startWordOnPage !== undefined) {
       try {
-        const pageWordCounts = await buildPageWordCounts(pdf);
+        const pageWordCounts = await getPageWordCounts();
         // Calculate cumulative word count up to this page
         let startWordIndex = 0;
         for (let i = 0; i < page - 1; i++) {
@@ -610,6 +660,11 @@ export function PDFViewer({
           returnPath: `/reader/${documentId}`,
           startWordIndex,
           kind: 'pdf',
+        });
+        trackEvent('pdf_reader_speedread_started', {
+          documentId,
+          source: 'selection',
+          startWordIndex,
         });
 
         setSelectionPopover(null);
@@ -624,10 +679,14 @@ export function PDFViewer({
     navigateToSpeedRead(router, selectionPopover.selection.text, {
       returnPath: `/reader/${documentId}`,
     });
+    trackEvent('pdf_reader_speedread_started', {
+      documentId,
+      source: 'selection_fallback',
+    });
 
     setSelectionPopover(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionPopover, pdf, router, documentId]);
+  }, [selectionPopover, pdf, router, documentId, getPageWordCounts]);
 
   // Speed read handler for highlight
   const handleSpeedReadHighlight = useCallback(() => {
@@ -643,6 +702,10 @@ export function PDFViewer({
 
     navigateToSpeedRead(router, highlightPopover.highlight.text, {
       returnPath: `/reader/${documentId}`,
+    });
+    trackEvent('pdf_reader_speedread_started', {
+      documentId,
+      source: 'highlight',
     });
 
     setHighlightPopover(null);
@@ -662,36 +725,64 @@ export function PDFViewer({
       returnPath: `/reader/${documentId}`,
       kind: 'pdf',
     });
-  }, [router, documentId]);
+    trackEvent('pdf_reader_speedread_started', {
+      documentId,
+      source: 'topbar',
+      page: currentPage,
+    });
+  }, [router, documentId, currentPage]);
 
   // Update highlight color
   const handleUpdateHighlightColor = useCallback((color: HighlightColor) => {
     if (!highlightPopover) return;
     updateHighlightColor(highlightPopover.highlight.id, color);
+    trackEvent('pdf_reader_highlight_color_changed', {
+      documentId,
+      highlightId: highlightPopover.highlight.id,
+      color,
+    });
     // Update the popover state with new color
     setHighlightPopover(prev => prev ? {
       ...prev,
       highlight: { ...prev.highlight, color }
     } : null);
-  }, [highlightPopover, updateHighlightColor]);
+  }, [highlightPopover, updateHighlightColor, documentId]);
 
   // Update highlight note
   const handleUpdateHighlightNote = useCallback((note: string) => {
     if (!highlightPopover) return;
     updateHighlightNote(highlightPopover.highlight.id, note);
+    trackEvent('pdf_reader_highlight_note_updated', {
+      documentId,
+      highlightId: highlightPopover.highlight.id,
+      noteLength: note.length,
+    });
     // Update the popover state with new note
     setHighlightPopover(prev => prev ? {
       ...prev,
       highlight: { ...prev.highlight, note }
     } : null);
-  }, [highlightPopover, updateHighlightNote]);
+  }, [highlightPopover, updateHighlightNote, documentId]);
 
   // Delete highlight
   const handleDeleteHighlight = useCallback(() => {
     if (!highlightPopover) return;
     removeHighlight(highlightPopover.highlight.id);
+    trackEvent('pdf_reader_highlight_deleted', {
+      documentId,
+      highlightId: highlightPopover.highlight.id,
+    });
     setHighlightPopover(null);
-  }, [highlightPopover, removeHighlight]);
+  }, [highlightPopover, removeHighlight, documentId]);
+
+  const handleTopbarBookmarkToggle = useCallback(() => {
+    toggleBookmark(currentPage);
+    trackEvent('pdf_reader_bookmark_toggled', {
+      documentId,
+      page: currentPage,
+      source: 'topbar',
+    });
+  }, [toggleBookmark, currentPage, documentId]);
 
   // Get document title
   const documentTitle = title || meta?.title || 'Untitled Document';
@@ -725,7 +816,7 @@ export function PDFViewer({
         onSidebarToggle={toggleSidebar}
         isSidebarOpen={sidebarOpen}
         isBookmarked={isPageBookmarked(currentPage)}
-        onBookmarkToggle={() => toggleBookmark(currentPage)}
+        onBookmarkToggle={handleTopbarBookmarkToggle}
         onSpeedReadDocument={handleSpeedReadDocument}
       />
       <div className="flex flex-1 overflow-hidden">
@@ -809,7 +900,14 @@ export function PDFViewer({
                     activeMatchIndex={currentMatchIndex}
                     allMatches={searchMatches}
                     isBookmarked={isPageBookmarked(pageNumber)}
-                    onBookmarkToggle={() => toggleBookmark(pageNumber)}
+                    onBookmarkToggle={() => {
+                      toggleBookmark(pageNumber);
+                      trackEvent('pdf_reader_bookmark_toggled', {
+                        documentId,
+                        page: pageNumber,
+                        source: 'page',
+                      });
+                    }}
                     highlights={getHighlightsForPage(pageNumber)}
                     onHighlightClick={handleHighlightClick}
                     selectedHighlightId={highlightPopover?.highlight.id}
