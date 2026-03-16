@@ -19,8 +19,8 @@ interface UseTextBookmarksOptions {
 interface UseTextBookmarksReturn {
   /** Text bookmarks for this document */
   bookmarks: TextBookmark[];
-  /** Add a text bookmark at a word index */
-  addBookmark: (wordIndex: number, label?: string) => TextBookmark;
+  /** Add a text bookmark at a word index (optionally with a range and label) */
+  addBookmark: (wordIndex: number, label?: string, endWordIndex?: number) => TextBookmark;
   /** Remove a bookmark */
   removeBookmark: (id: string) => void;
   /** Update a bookmark label */
@@ -72,7 +72,7 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
     setLocalBookmarks(getSortedTextBookmarksForDocument(currentDocId));
   }
 
-  const addBookmark = useCallback((wordIndex: number, label?: string): TextBookmark => {
+  const addBookmark = useCallback((wordIndex: number, label?: string, endWordIndex?: number): TextBookmark => {
     // Check if already bookmarked at this word
     const existing = bookmarks.find(b => b.wordIndex === wordIndex);
     if (existing) return existing;
@@ -85,6 +85,7 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
       documentId,
       kind: 'text',
       wordIndex,
+      endWordIndex,
       label: safeLabel,
       createdAt: Date.now(),
     };
