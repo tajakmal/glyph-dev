@@ -93,7 +93,9 @@ export function PDFViewer({
 
   // Sidebar state with localStorage persistence
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
+    // Default closed on mobile
+    if (window.innerWidth < 640) return false;
     const stored = localStorage.getItem('glyph:sidebar-open');
     return stored !== null ? JSON.parse(stored) : true;
   });
@@ -914,7 +916,14 @@ export function PDFViewer({
         onBookmarkToggle={handleTopbarBookmarkToggle}
         onSpeedReadDocument={handleSpeedReadDocument}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop */}
+        <div
+          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
+            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={toggleSidebar}
+        />
         {/* Sidebar */}
         <PDFSidebar
           isOpen={sidebarOpen}

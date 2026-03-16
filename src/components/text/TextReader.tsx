@@ -29,7 +29,9 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
+    // Default closed on mobile
+    if (window.innerWidth < 640) return false;
     const stored = localStorage.getItem('glyph:sidebar-open');
     return stored !== null ? JSON.parse(stored) : true;
   });
@@ -773,10 +775,25 @@ export function TextReader({ documentId }: TextReaderProps) {
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        {sidebarOpen && (
-          <div className="w-[280px] h-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop */}
+        <div
+          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
+            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={toggleSidebar}
+        />
+
+        {/* Sidebar — slide-over overlay on mobile, inline on desktop */}
+        <div
+          className={`
+            h-full bg-zinc-900 border-r border-zinc-800 flex flex-col w-[280px]
+            fixed sm:relative z-30 sm:z-auto top-0 left-0
+            transition-transform duration-300 ease-in-out sm:transition-none
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            ${!sidebarOpen ? 'sm:hidden' : ''}
+          `}
+        >
             {/* Sidebar Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
               <h2 className="text-zinc-200 text-sm font-medium truncate flex-1" title={documentTitle}>
@@ -888,7 +905,6 @@ export function TextReader({ documentId }: TextReaderProps) {
               )}
             </div>
           </div>
-        )}
 
         {/* Text Content Area */}
         <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-zinc-950">
