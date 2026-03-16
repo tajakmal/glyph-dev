@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DocumentMeta, HighlightColor, TextHighlight, TextBookmark } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
@@ -13,6 +13,7 @@ import { getSpeedReadSession, clearSpeedReadSession, navigateToDocumentSpeedRead
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { trackEvent } from '@/lib/telemetry';
+import { ReaderContext } from '@/contexts/ReaderContext';
 
 interface TextReaderProps {
   documentId: string;
@@ -22,6 +23,7 @@ type SidebarTab = 'bookmarks' | 'notes';
 
 export function TextReader({ documentId }: TextReaderProps) {
   const router = useRouter();
+  const readerCtx = useContext(ReaderContext);
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -126,6 +128,47 @@ export function TextReader({ documentId }: TextReaderProps) {
     loadDocument();
   }, [documentId]);
 
+  // Highlight + scroll to current word when returning from speed-read mode
+  const prevViewModeRef = useRef(readerCtx?.viewMode);
+  useEffect(() => {
+    const prevMode = prevViewModeRef.current;
+    const curMode = readerCtx?.viewMode;
+    prevViewModeRef.current = curMode;
+
+    if (prevMode === 'speed-read' && curMode === 'pdf' && readerCtx) {
+      const wordIndex = readerCtx.currentWordIndex;
+
+      requestAnimationFrame(() => {
+        const wordSpan = textContainerRef.current?.querySelector(
+          `[data-word-index="${wordIndex}"]`
+        ) as HTMLElement | null;
+        if (!wordSpan) return;
+
+        wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Apply persistent highlight — stays until user scrolls or clicks
+        wordSpan.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
+        wordSpan.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
+        wordSpan.style.borderRadius = '3px';
+
+        const clearHighlight = () => {
+          wordSpan.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
+          wordSpan.style.backgroundColor = '';
+          wordSpan.style.boxShadow = '';
+          setTimeout(() => {
+            wordSpan.style.transition = '';
+            wordSpan.style.borderRadius = '';
+          }, 600);
+          scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
+          document.removeEventListener('click', clearHighlight);
+        };
+
+        scrollContainerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
+        document.addEventListener('click', clearHighlight, { once: true });
+      });
+    }
+  }, [readerCtx?.viewMode, readerCtx?.currentWordIndex, readerCtx]);
+
   // Check for speed read session and scroll to the word with focus highlight
   useEffect(() => {
     if (isLoading || !textContent) return;
@@ -183,17 +226,21 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleSpeedRead = useCallback(() => {
     if (!isTopbarSpeedReadEnabled) return;
 
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(currentWordIndex > 0 ? currentWordIndex : 0);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: currentWordIndex,
       source: 'topbar',
     });
-  }, [isTopbarSpeedReadEnabled, router, documentId, currentWordIndex]);
+  }, [isTopbarSpeedReadEnabled, readerCtx, router, documentId, currentWordIndex]);
 
   const handleBookmarkToggle = useCallback(() => {
     toggleWordBookmark(currentWordIndex);
@@ -376,13 +423,15 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleSpeedReadSelection = useCallback(() => {
     if (!selection) return;
 
-    // Navigate to speed read starting at the selection's start word
-    // This continues to the end of the document (not just the selection range)
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: selection.startWord,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(selection.startWord);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: selection.startWord,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: selection.startWord,
@@ -390,7 +439,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     });
 
     handleCloseSelection();
-  }, [selection, documentId, router, handleCloseSelection]);
+  }, [selection, readerCtx, documentId, router, handleCloseSelection]);
 
   // Handle click on highlighted word
   const handleHighlightClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
@@ -460,12 +509,15 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleHighlightSpeedRead = useCallback(() => {
     if (!activeHighlight) return;
 
-    // Navigate to speed read starting at the highlight's start word
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: activeHighlight.highlight.startWord,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(activeHighlight.highlight.startWord);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: activeHighlight.highlight.startWord,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: activeHighlight.highlight.startWord,
@@ -473,7 +525,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     });
 
     handleCloseHighlightPopover();
-  }, [activeHighlight, documentId, router, handleCloseHighlightPopover]);
+  }, [activeHighlight, readerCtx, documentId, router, handleCloseHighlightPopover]);
 
   // Scroll to a highlight by finding the first word span
   const scrollToHighlight = useCallback((highlight: TextHighlight) => {
