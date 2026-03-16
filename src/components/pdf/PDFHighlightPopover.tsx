@@ -40,16 +40,22 @@ const COLOR_OPTIONS: HighlightColor[] = ['yellow', 'green', 'blue', 'pink', 'ora
 
 /**
  * Detect if we should use the mobile bottom-bar layout.
- * Uses touch support + narrow viewport as heuristic.
+ * Uses viewport width + touch heuristics. Returns true on first render
+ * if SSR-safe check passes, to avoid flash of desktop layout on phones.
  */
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.innerWidth < 640;
+  });
 
   useEffect(() => {
     const check = () => {
-      setIsMobile(
-        'ontouchstart' in window && window.innerWidth < 640
-      );
+      const narrow = window.innerWidth < 640;
+      const hasTouch = 'ontouchstart' in window
+        || navigator.maxTouchPoints > 0
+        || window.matchMedia('(pointer: coarse)').matches;
+      setIsMobile(narrow && hasTouch);
     };
     check();
     window.addEventListener('resize', check);
