@@ -213,11 +213,11 @@ export function SpeedReadPanel() {
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span className="text-sm">Back to Reader</span>
+            <span className="text-sm hidden sm:inline">Back to Reader</span>
           </button>
 
           {documentMeta && (
-            <span className="text-zinc-500 text-sm truncate max-w-[300px]">
+            <span className="text-zinc-500 text-sm truncate max-w-[150px] sm:max-w-[300px]">
               {documentMeta.title}
             </span>
           )}
@@ -233,32 +233,32 @@ export function SpeedReadPanel() {
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
-            <span>Show in Document</span>
+            <span className="hidden sm:inline">Show in Document</span>
           </button>
         )}
       </div>
 
-      {/* RSVP Display */}
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-6">
+      {/* RSVP Display — scrollable content area above the mobile hold zone */}
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-4 sm:p-6 overflow-y-auto min-h-0 pb-0 sm:pb-6">
         {/* Word Display Container */}
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
+        <div className="flex items-center justify-center py-4 sm:py-8 sm:flex-1 sm:min-h-[120px] shrink-0">
+          <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-4 sm:p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
             <div className="relative">
               <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-orange-400 to-transparent rounded-full"></div>
               <div className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-0.5 h-3 bg-gradient-to-t from-orange-400 to-transparent rounded-full"></div>
 
-              <div className="h-24 flex items-center justify-center font-mono text-5xl relative">
+              <div className="h-16 sm:h-24 flex items-center justify-center font-mono text-3xl sm:text-5xl relative">
                 <div className="absolute left-1/2 -translate-x-1/2 h-full w-px bg-gradient-to-b from-transparent via-zinc-800 to-transparent"></div>
 
                 <div className="flex items-baseline">
                   <span
                     className="text-zinc-500 text-right transition-all duration-75"
-                    style={{ minWidth: '140px', display: 'flex', justifyContent: 'flex-end' }}
+                    style={{ minWidth: '100px', display: 'flex', justifyContent: 'flex-end' }}
                   >
                     {beforeORP}
                   </span>
                   <span
-                    className="text-orange-400 font-bold w-8 text-center transition-all duration-75"
+                    className="text-orange-400 font-bold w-6 sm:w-8 text-center transition-all duration-75"
                     style={{
                       textShadow: isPlaying
                         ? '0 0 20px rgba(251, 146, 60, 0.5), 0 0 40px rgba(251, 146, 60, 0.3)'
@@ -269,7 +269,7 @@ export function SpeedReadPanel() {
                   </span>
                   <span
                     className="text-zinc-500 text-left transition-all duration-75"
-                    style={{ minWidth: '140px' }}
+                    style={{ minWidth: '100px' }}
                   >
                     {afterORP}
                   </span>
@@ -280,7 +280,7 @@ export function SpeedReadPanel() {
         </div>
 
         {/* Scrubber */}
-        <div className="mt-8">
+        <div className="mt-4 sm:mt-8">
           <input
             type="range"
             min="0"
@@ -299,8 +299,8 @@ export function SpeedReadPanel() {
           </div>
 
           {/* Context preview */}
-          <div className="mt-4 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-4 border border-zinc-800/30">
-            <p className="text-sm text-zinc-500 text-center leading-relaxed font-light">
+          <div className="mt-3 sm:mt-4 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/30">
+            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light">
               <span className="text-zinc-700 transition-colors duration-150">
                 {words.slice(Math.max(0, currentWordIndex - 5), currentWordIndex).join(' ')}
               </span>
@@ -314,8 +314,8 @@ export function SpeedReadPanel() {
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="mt-8 space-y-4">
+        {/* Desktop Controls */}
+        <div className="mt-4 sm:mt-8 space-y-4 shrink-0">
           {/* Playback Controls */}
           <div className="flex items-center justify-center gap-3">
             <button
@@ -390,32 +390,65 @@ export function SpeedReadPanel() {
             </div>
           </div>
 
-          {/* Hold to Play Button */}
-          <button
-            onMouseDown={handleHoldStart}
-            onMouseUp={handleHoldEnd}
-            onMouseLeave={handleHoldEnd}
-            onTouchStart={handleHoldStart}
-            onTouchEnd={handleHoldEnd}
-            className={`w-full py-4 rounded-xl font-medium transition-all duration-200 select-none touch-none transform active:scale-[0.98] ${
-              isHolding
-                ? 'bg-zinc-200 dark:bg-zinc-700 shadow-lg shadow-black/20'
-                : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
-            }`}
-            aria-label="Hold to play"
-          >
-            <span className={`transition-colors duration-200 ${isHolding ? 'text-white' : 'text-zinc-400'}`}>
-              {isHolding ? 'Playing...' : 'Hold to Play'}
-            </span>
-          </button>
+          {/* Desktop: Hold to Play + keyboard hints (hidden on mobile) */}
+          <div className="hidden sm:block">
+            <button
+              onMouseDown={handleHoldStart}
+              onMouseUp={handleHoldEnd}
+              onMouseLeave={handleHoldEnd}
+              className={`w-full py-4 rounded-xl font-medium transition-all duration-200 select-none transform active:scale-[0.98] ${
+                isHolding
+                  ? 'bg-zinc-700 shadow-lg shadow-black/20'
+                  : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
+              }`}
+              aria-label="Hold to play"
+            >
+              <span className={`transition-colors duration-200 ${isHolding ? 'text-white' : 'text-zinc-400'}`}>
+                {isHolding ? 'Playing...' : 'Hold to Play'}
+              </span>
+            </button>
 
-          {/* Keyboard hints */}
-          <div className="flex justify-center gap-4 text-xs text-zinc-600 pt-2">
-            <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Space</kbd> hold to play</span>
-            <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">←</kbd> <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">→</kbd> navigate</span>
-            <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Esc</kbd> back to doc</span>
+            <div className="flex justify-center gap-4 text-xs text-zinc-600 pt-3">
+              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Space</kbd> hold to play</span>
+              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">←</kbd> <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">→</kbd> navigate</span>
+              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Esc</kbd> back to doc</span>
+            </div>
           </div>
         </div>
+      </div>
+
+      {/* Mobile: Fixed bottom hold-to-play thumb zone */}
+      <div className="sm:hidden flex-shrink-0 px-4 pb-[env(safe-area-inset-bottom,12px)] pt-2 border-t border-zinc-800/50 bg-zinc-950">
+        <button
+          onTouchStart={handleHoldStart}
+          onTouchEnd={handleHoldEnd}
+          onTouchCancel={handleHoldEnd}
+          className={`w-full py-6 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
+            isHolding
+              ? 'bg-orange-500/20 border-2 border-orange-400/50 shadow-lg shadow-orange-500/10'
+              : 'bg-zinc-800/80 border-2 border-zinc-700/50 active:bg-zinc-700'
+          }`}
+          aria-label="Hold to play"
+        >
+          <div className="flex flex-col items-center gap-1">
+            {isHolding ? (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
+                  <rect x="6" y="4" width="4" height="16" rx="1"/>
+                  <rect x="14" y="4" width="4" height="16" rx="1"/>
+                </svg>
+                <span className="text-orange-400 text-sm font-medium">Release to pause</span>
+              </>
+            ) : (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+                <span className="text-zinc-400 text-sm">Hold to read</span>
+              </>
+            )}
+          </div>
+        </button>
       </div>
     </div>
   );
