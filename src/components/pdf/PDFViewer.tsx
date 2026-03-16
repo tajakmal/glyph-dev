@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useContext } from 'react';
 import { useRouter } from 'next/navigation';
 import type { PDFBookmark, PDFHighlight, HighlightColor } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
@@ -23,6 +23,7 @@ import { mapWordIndexToPage, buildPageWordCounts } from '@/lib/word-mapping';
 import { updateLastReadPage } from '@/lib/storage';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { trackEvent } from '@/lib/telemetry';
+import { ReaderContext } from '@/contexts/ReaderContext';
 
 // Number of pages to render beyond the visible viewport
 const OVERSCAN_PAGES = 2;
@@ -59,6 +60,9 @@ export function PDFViewer({
   const router = useRouter();
   const { pdf, isLoading, error, meta, pageCount } = usePDF({ documentId });
   const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
+
+  // Optional ReaderContext — enables seamless speed-read switching when available
+  const readerCtx = useContext(ReaderContext);
   const [zoom, setZoom] = useState(initialZoom);
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -89,7 +93,9 @@ export function PDFViewer({
 
   // Sidebar state with localStorage persistence
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
+    // Default closed on mobile
+    if (window.innerWidth < 640) return false;
     const stored = localStorage.getItem('glyph:sidebar-open');
     return stored !== null ? JSON.parse(stored) : true;
   });
@@ -171,6 +177,46 @@ export function PDFViewer({
       pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, []);
+
+  // Register scroll-to-page callback with ReaderContext for bidirectional navigation
+  useEffect(() => {
+    if (readerCtx) {
+      readerCtx.registerPdfScrollToPage(handlePageChange);
+    }
+  }, [readerCtx, handlePageChange]);
+
+  // Highlight the target page with a fade-out glow when returning from speed-read
+  const prevViewModeRef = useRef(readerCtx?.viewMode);
+  useEffect(() => {
+    const prevMode = prevViewModeRef.current;
+    const curMode = readerCtx?.viewMode;
+    prevViewModeRef.current = curMode;
+
+    if (prevMode === 'speed-read' && curMode === 'pdf' && containerRef.current) {
+      const page = readerCtx?.currentPage ?? currentPage;
+
+      requestAnimationFrame(() => {
+        const pageEl = containerRef.current?.querySelector(
+          `[data-page-number="${page}"]`
+        ) as HTMLElement | null;
+        if (!pageEl) return;
+
+        // Persistent highlight — stays until user scrolls or clicks
+        pageEl.style.boxShadow = '0 0 0 3px rgba(251, 146, 60, 0.5), 0 0 20px rgba(251, 146, 60, 0.15)';
+
+        const clearHighlight = () => {
+          pageEl.style.transition = 'box-shadow 0.6s ease-out';
+          pageEl.style.boxShadow = '';
+          setTimeout(() => { pageEl.style.transition = ''; }, 600);
+          containerRef.current?.removeEventListener('scroll', clearHighlight);
+          document.removeEventListener('click', clearHighlight);
+        };
+
+        containerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
+        document.addEventListener('click', clearHighlight, { once: true });
+      });
+    }
+  }, [readerCtx?.viewMode, readerCtx?.currentPage, currentPage]);
 
   const getPageWordCounts = useCallback(async (): Promise<number[]> => {
     if (!pdf) return [];
@@ -629,33 +675,42 @@ export function PDFViewer({
   }, []);
 
   // Speed read handler for selection
-  // Attempts to map selection to word index for full document reading,
-  // falls back to selection text if mapping is not possible
+  // Uses ReaderContext for instant switching when available, falls back to router navigation
   const handleSpeedReadSelection = useCallback(async () => {
     if (!selectionPopover || !pdf) return;
 
-    // Save scroll position before navigating
-    if (containerRef.current) {
-      sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
-        documentId,
-        scrollTop: containerRef.current.scrollTop,
-      }));
-    }
-
     const { page, startWordOnPage } = selectionPopover.selection;
 
-    // Try to map selection to global word index for full document speed read
+    // Try to map selection to global word index
     if (page !== undefined && startWordOnPage !== undefined) {
       try {
         const pageWordCounts = await getPageWordCounts();
-        // Calculate cumulative word count up to this page
         let startWordIndex = 0;
         for (let i = 0; i < page - 1; i++) {
           startWordIndex += pageWordCounts[i] || 0;
         }
         startWordIndex += startWordOnPage;
 
-        // Navigate to full document speed read starting at word index
+        // Use context for instant switching (no page navigation)
+        if (readerCtx) {
+          readerCtx.startSpeedReadAt(startWordIndex);
+          trackEvent('pdf_reader_speedread_started', {
+            documentId,
+            source: 'selection',
+            startWordIndex,
+          });
+          setSelectionPopover(null);
+          window.getSelection()?.removeAllRanges();
+          return;
+        }
+
+        // Fallback: router-based navigation
+        if (containerRef.current) {
+          sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
+            documentId,
+            scrollTop: containerRef.current.scrollTop,
+          }));
+        }
         navigateToDocumentSpeedRead(router, documentId, {
           returnPath: `/reader/${documentId}`,
           startWordIndex,
@@ -686,13 +741,35 @@ export function PDFViewer({
 
     setSelectionPopover(null);
     window.getSelection()?.removeAllRanges();
-  }, [selectionPopover, pdf, router, documentId, getPageWordCounts]);
+  }, [selectionPopover, pdf, router, documentId, getPageWordCounts, readerCtx]);
 
   // Speed read handler for highlight
-  const handleSpeedReadHighlight = useCallback(() => {
+  const handleSpeedReadHighlight = useCallback(async () => {
     if (!highlightPopover) return;
 
-    // Save scroll position before navigating
+    // With context: map highlight to word index for full-document speed read
+    if (readerCtx) {
+      try {
+        const pageWordCounts = await getPageWordCounts();
+        const { page } = highlightPopover.highlight;
+        let startWordIndex = 0;
+        for (let i = 0; i < page - 1; i++) {
+          startWordIndex += pageWordCounts[i] || 0;
+        }
+        readerCtx.startSpeedReadAt(startWordIndex);
+        trackEvent('pdf_reader_speedread_started', {
+          documentId,
+          source: 'highlight',
+          startWordIndex,
+        });
+        setHighlightPopover(null);
+        return;
+      } catch {
+        // Fall through to router-based fallback
+      }
+    }
+
+    // Fallback: router-based navigation with just highlight text
     if (containerRef.current) {
       sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
         documentId,
@@ -709,11 +786,31 @@ export function PDFViewer({
     });
 
     setHighlightPopover(null);
-  }, [highlightPopover, router, documentId]);
+  }, [highlightPopover, router, documentId, readerCtx, getPageWordCounts]);
 
   // Speed read handler for full document
-  const handleSpeedReadDocument = useCallback(() => {
-    // Save scroll position before navigating
+  const handleSpeedReadDocument = useCallback(async () => {
+    // With context: start from current page (instant, no navigation)
+    if (readerCtx) {
+      try {
+        const pageWordCounts = await getPageWordCounts();
+        let startWordIndex = 0;
+        for (let i = 0; i < currentPage - 1; i++) {
+          startWordIndex += pageWordCounts[i] || 0;
+        }
+        readerCtx.startSpeedReadAt(startWordIndex);
+        trackEvent('pdf_reader_speedread_started', {
+          documentId,
+          source: 'topbar',
+          page: currentPage,
+        });
+        return;
+      } catch {
+        // Fall through to router-based fallback
+      }
+    }
+
+    // Fallback: router-based navigation
     if (containerRef.current) {
       sessionStorage.setItem('glyph:reader-scroll', JSON.stringify({
         documentId,
@@ -730,7 +827,7 @@ export function PDFViewer({
       source: 'topbar',
       page: currentPage,
     });
-  }, [router, documentId, currentPage]);
+  }, [router, documentId, currentPage, readerCtx, getPageWordCounts]);
 
   // Update highlight color
   const handleUpdateHighlightColor = useCallback((color: HighlightColor) => {
@@ -819,7 +916,14 @@ export function PDFViewer({
         onBookmarkToggle={handleTopbarBookmarkToggle}
         onSpeedReadDocument={handleSpeedReadDocument}
       />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop */}
+        <div
+          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
+            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={toggleSidebar}
+        />
         {/* Sidebar */}
         <PDFSidebar
           isOpen={sidebarOpen}

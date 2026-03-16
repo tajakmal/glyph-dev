@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DocumentMeta, HighlightColor, TextHighlight, TextBookmark } from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
@@ -13,6 +13,7 @@ import { getSpeedReadSession, clearSpeedReadSession, navigateToDocumentSpeedRead
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { getFeatureFlag } from '@/lib/feature-flags';
 import { trackEvent } from '@/lib/telemetry';
+import { ReaderContext } from '@/contexts/ReaderContext';
 
 interface TextReaderProps {
   documentId: string;
@@ -22,12 +23,15 @@ type SidebarTab = 'bookmarks' | 'notes';
 
 export function TextReader({ documentId }: TextReaderProps) {
   const router = useRouter();
+  const readerCtx = useContext(ReaderContext);
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return true;
+    if (typeof window === 'undefined') return false;
+    // Default closed on mobile
+    if (window.innerWidth < 640) return false;
     const stored = localStorage.getItem('glyph:sidebar-open');
     return stored !== null ? JSON.parse(stored) : true;
   });
@@ -126,6 +130,47 @@ export function TextReader({ documentId }: TextReaderProps) {
     loadDocument();
   }, [documentId]);
 
+  // Highlight + scroll to current word when returning from speed-read mode
+  const prevViewModeRef = useRef(readerCtx?.viewMode);
+  useEffect(() => {
+    const prevMode = prevViewModeRef.current;
+    const curMode = readerCtx?.viewMode;
+    prevViewModeRef.current = curMode;
+
+    if (prevMode === 'speed-read' && curMode === 'pdf' && readerCtx) {
+      const wordIndex = readerCtx.currentWordIndex;
+
+      requestAnimationFrame(() => {
+        const wordSpan = textContainerRef.current?.querySelector(
+          `[data-word-index="${wordIndex}"]`
+        ) as HTMLElement | null;
+        if (!wordSpan) return;
+
+        wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+        // Apply persistent highlight — stays until user scrolls or clicks
+        wordSpan.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
+        wordSpan.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
+        wordSpan.style.borderRadius = '3px';
+
+        const clearHighlight = () => {
+          wordSpan.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
+          wordSpan.style.backgroundColor = '';
+          wordSpan.style.boxShadow = '';
+          setTimeout(() => {
+            wordSpan.style.transition = '';
+            wordSpan.style.borderRadius = '';
+          }, 600);
+          scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
+          document.removeEventListener('click', clearHighlight);
+        };
+
+        scrollContainerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
+        document.addEventListener('click', clearHighlight, { once: true });
+      });
+    }
+  }, [readerCtx?.viewMode, readerCtx?.currentWordIndex, readerCtx]);
+
   // Check for speed read session and scroll to the word with focus highlight
   useEffect(() => {
     if (isLoading || !textContent) return;
@@ -183,17 +228,21 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleSpeedRead = useCallback(() => {
     if (!isTopbarSpeedReadEnabled) return;
 
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(currentWordIndex > 0 ? currentWordIndex : 0);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: currentWordIndex,
       source: 'topbar',
     });
-  }, [isTopbarSpeedReadEnabled, router, documentId, currentWordIndex]);
+  }, [isTopbarSpeedReadEnabled, readerCtx, router, documentId, currentWordIndex]);
 
   const handleBookmarkToggle = useCallback(() => {
     toggleWordBookmark(currentWordIndex);
@@ -376,13 +425,15 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleSpeedReadSelection = useCallback(() => {
     if (!selection) return;
 
-    // Navigate to speed read starting at the selection's start word
-    // This continues to the end of the document (not just the selection range)
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: selection.startWord,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(selection.startWord);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: selection.startWord,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: selection.startWord,
@@ -390,7 +441,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     });
 
     handleCloseSelection();
-  }, [selection, documentId, router, handleCloseSelection]);
+  }, [selection, readerCtx, documentId, router, handleCloseSelection]);
 
   // Handle click on highlighted word
   const handleHighlightClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
@@ -460,12 +511,15 @@ export function TextReader({ documentId }: TextReaderProps) {
   const handleHighlightSpeedRead = useCallback(() => {
     if (!activeHighlight) return;
 
-    // Navigate to speed read starting at the highlight's start word
-    navigateToDocumentSpeedRead(router, documentId, {
-      returnPath: `/reader/${documentId}`,
-      startWordIndex: activeHighlight.highlight.startWord,
-      kind: 'text',
-    });
+    if (readerCtx) {
+      readerCtx.startSpeedReadAt(activeHighlight.highlight.startWord);
+    } else {
+      navigateToDocumentSpeedRead(router, documentId, {
+        returnPath: `/reader/${documentId}`,
+        startWordIndex: activeHighlight.highlight.startWord,
+        kind: 'text',
+      });
+    }
     trackEvent('text_reader_speedread_started', {
       documentId,
       startWordIndex: activeHighlight.highlight.startWord,
@@ -473,7 +527,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     });
 
     handleCloseHighlightPopover();
-  }, [activeHighlight, documentId, router, handleCloseHighlightPopover]);
+  }, [activeHighlight, readerCtx, documentId, router, handleCloseHighlightPopover]);
 
   // Scroll to a highlight by finding the first word span
   const scrollToHighlight = useCallback((highlight: TextHighlight) => {
@@ -721,10 +775,25 @@ export function TextReader({ documentId }: TextReaderProps) {
       </div>
 
       {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
-        {sidebarOpen && (
-          <div className="w-[280px] h-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
+      <div className="flex flex-1 overflow-hidden relative">
+        {/* Mobile backdrop */}
+        <div
+          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
+            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={toggleSidebar}
+        />
+
+        {/* Sidebar — slide-over overlay on mobile, inline on desktop */}
+        <div
+          className={`
+            h-full bg-zinc-900 border-r border-zinc-800 flex flex-col w-[280px]
+            fixed sm:relative z-30 sm:z-auto top-0 left-0
+            transition-transform duration-300 ease-in-out sm:transition-none
+            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+            ${!sidebarOpen ? 'sm:hidden' : ''}
+          `}
+        >
             {/* Sidebar Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
               <h2 className="text-zinc-200 text-sm font-medium truncate flex-1" title={documentTitle}>
@@ -836,7 +905,6 @@ export function TextReader({ documentId }: TextReaderProps) {
               )}
             </div>
           </div>
-        )}
 
         {/* Text Content Area */}
         <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-zinc-950">
