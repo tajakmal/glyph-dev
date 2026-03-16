@@ -107,7 +107,11 @@ export function SpeedReadPanel() {
       } else if (e.code === 'Escape') {
         e.preventDefault();
         setIsPlaying(false);
-        setViewMode('pdf');
+        if (documentKind === 'pdf') {
+          jumpToWordInPDF(currentWordIndex);
+        } else {
+          setViewMode('pdf');
+        }
       }
     };
 
@@ -158,7 +162,13 @@ export function SpeedReadPanel() {
 
   const handleBackToPDF = () => {
     setIsPlaying(false);
-    setViewMode('pdf');
+    // For PDFs: scroll to the correct page and highlight the word
+    // For text: just switch view mode (TextReader handles its own scroll)
+    if (documentKind === 'pdf') {
+      jumpToWordInPDF(currentWordIndex);
+    } else {
+      setViewMode('pdf');
+    }
   };
 
   const handleGoHome = () => {
