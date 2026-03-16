@@ -72,22 +72,24 @@ export function SelectionPopover({
     setPosition({ x, y });
   }, [anchorRect]);
 
-  // Close on click outside
+  // Close on click/tap outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         onClose();
       }
     };
 
-    // Delay to avoid immediate close from selection click
+    // Delay to avoid immediate close from selection click/tap
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }, 0);
 
     return () => {
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [onClose]);
 
@@ -232,9 +234,9 @@ export function HighlightPopover({
     setPosition({ x, y });
   }, [anchorRect, showNote]);
 
-  // Close on click outside
+  // Close on click/tap outside
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
         // Save note on close
         if (note !== highlight.note) {
@@ -244,14 +246,16 @@ export function HighlightPopover({
       }
     };
 
-    // Delay to avoid immediate close from click that opened it
+    // Delay to avoid immediate close from click/tap that opened it
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }, 0);
 
     return () => {
       clearTimeout(timer);
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [onClose, note, highlight.note, onUpdateNote]);
 
