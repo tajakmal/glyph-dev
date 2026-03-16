@@ -59,7 +59,7 @@ interface ReaderContextValue {
   jumpToWordInPDF: (wordIndex: number) => void;
 
   /** Register a callback for scrolling the PDF to a specific page (called by PDFViewer) */
-  registerPdfScrollToPage: (fn: (page: number) => void) => void;
+  registerPdfScrollToPage: (fn: (page: number, options?: { instant?: boolean }) => void) => void;
 }
 
 // =============================================================================
@@ -99,7 +99,7 @@ export function ReaderProvider({
   const [isSpeedReading, setIsSpeedReading] = useState(false);
 
   // Ref for PDF scroll callback (registered by PDFViewer)
-  const pdfScrollToPageRef = useRef<((page: number) => void) | null>(null);
+  const pdfScrollToPageRef = useRef<((page: number, options?: { instant?: boolean }) => void) | null>(null);
 
   // Load PDF if it's a PDF document
   const isPdf = documentKind === 'pdf';
@@ -194,9 +194,10 @@ export function ReaderProvider({
       const { page } = mapWordIndexToPage(wordIndex, pageWordCounts);
       setCurrentPage(page);
 
-      // Scroll PDF to the target page
+      // Instant scroll to the page — the word-level smooth scroll happens
+      // in VirtualizedPDFPage's overlay effect for a clean single animation
       if (pdfScrollToPageRef.current) {
-        pdfScrollToPageRef.current(page);
+        pdfScrollToPageRef.current(page, { instant: true });
       }
     }
 
@@ -204,7 +205,7 @@ export function ReaderProvider({
     setViewMode('pdf');
   }, [pageWordCounts]);
 
-  const registerPdfScrollToPage = useCallback((fn: (page: number) => void) => {
+  const registerPdfScrollToPage = useCallback((fn: (page: number, options?: { instant?: boolean }) => void) => {
     pdfScrollToPageRef.current = fn;
   }, []);
 

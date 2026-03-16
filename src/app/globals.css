@@ -94,8 +94,7 @@ html, body {
 }
 
 /* ============================================
-   PDF Text Layer Styles
-   Critical for text selection in PDFs
+   PDF Page & Canvas Styles
    ============================================ */
 .pdf-page {
   position: relative;
@@ -108,36 +107,89 @@ html, body {
   display: block;
 }
 
-.pdf-text-layer {
+/* ============================================
+   PDF Text Layer Styles (pdfjs-dist built-in TextLayer)
+   Using pdfjs-dist's TextLayer CSS conventions for
+   pixel-perfect text positioning
+   ============================================ */
+.pdf-page .textLayer {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  overflow: hidden;
-  opacity: 0.2;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
   line-height: 1;
-  pointer-events: auto;
+  -webkit-text-size-adjust: none;
+  -moz-text-size-adjust: none;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
 }
 
-.pdf-text-layer span {
+.pdf-page .textLayer {
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.pdf-page .textLayer :is(span, br) {
+  color: transparent;
   position: absolute;
   white-space: pre;
-  color: transparent;
+  cursor: text;
+  transform-origin: 0% 0%;
   pointer-events: auto;
 }
 
-.pdf-text-layer span::selection {
-  background: rgba(161, 161, 170, 0.3);
+.pdf-page .textLayer > :not(.markedContent),
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-page .textLayer .markedContent {
+  display: contents;
+}
+
+.pdf-page .textLayer span[role="img"] {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+/* Word sub-spans inside text layer divs — inherit parent positioning */
+.pdf-page .textLayer span[data-word-index] {
+  position: static;
+  display: inline;
+  transform: none;
+  white-space: pre;
+  font-size: inherit;
+}
+
+/* Selection highlight — visible blue tint */
+.pdf-page .textLayer ::selection {
+  background: rgba(59, 130, 246, 0.3);
 }
 
 /* Search highlight styling */
 .pdf-search-highlight {
-  background: rgba(253, 224, 71, 0.6);
+  background: rgba(253, 224, 71, 0.6) !important;
   color: transparent;
   border-radius: 2px;
 }
 
+.pdf-search-highlight.search-match-active {
+  background: rgba(251, 146, 60, 0.7) !important;
+}
+
+/* Highlight overlay layer */
 .pdf-highlight-layer {
   position: absolute;
   top: 0;
@@ -149,6 +201,16 @@ html, body {
 
 .pdf-highlight-layer > div {
   pointer-events: auto;
+}
+
+/* Speed-read return word highlight overlay */
+.word-return-highlight {
+  animation: word-highlight-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes word-highlight-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 /* ============================================
