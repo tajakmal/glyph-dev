@@ -168,13 +168,16 @@ export function PDFViewer({
   }, []);
 
   // Navigate to specific page
-  const handlePageChange = useCallback((page: number) => {
+  const handlePageChange = useCallback((page: number, options?: { instant?: boolean }) => {
     const container = containerRef.current;
     if (!container) return;
 
     const pageElement = container.querySelector(`[data-page-number="${page}"]`);
     if (pageElement) {
-      pageElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      pageElement.scrollIntoView({
+        behavior: options?.instant ? 'instant' : 'smooth',
+        block: 'start',
+      });
     }
   }, []);
 
@@ -185,38 +188,46 @@ export function PDFViewer({
     }
   }, [readerCtx, handlePageChange]);
 
-  // Highlight the target page with a fade-out glow when returning from speed-read
+  // Highlight the target word when returning from speed-read.
+  // Uses an overlay div (rendered by VirtualizedPDFPage) instead of inline styles,
+  // so text layer re-renders don't destroy the highlight.
+  const [wordHighlightTarget, setWordHighlightTarget] = useState<{ page: number; indexOnPage: number } | null>(null);
   const prevViewModeRef = useRef(readerCtx?.viewMode);
+  const highlightTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
     const prevMode = prevViewModeRef.current;
     const curMode = readerCtx?.viewMode;
     prevViewModeRef.current = curMode;
 
-    if (prevMode === 'speed-read' && curMode === 'pdf' && containerRef.current) {
-      const page = readerCtx?.currentPage ?? currentPage;
+    if (prevMode === 'speed-read' && curMode === 'pdf' && readerCtx) {
+      const wordIndex = readerCtx.currentWordIndex;
+      const { page, indexOnPage } = mapWordIndexToPage(wordIndex, readerCtx.pageWordCounts);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: responding to view mode transition
+      setWordHighlightTarget({ page, indexOnPage });
 
-      requestAnimationFrame(() => {
-        const pageEl = containerRef.current?.querySelector(
-          `[data-page-number="${page}"]`
-        ) as HTMLElement | null;
-        if (!pageEl) return;
+      // Clear any previous timers
+      highlightTimersRef.current.forEach(clearTimeout);
+      highlightTimersRef.current = [];
 
-        // Persistent highlight — stays until user scrolls or clicks
-        pageEl.style.boxShadow = '0 0 0 3px rgba(251, 146, 60, 0.5), 0 0 20px rgba(251, 146, 60, 0.15)';
+      // Auto-clear after 8 seconds
+      highlightTimersRef.current.push(
+        setTimeout(() => setWordHighlightTarget(null), 8000)
+      );
 
-        const clearHighlight = () => {
-          pageEl.style.transition = 'box-shadow 0.6s ease-out';
-          pageEl.style.boxShadow = '';
-          setTimeout(() => { pageEl.style.transition = ''; }, 600);
-          containerRef.current?.removeEventListener('scroll', clearHighlight);
-          document.removeEventListener('click', clearHighlight);
-        };
-
-        containerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
-        document.addEventListener('click', clearHighlight, { once: true });
-      });
+      // Clear on user interaction (delayed so "Back to Reader" click doesn't immediately clear)
+      const clearOnInteraction = () => {
+        setWordHighlightTarget(null);
+        highlightTimersRef.current.forEach(clearTimeout);
+        highlightTimersRef.current = [];
+      };
+      highlightTimersRef.current.push(
+        setTimeout(() => {
+          document.addEventListener('pointerdown', clearOnInteraction, { once: true });
+        }, 1500)
+      );
     }
-  }, [readerCtx?.viewMode, readerCtx?.currentPage, currentPage]);
+    // Only track viewMode changes — readerCtx ref is stable
+  }, [readerCtx?.viewMode, readerCtx]);
 
   const getPageWordCounts = useCallback(async (): Promise<number[]> => {
     if (!pdf) return [];
@@ -1019,6 +1030,11 @@ export function PDFViewer({
                     onDimensionsReady={(width, height) => {
                       handlePageDimensionsReady(pageNumber, width, height);
                     }}
+                    wordHighlightIndex={
+                      wordHighlightTarget?.page === pageNumber
+                        ? wordHighlightTarget.indexOnPage
+                        : undefined
+                    }
                   />
                 </div>
               );
