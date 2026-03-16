@@ -61,6 +61,8 @@ export function TextReader({ documentId }: TextReaderProps) {
   // Text bookmarks hook
   const {
     bookmarks,
+    addBookmark,
+    removeBookmark,
     toggleBookmark: toggleWordBookmark,
     isWordBookmarked,
   } = useTextBookmarks({ documentId });
@@ -930,12 +932,14 @@ export function TextReader({ documentId }: TextReaderProps) {
                 ) : (
                   <div className="p-2">
                     {bookmarks.map((bookmark) => (
-                      <button
+                      <div
                         key={bookmark.id}
-                        onClick={() => scrollToBookmark(bookmark)}
-                        className="w-full text-left p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2"
+                        className="flex items-start gap-1 p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2 group/bm"
                       >
-                        <div className="flex items-start gap-2">
+                        <button
+                          onClick={() => scrollToBookmark(bookmark)}
+                          className="flex-1 text-left flex items-start gap-2 min-w-0"
+                        >
                           <svg className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                           </svg>
@@ -947,8 +951,17 @@ export function TextReader({ documentId }: TextReaderProps) {
                               {getBookmarkPosition(bookmark.wordIndex)}
                             </p>
                           </div>
-                        </div>
-                      </button>
+                        </button>
+                        <button
+                          onClick={() => removeBookmark(bookmark.id)}
+                          className="p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-zinc-700 transition-colors sm:opacity-0 sm:group-hover/bm:opacity-100 flex-shrink-0"
+                          aria-label="Remove bookmark"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
                     ))}
                   </div>
                 )
@@ -1059,6 +1072,7 @@ export function TextReader({ documentId }: TextReaderProps) {
             anchorRect={selection.anchorRect}
             onCreateHighlight={handleCreateHighlight}
             onSpeedRead={handleSpeedReadSelection}
+            onBookmark={() => addBookmark(selection.startWord)}
             onClose={handleCloseSelection}
           />
         )}

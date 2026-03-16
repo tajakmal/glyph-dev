@@ -15,6 +15,8 @@ interface SelectionPopoverProps {
   onCreateHighlight: (color: HighlightColor, note?: string) => void;
   /** Trigger speed reading */
   onSpeedRead: () => void;
+  /** Bookmark at selection start */
+  onBookmark?: () => void;
   /** Close popover */
   onClose: () => void;
 }
@@ -70,6 +72,7 @@ export function SelectionPopover({
   anchorRect,
   onCreateHighlight,
   onSpeedRead,
+  onBookmark,
   onClose,
 }: SelectionPopoverProps) {
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -187,6 +190,19 @@ export function SelectionPopover({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
           </svg>
         </button>
+
+        {/* Bookmark button */}
+        {onBookmark && (
+          <button
+            onClick={() => { onBookmark(); onClose(); }}
+            className={`${isMobile ? 'p-2' : 'p-1.5'} rounded text-zinc-400 hover:bg-zinc-700 hover:text-orange-500 transition-colors`}
+            aria-label="Bookmark here"
+          >
+            <svg className={`${isMobile ? 'w-6 h-6' : 'w-5 h-5'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+            </svg>
+          </button>
+        )}
 
         {/* Close button */}
         <button
