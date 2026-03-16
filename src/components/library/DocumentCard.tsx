@@ -26,8 +26,7 @@ interface DocumentCardProps {
 
 export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps) {
   const router = useRouter();
-  const [showContextMenu, setShowContextMenu] = useState(false);
-  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+  const [showMenu, setShowMenu] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState(document.title);
 
@@ -35,10 +34,9 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
     router.push(`/reader/${document.id}`);
   };
 
-  const handleContextMenu = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setContextMenuPos({ x: e.clientX, y: e.clientY });
-    setShowContextMenu(true);
+  const handleMenuToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowMenu((prev) => !prev);
   };
 
   const handleRenameSubmit = () => {
@@ -65,15 +63,14 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
   const [lastReadLabel] = useState(() => formatRelativeTime(document.lastReadAt, Date.now()));
 
   return (
-    <>
+    <div className="relative">
       <div
         className="
-          w-[200px] rounded-xl bg-zinc-900 border border-zinc-800
+          group w-full rounded-xl bg-zinc-900 border border-zinc-800
           cursor-pointer transition-all duration-200
           hover:scale-[1.02] hover:shadow-lg hover:border-red-500/50
         "
         onClick={handleClick}
-        onContextMenu={handleContextMenu}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => {
@@ -107,9 +104,21 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
               )}
             </div>
           )}
+          {/* Menu button */}
+          <button
+            onClick={handleMenuToggle}
+            className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/40 text-white sm:opacity-0 sm:group-hover:opacity-100 transition-opacity hover:bg-black/60 z-10"
+            aria-label="Document options"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
+          </button>
           {/* Text badge for text documents */}
           {document.kind === 'text' && (
-            <div className="absolute top-2 right-2 bg-zinc-700/90 text-zinc-300 text-xs font-medium px-2 py-0.5 rounded">
+            <div className="absolute top-2 left-2 bg-zinc-700/90 text-zinc-300 text-xs font-medium px-2 py-0.5 rounded">
               Text
             </div>
           )}
@@ -173,63 +182,73 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
         </div>
       </div>
 
-      {/* Context Menu */}
-      {showContextMenu && (
+      {/* Dropdown Menu */}
+      {showMenu && (
         <>
           <div
             className="fixed inset-0 z-40"
-            onClick={() => setShowContextMenu(false)}
+            onClick={() => setShowMenu(false)}
           />
-          <div
-            className="fixed z-50 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-[160px]"
-            style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-          >
+          <div className="absolute right-0 top-0 z-50 mt-8 mr-1 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl py-1 min-w-[140px]">
             <button
-              className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700"
+              className="w-full px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center gap-2"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowContextMenu(false);
+                setShowMenu(false);
                 router.push(`/reader/${document.id}`);
               }}
             >
+              <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
               Open
             </button>
             <button
-              className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700"
+              className="w-full px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center gap-2"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowContextMenu(false);
+                setShowMenu(false);
                 router.push(`/reader/${document.id}?mode=speed-read`);
               }}
             >
+              <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
               Speed Read
             </button>
             <button
-              className="w-full px-4 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700"
+              className="w-full px-3 py-2 text-left text-sm text-zinc-200 hover:bg-zinc-700 flex items-center gap-2"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowContextMenu(false);
+                setShowMenu(false);
                 setIsRenaming(true);
               }}
             >
+              <svg className="w-4 h-4 text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
               Rename
             </button>
             <hr className="my-1 border-zinc-700" />
             <button
-              className="w-full px-4 py-2 text-left text-sm text-red-400 hover:bg-zinc-700"
+              className="w-full px-3 py-2 text-left text-sm text-red-400 hover:bg-zinc-700 flex items-center gap-2"
               onClick={(e) => {
                 e.stopPropagation();
-                setShowContextMenu(false);
+                setShowMenu(false);
                 if (confirm('Delete this document? This cannot be undone.')) {
                   onDelete(document.id);
                 }
               }}
             >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
               Delete
             </button>
           </div>
         </>
       )}
-    </>
+    </div>
   );
 }

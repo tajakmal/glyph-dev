@@ -173,6 +173,12 @@ html, body {
   font-size: inherit;
 }
 
+/* Ensure text is selectable on iOS Safari (long-press) */
+.pdf-page .textLayer {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Selection highlight — visible blue tint */
 .pdf-page .textLayer ::selection {
   background: rgba(59, 130, 246, 0.3);
@@ -308,6 +314,12 @@ html, body {
    Text Reader Selection Styling
    Neutral color for text selection
    ============================================ */
+/* Ensure text is selectable on iOS Safari (long-press) */
+.text-reader-content {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 .text-reader-content ::selection {
   background: rgba(161, 161, 170, 0.3);
 }

@@ -75,13 +75,13 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     >
       <span
         className={`absolute left-1 top-1 h-7 w-7 rounded-full bg-zinc-100 shadow transition-transform duration-200 ${
-          theme === 'dark' ? 'translate-x-0' : 'translate-x-8'
+          theme === 'dark' ? 'translate-x-8' : 'translate-x-0'
         }`}
       />
       <span className="relative z-10 flex w-full items-center justify-between px-1">
         <svg
           className={`h-4 w-4 transition-colors ${
-            theme === 'light' ? 'text-zinc-900' : 'text-zinc-500'
+            theme === 'light' ? 'text-zinc-500' : 'text-zinc-900'
           }`}
           viewBox="0 0 24 24"
           fill="none"
@@ -103,7 +103,7 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
         </svg>
         <svg
           className={`h-4 w-4 transition-colors ${
-            theme === 'dark' ? 'text-zinc-900' : 'text-zinc-500'
+            theme === 'dark' ? 'text-zinc-500' : 'text-zinc-900'
           }`}
           viewBox="0 0 24 24"
           fill="none"
