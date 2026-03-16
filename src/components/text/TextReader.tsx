@@ -249,12 +249,20 @@ export function TextReader({ documentId }: TextReaderProps) {
   }, [isTopbarSpeedReadEnabled, readerCtx, router, documentId, currentWordIndex]);
 
   const handleBookmarkToggle = useCallback(() => {
-    toggleWordBookmark(currentWordIndex);
+    // If already bookmarked, remove it
+    if (isCurrentWordBookmarked) {
+      toggleWordBookmark(currentWordIndex);
+    } else {
+      // No selection — bookmark the first visible word with ellipsis label
+      const word = words[currentWordIndex] || '';
+      const label = word + '...';
+      addBookmark(currentWordIndex, label);
+    }
     trackEvent('text_reader_bookmark_toggled', {
       documentId,
       wordIndex: currentWordIndex,
     });
-  }, [toggleWordBookmark, currentWordIndex, documentId]);
+  }, [toggleWordBookmark, addBookmark, currentWordIndex, isCurrentWordBookmarked, words, documentId]);
 
   // Persist live text reading position for future unified progress sync.
   useEffect(() => {
@@ -618,22 +626,55 @@ export function TextReader({ documentId }: TextReaderProps) {
     }
   }, []);
 
-  // Scroll to a bookmark by finding the word span
+  // Scroll to a bookmark: collapse sidebar, scroll to word, highlight in orange until tap/click
   const scrollToBookmark = useCallback((bookmark: TextBookmark) => {
     if (!textContainerRef.current) return;
 
-    const wordSpan = textContainerRef.current.querySelector(
-      `[data-word-index="${bookmark.wordIndex}"]`
-    );
-    if (wordSpan) {
-      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // Collapse the sidebar
+    setSidebarOpen(false);
 
-      // Flash effect to indicate the bookmarked word
-      wordSpan.classList.add('ring-2', 'ring-zinc-400', 'rounded');
-      setTimeout(() => {
-        wordSpan.classList.remove('ring-2', 'ring-zinc-400', 'rounded');
-      }, 1500);
+    const container = textContainerRef.current;
+    const startIdx = bookmark.wordIndex;
+    const endIdx = bookmark.endWordIndex ?? bookmark.wordIndex;
+
+    // Collect all word spans in the bookmark range
+    const spans: HTMLElement[] = [];
+    for (let i = startIdx; i <= endIdx; i++) {
+      const span = container.querySelector(`[data-word-index="${i}"]`) as HTMLElement | null;
+      if (span) spans.push(span);
     }
+
+    if (spans.length === 0) return;
+
+    // Scroll to first span
+    requestAnimationFrame(() => {
+      spans[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      // Apply persistent orange highlight to all spans in the range
+      spans.forEach((span) => {
+        span.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
+        span.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
+        span.style.borderRadius = '3px';
+      });
+
+      const clearHighlight = () => {
+        spans.forEach((span) => {
+          span.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
+          span.style.backgroundColor = '';
+          span.style.boxShadow = '';
+          setTimeout(() => {
+            span.style.transition = '';
+            span.style.borderRadius = '';
+          }, 600);
+        });
+        document.removeEventListener('pointerdown', clearHighlight);
+      };
+
+      // Delay listener so the click that triggered "select bookmark" doesn't immediately clear
+      setTimeout(() => {
+        document.addEventListener('pointerdown', clearHighlight, { once: true });
+      }, 500);
+    });
   }, []);
 
   // Generate a snippet for a bookmark (40-60 chars centered on the word)
@@ -945,7 +986,7 @@ export function TextReader({ documentId }: TextReaderProps) {
                           </svg>
                           <div className="flex-1 min-w-0">
                             <p className="text-zinc-300 text-sm line-clamp-2 mb-1">
-                              &quot;{getBookmarkSnippet(bookmark.wordIndex)}&quot;
+                              &quot;{bookmark.label || getBookmarkSnippet(bookmark.wordIndex)}&quot;
                             </p>
                             <p className="text-zinc-500 text-xs">
                               {getBookmarkPosition(bookmark.wordIndex)}
@@ -1072,7 +1113,11 @@ export function TextReader({ documentId }: TextReaderProps) {
             anchorRect={selection.anchorRect}
             onCreateHighlight={handleCreateHighlight}
             onSpeedRead={handleSpeedReadSelection}
-            onBookmark={() => addBookmark(selection.startWord)}
+            onBookmark={() => {
+              const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
+              const label = selectedWords.join(' ');
+              addBookmark(selection.startWord, label, selection.endWord);
+            }}
             onClose={handleCloseSelection}
           />
         )}

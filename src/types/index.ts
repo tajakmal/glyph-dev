@@ -102,6 +102,8 @@ export interface TextBookmark extends BookmarkBase {
   kind: 'text';
   /** Word index (0-based) */
   wordIndex: number;
+  /** End word index (0-based, inclusive) — present for range bookmarks */
+  endWordIndex?: number;
 }
 
 export type Bookmark = PDFBookmark | TextBookmark;
