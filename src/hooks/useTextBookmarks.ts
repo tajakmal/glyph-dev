@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Bookmark, TextBookmark } from '@/types';
 import { VALIDATION } from '@/types';
@@ -31,6 +31,13 @@ interface UseTextBookmarksReturn {
   getBookmarkForWord: (wordIndex: number) => TextBookmark | undefined;
   /** Toggle bookmark at a word index */
   toggleBookmark: (wordIndex: number) => void;
+}
+
+// Custom event name for cross-instance sync
+const BOOKMARKS_CHANGED_EVENT = 'glyph:bookmarks-changed';
+
+function notifyBookmarksChanged(documentId: string) {
+  window.dispatchEvent(new CustomEvent(BOOKMARKS_CHANGED_EVENT, { detail: { documentId } }));
 }
 
 // Type guard for text bookmarks
@@ -72,6 +79,18 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
     setLocalBookmarks(getSortedTextBookmarksForDocument(currentDocId));
   }
 
+  // Listen for changes from other hook instances (e.g. SpeedReadPanel ↔ TextReader)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.documentId === documentId) {
+        setLocalBookmarks(getSortedTextBookmarksForDocument(documentId));
+      }
+    };
+    window.addEventListener(BOOKMARKS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(BOOKMARKS_CHANGED_EVENT, handler);
+  }, [documentId]);
+
   const addBookmark = useCallback((wordIndex: number, label?: string, endWordIndex?: number): TextBookmark => {
     // Check if already bookmarked at this word
     const existing = bookmarks.find(b => b.wordIndex === wordIndex);
@@ -101,6 +120,7 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
       return updated.sort((a, b) => a.wordIndex - b.wordIndex);
     });
     enqueueSync(`bookmark-upsert:${bookmark.id}:${Date.now()}`, bookmark);
+    notifyBookmarksChanged(documentId);
 
     return bookmark;
   }, [documentId, bookmarks, enqueueSync]);
@@ -113,7 +133,8 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
     // Update local state
     setLocalBookmarks(prev => prev.filter(b => b.id !== id));
     enqueueSync(`bookmark-upsert:${id}:${Date.now()}`, { id, deleted: true });
-  }, [enqueueSync]);
+    notifyBookmarksChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const updateBookmark = useCallback((id: string, label: string) => {
     // Validate label length
@@ -132,7 +153,8 @@ export function useTextBookmarks({ documentId }: UseTextBookmarksOptions): UseTe
       prev.map(b => (b.id === id ? { ...b, label: safeLabel } : b))
     );
     enqueueSync(`bookmark-upsert:${id}:${Date.now()}`, { id, label: safeLabel });
-  }, [enqueueSync]);
+    notifyBookmarksChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const isWordBookmarked = useCallback((wordIndex: number): boolean => {
     return bookmarks.some(b => b.wordIndex === wordIndex);
