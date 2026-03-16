@@ -332,8 +332,8 @@ export function TextReader({ documentId }: TextReaderProps) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidebar, handleBookmarkToggle]);
 
-  // Handle text selection
-  const handleMouseUp = useCallback(() => {
+  // Handle text selection (works for both mouse and touch via selectionchange)
+  const processSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !textContainerRef.current) {
       return;
@@ -388,6 +388,36 @@ export function TextReader({ documentId }: TextReaderProps) {
       anchorRect: { x: anchorX, y: anchorY },
     });
   }, []);
+
+  // Listen for selectionchange to support mobile text selection (long-press + handle drag)
+  // Also handles desktop mouseup selection
+  useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const handleSelectionChange = () => {
+      // Debounce: on mobile, selectionchange fires rapidly as handles are dragged
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const sel = window.getSelection();
+        if (!sel || sel.isCollapsed) {
+          return; // Don't clear selection state here — let the popover handle that
+        }
+
+        // Only process if the selection is within our text container
+        if (!textContainerRef.current) return;
+        const range = sel.getRangeAt(0);
+        if (!textContainerRef.current.contains(range.commonAncestorContainer)) return;
+
+        processSelection();
+      }, 200);
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      if (debounceTimer) clearTimeout(debounceTimer);
+    };
+  }, [processSelection]);
 
   // Close selection popover
   const handleCloseSelection = useCallback(() => {
@@ -912,7 +942,7 @@ export function TextReader({ documentId }: TextReaderProps) {
             <div
               ref={textContainerRef}
               className="prose prose-invert prose-zinc max-w-none text-reader-content"
-              onMouseUp={handleMouseUp}
+              onMouseUp={processSelection}
             >
               {(() => {
                 if (!textContent) return null;
