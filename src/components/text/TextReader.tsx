@@ -337,7 +337,7 @@ export function TextReader({ documentId }: TextReaderProps) {
   // Handle text selection (works for both mouse and touch via selectionchange)
   const processSelection = useCallback(() => {
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !textContainerRef.current) {
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !textContainerRef.current) {
       return;
     }
 
@@ -347,41 +347,68 @@ export function TextReader({ documentId }: TextReaderProps) {
       return;
     }
 
-    // Find start and end word indices from the selection
     const container = textContainerRef.current;
-
-    // Get start word index
-    let startNode = range.startContainer;
-    if (startNode.nodeType === Node.TEXT_NODE) {
-      startNode = startNode.parentElement as Node;
+    if (!container.contains(range.commonAncestorContainer)) {
+      return;
     }
-    const startSpan = (startNode as Element).closest?.('[data-word-index]');
 
-    // Get end word index
-    let endNode = range.endContainer;
-    if (endNode.nodeType === Node.TEXT_NODE) {
-      endNode = endNode.parentElement as Node;
+    // Try to find word spans from selection endpoints
+    const findWordSpan = (node: Node): Element | null => {
+      let el: Node | null = node;
+      if (el.nodeType === Node.TEXT_NODE) {
+        el = el.parentElement;
+      }
+      if (!el || !(el instanceof Element)) return null;
+      // Try closest first (works when selection is inside a word span)
+      const span = el.closest('[data-word-index]');
+      if (span) return span;
+      // Fallback: if we're on a container element, find the first/last child word span
+      return null;
+    };
+
+    let startSpan = findWordSpan(range.startContainer);
+    let endSpan = findWordSpan(range.endContainer);
+
+    // Fallback: if closest() failed (e.g., selection starts in whitespace between spans
+    // on iOS Safari), find intersecting word spans by checking all spans against the range
+    if (!startSpan || !endSpan) {
+      const wordSpans = container.querySelectorAll('[data-word-index]');
+      let firstMatch: Element | null = null;
+      let lastMatch: Element | null = null;
+
+      for (const span of wordSpans) {
+        if (range.intersectsNode(span)) {
+          if (!firstMatch) firstMatch = span;
+          lastMatch = span;
+        }
+      }
+
+      if (!firstMatch || !lastMatch) return;
+      startSpan = startSpan || firstMatch;
+      endSpan = endSpan || lastMatch;
     }
-    const endSpan = (endNode as Element).closest?.('[data-word-index]');
 
-    if (!startSpan || !endSpan || !container.contains(startSpan) || !container.contains(endSpan)) {
+    if (!container.contains(startSpan) || !container.contains(endSpan)) {
       return;
     }
 
     const startWord = parseInt(startSpan.getAttribute('data-word-index') || '0', 10);
     const endWord = parseInt(endSpan.getAttribute('data-word-index') || '0', 10);
 
-    // Normalize ordering
     const normalizedStart = Math.min(startWord, endWord);
     const normalizedEnd = Math.max(startWord, endWord);
 
     // Get anchor position for popover (center-top of selection)
     const rects = range.getClientRects();
-    if (rects.length === 0) return;
-    const firstRect = rects[0];
-    const lastRect = rects[rects.length - 1];
-    const anchorX = (firstRect.left + lastRect.right) / 2;
-    const anchorY = firstRect.top;
+    // Fallback to getBoundingClientRect if getClientRects is empty (iOS edge case)
+    const rect = rects.length > 0
+      ? { first: rects[0], last: rects[rects.length - 1] }
+      : { first: range.getBoundingClientRect(), last: range.getBoundingClientRect() };
+
+    if (rect.first.width === 0 && rect.first.height === 0) return;
+
+    const anchorX = (rect.first.left + rect.last.right) / 2;
+    const anchorY = rect.first.top;
 
     setSelection({
       startWord: normalizedStart,
