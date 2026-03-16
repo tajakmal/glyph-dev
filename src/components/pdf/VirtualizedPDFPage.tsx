@@ -33,6 +33,8 @@ interface VirtualizedPDFPageProps {
   onBookmarkToggle?: () => void;
   /** Callback when page dimensions are known */
   onDimensionsReady?: (width: number, height: number) => void;
+  /** Word index on this page to highlight (from speed-read return) */
+  wordHighlightIndex?: number;
 }
 
 export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageProps>(
@@ -51,6 +53,7 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
       isBookmarked,
       onBookmarkToggle,
       onDimensionsReady,
+      wordHighlightIndex,
     },
     ref
   ) {
@@ -60,6 +63,65 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
     const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
     const [isRendered, setIsRendered] = useState(false);
     const [renderError, setRenderError] = useState<string | null>(null);
+
+    // Word highlight overlay rect (for speed-read return highlight)
+    const [wordHighlightRect, setWordHighlightRect] = useState<{
+      x: number; y: number; width: number; height: number;
+    } | null>(null);
+    const highlightRafRef = useRef<number>(0);
+
+    useEffect(() => {
+      cancelAnimationFrame(highlightRafRef.current);
+
+      if (wordHighlightIndex == null || !isRendered) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: clearing overlay when target is removed
+        setWordHighlightRect(null);
+        return;
+      }
+
+      const container = containerRef.current;
+      if (!container) return;
+
+      // Poll every frame until the word span is available (text layer is async).
+      // This avoids the MutationObserver race condition where mutations can fire
+      // between a failed querySelector and observer.observe().
+      const startTime = performance.now();
+      let scrolled = false;
+
+      const poll = () => {
+        const wordSpan = container.querySelector(
+          `span[data-word-index="${wordHighlightIndex}"]`
+        ) as HTMLElement | null;
+
+        if (wordSpan) {
+          const containerRect = container.getBoundingClientRect();
+          const spanRect = wordSpan.getBoundingClientRect();
+          setWordHighlightRect({
+            x: spanRect.left - containerRect.left,
+            y: spanRect.top - containerRect.top,
+            width: spanRect.width,
+            height: spanRect.height,
+          });
+          if (!scrolled) {
+            scrolled = true;
+            wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+          return; // done
+        }
+
+        // Give up after 3 seconds
+        if (performance.now() - startTime < 3000) {
+          highlightRafRef.current = requestAnimationFrame(poll);
+        }
+      };
+
+      // Start polling after a short delay to let React commit the text layer
+      highlightRafRef.current = requestAnimationFrame(poll);
+
+      return () => {
+        cancelAnimationFrame(highlightRafRef.current);
+      };
+    }, [wordHighlightIndex, isRendered, zoom]);
 
     // Use ref for callback to avoid infinite render loops
     const onDimensionsReadyRef = useRef(onDimensionsReady);
@@ -211,6 +273,25 @@ export const VirtualizedPDFPage = forwardRef<HTMLDivElement, VirtualizedPDFPageP
               selectedHighlightId={selectedHighlightId}
             />
           </>
+        )}
+
+        {/* Word highlight overlay for speed-read return */}
+        {wordHighlightRect && (
+          <div
+            className="word-return-highlight"
+            style={{
+              position: 'absolute',
+              left: wordHighlightRect.x,
+              top: wordHighlightRect.y,
+              width: wordHighlightRect.width,
+              height: wordHighlightRect.height,
+              backgroundColor: 'rgba(251, 146, 60, 0.55)',
+              boxShadow: '0 0 0 2px rgba(251, 146, 60, 0.4)',
+              borderRadius: 2,
+              pointerEvents: 'none',
+              zIndex: 10,
+            }}
+          />
         )}
 
         {/* Bookmark indicator */}
