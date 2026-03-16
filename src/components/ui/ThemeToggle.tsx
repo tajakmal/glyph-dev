@@ -56,10 +56,13 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     }
   };
 
+  const isDark = theme === 'dark';
+
   if (!mounted) {
     return (
       <div
-        className={`h-9 w-[72px] rounded-full border border-zinc-700 bg-zinc-800/80 ${className}`}
+        className={`h-[38px] w-[72px] rounded-full ${className}`}
+        style={{ background: '#d3d1c7' }}
         aria-hidden="true"
       />
     );
@@ -69,51 +72,68 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
     <button
       type="button"
       onClick={handleToggle}
-      className={`relative inline-flex h-9 w-[72px] items-center rounded-full border border-zinc-700 bg-zinc-800/80 p-1 transition-colors hover:bg-zinc-700 ${className}`}
-      aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
-      title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
+      className={`relative inline-flex h-[38px] w-[72px] items-center rounded-full p-0 border-0 cursor-pointer ${className}`}
+      style={{
+        background: isDark ? '#3f3f46' : '#d3d1c7',
+        transition: 'background 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+        WebkitTapHighlightColor: 'transparent',
+      }}
+      aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+      title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
     >
+      {/* Thumb with icon inside */}
       <span
-        className={`absolute left-1 top-1 h-7 w-7 rounded-full bg-zinc-100 shadow transition-transform duration-200 ${
-          theme === 'dark' ? 'translate-x-8' : 'translate-x-0'
-        }`}
-      />
-      <span className="relative z-10 flex w-full items-center justify-between px-1">
+        className="absolute flex items-center justify-center"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: '50%',
+          background: isDark ? '#18181b' : '#fff',
+          top: 4,
+          left: 4,
+          transform: isDark ? 'translateX(34px)' : 'translateX(0)',
+          transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), background 0.5s ease',
+        }}
+      >
+        {/* Sun icon */}
         <svg
-          className={`h-4 w-4 transition-colors ${
-            theme === 'light' ? 'text-zinc-500' : 'text-zinc-900'
-          }`}
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
           aria-hidden="true"
+          style={{
+            position: 'absolute',
+            opacity: isDark ? 0 : 1,
+            transform: isDark ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'opacity 0.3s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }}
         >
-          <circle cx="12" cy="12" r="4" />
-          <path d="M12 2v2" />
-          <path d="M12 20v2" />
-          <path d="M4.93 4.93l1.41 1.41" />
-          <path d="M17.66 17.66l1.41 1.41" />
-          <path d="M2 12h2" />
-          <path d="M20 12h2" />
-          <path d="M4.93 19.07l1.41-1.41" />
-          <path d="M17.66 6.34l1.41-1.41" />
+          <circle cx="12" cy="12" r="5" fill="#ba7517" />
+          <line x1="12" y1="1" x2="12" y2="4" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="12" y1="20" x2="12" y2="23" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="4.22" y1="4.22" x2="6.34" y2="6.34" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="17.66" y1="17.66" x2="19.78" y2="19.78" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="1" y1="12" x2="4" y2="12" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="20" y1="12" x2="23" y2="12" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="4.22" y1="19.78" x2="6.34" y2="17.66" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
+          <line x1="17.66" y1="6.34" x2="19.78" y2="4.22" stroke="#ba7517" strokeWidth="2" strokeLinecap="round" />
         </svg>
+        {/* Moon icon */}
         <svg
-          className={`h-4 w-4 transition-colors ${
-            theme === 'dark' ? 'text-zinc-500' : 'text-zinc-900'
-          }`}
+          width="16"
+          height="16"
           viewBox="0 0 24 24"
           fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
           aria-hidden="true"
+          style={{
+            position: 'absolute',
+            opacity: isDark ? 1 : 0,
+            transform: isDark ? 'rotate(0deg)' : 'rotate(-90deg)',
+            transition: 'opacity 0.3s ease, transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }}
         >
-          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" fill="#e4e4e7" />
         </svg>
       </span>
     </button>
