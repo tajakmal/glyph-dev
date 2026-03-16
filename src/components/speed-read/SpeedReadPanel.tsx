@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useReaderContext } from '@/contexts/ReaderContext';
+import { useTextBookmarks } from '@/hooks/useTextBookmarks';
 
 // =============================================================================
 // ORP Calculation (shared with SpritzReader)
@@ -50,7 +51,30 @@ export function SpeedReadPanel() {
     jumpToWordInPDF,
     setViewMode,
     documentKind,
+    documentId,
   } = useReaderContext();
+
+  // Bookmarks
+  const {
+    addBookmark,
+    isWordBookmarked,
+    toggleBookmark,
+  } = useTextBookmarks({ documentId });
+
+  const isCurrentWordBookmarked = useMemo(
+    () => isWordBookmarked(currentWordIndex),
+    [isWordBookmarked, currentWordIndex]
+  );
+
+  const handleBookmarkToggle = useCallback(() => {
+    if (isCurrentWordBookmarked) {
+      toggleBookmark(currentWordIndex);
+    } else {
+      const word = words[currentWordIndex] || '';
+      const label = word + '...';
+      addBookmark(currentWordIndex, label);
+    }
+  }, [isCurrentWordBookmarked, toggleBookmark, addBookmark, currentWordIndex, words]);
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [wpm, setWpm] = useState(300);
@@ -360,6 +384,22 @@ export function SpeedReadPanel() {
                   <polygon points="5 3 19 12 5 21 5 3"/>
                 </svg>
               )}
+            </button>
+
+            {/* Bookmark button */}
+            <button
+              onClick={handleBookmarkToggle}
+              className={`p-3 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 ${
+                isCurrentWordBookmarked
+                  ? 'bg-orange-500/20 text-orange-400'
+                  : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400'
+              }`}
+              title={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this word'}
+              aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this word'}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
             </button>
 
             {/* Show in Document (inline) */}

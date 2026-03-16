@@ -633,6 +633,9 @@ export function TextReader({ documentId }: TextReaderProps) {
     // Collapse the sidebar
     setSidebarOpen(false);
 
+    // Update currentWordIndex so speed read starts from here
+    setCurrentWordIndex(bookmark.wordIndex);
+
     const container = textContainerRef.current;
     const startIdx = bookmark.wordIndex;
     const endIdx = bookmark.endWordIndex ?? bookmark.wordIndex;
