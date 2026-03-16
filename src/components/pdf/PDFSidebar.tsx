@@ -127,12 +127,16 @@ export function PDFSidebar({
 }: PDFSidebarProps) {
   const [activeTab, setActiveTab] = useState<TabType>('contents');
 
-  if (!isOpen) {
-    return null;
-  }
-
   return (
-    <div className="w-[280px] h-full bg-zinc-900 border-r border-zinc-800 flex flex-col">
+    <div
+      className={`
+        h-full bg-zinc-900 border-r border-zinc-800 flex flex-col w-[280px]
+        fixed sm:relative z-30 sm:z-auto top-0 left-0
+        transition-transform duration-300 ease-in-out sm:transition-none
+        ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${!isOpen ? 'sm:hidden' : ''}
+      `}
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
         <h2 className="text-zinc-200 text-sm font-medium truncate flex-1" title={documentTitle}>
