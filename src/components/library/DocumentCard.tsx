@@ -5,6 +5,19 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import type { DocumentMeta } from '@/types';
 
+function formatRelativeTime(timestamp: number | undefined, now: number): string | null {
+  if (!timestamp) return null;
+  const diff = now - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
+}
+
 interface DocumentCardProps {
   document: DocumentMeta;
   onDelete: (id: string) => void;
@@ -41,6 +54,15 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
+
+  const progressPercent = document.readingProgress != null
+    ? Math.round(document.readingProgress * 100)
+    : null;
+  const hasProgress = progressPercent !== null && progressPercent > 0;
+
+  // lastReadAt is computed from props only — the `now` value is passed from parent
+  // or we accept slight staleness since cards re-mount on navigation
+  const [lastReadLabel] = useState(() => formatRelativeTime(document.lastReadAt, Date.now()));
 
   return (
     <>
@@ -91,6 +113,15 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
               Text
             </div>
           )}
+          {/* Reading progress bar */}
+          {hasProgress && (
+            <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-700/50">
+              <div
+                className="h-full bg-orange-400/80 transition-all duration-300"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          )}
         </div>
 
         {/* Info */}
@@ -118,18 +149,24 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
             <>
               <p className="text-zinc-500 text-xs mt-1">
                 {document.wordCount ?? 0} {document.wordCount === 1 ? 'word' : 'words'}
+                {hasProgress && <span className="text-orange-400/70"> • {progressPercent}%</span>}
               </p>
-              <p className="text-zinc-600 text-xs mt-0.5 truncate" title={document.textPreview || 'No preview'}>
-                {document.textPreview || 'No preview'}
-              </p>
+              {lastReadLabel ? (
+                <p className="text-zinc-600 text-xs mt-0.5">{lastReadLabel}</p>
+              ) : (
+                <p className="text-zinc-600 text-xs mt-0.5 truncate" title={document.textPreview || 'No preview'}>
+                  {document.textPreview || 'No preview'}
+                </p>
+              )}
             </>
           ) : (
             <>
               <p className="text-zinc-500 text-xs mt-1">
                 {document.pageCount} pages • {formatFileSize(document.fileSize)}
+                {hasProgress && <span className="text-orange-400/70"> • {progressPercent}%</span>}
               </p>
               <p className="text-zinc-600 text-xs mt-0.5">
-                Last read: p.{document.lastReadPage}
+                {lastReadLabel || `Last read: p.${document.lastReadPage}`}
               </p>
             </>
           )}
@@ -162,7 +199,7 @@ export function DocumentCard({ document, onDelete, onRename }: DocumentCardProps
               onClick={(e) => {
                 e.stopPropagation();
                 setShowContextMenu(false);
-                router.push(`/speed-read?documentId=${document.id}`);
+                router.push(`/reader/${document.id}?mode=speed-read`);
               }}
             >
               Speed Read

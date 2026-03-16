@@ -1,29 +1,17 @@
 'use client';
 
-import { useEffect, useState, Suspense, useCallback, useRef } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { SpritzReader } from '@/components/SpritzReader';
-import { getPDF, getText as getTextContent } from '@/lib/storage';
-import { loadPDF, extractAllTextCached } from '@/lib/pdf-utils';
-import { getDocuments } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
-import { saveSpeedReadSession } from '@/lib/speed-read';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { trackEvent } from '@/lib/telemetry';
 
 function SpeedReadContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [words, setWords] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [documentTitle, setDocumentTitle] = useState<string>('');
   const [returnPath, setReturnPath] = useState<string | null>(null);
-  const [startIndex, setStartIndex] = useState(0);
-  const [documentId, setDocumentId] = useState<string | null>(null);
-  const [documentKind, setDocumentKind] = useState<'pdf' | 'text' | null>(null);
-
-  // Track the last saved index to avoid excessive sessionStorage writes
-  const lastSavedIndexRef = useRef<number>(-1);
 
   useEffect(() => {
     const loadText = async () => {
@@ -57,63 +45,10 @@ function SpeedReadContent() {
           return;
         }
 
-        // Check for document ID (full document speed read)
+        // Redirect document-based speed reads to the unified reader page
         const docId = searchParams.get('documentId');
         if (docId) {
-          setDocumentId(docId);
-
-          // Parse startIndex from query params
-          const startIndexParam = searchParams.get('startIndex');
-          if (startIndexParam) {
-            const parsed = parseInt(startIndexParam, 10);
-            if (!isNaN(parsed) && parsed >= 0) {
-              setStartIndex(parsed);
-            }
-          }
-
-          // Parse kind from query params, or infer from document metadata
-          const kindParam = searchParams.get('kind') as 'pdf' | 'text' | null;
-
-          // Get document metadata
-          const documents = getDocuments();
-          const doc = documents.find(d => d.id === docId);
-          if (doc) {
-            setDocumentTitle(doc.title);
-            setReturnPath(`/reader/${docId}`);
-
-            // Determine kind - use param if provided, otherwise use document metadata
-            const kind = kindParam || doc.kind || 'pdf';
-            setDocumentKind(kind);
-
-            if (kind === 'text') {
-              // Load text document
-              const textContent = await getTextContent(docId);
-              if (textContent) {
-                const tokenized = tokenize(textContent);
-                setWords(tokenized);
-                trackEvent('speedread_document_loaded', {
-                  documentId: docId,
-                  kind: 'text',
-                  wordCount: tokenized.length,
-                });
-              }
-            } else {
-              // Load PDF and extract text
-              const pdfData = await getPDF(docId);
-              if (pdfData) {
-                const pdf = await loadPDF(pdfData);
-                const extractedText = await extractAllTextCached(pdf, docId);
-                const tokenized = tokenize(extractedText);
-                setWords(tokenized);
-                trackEvent('speedread_document_loaded', {
-                  documentId: docId,
-                  kind: 'pdf',
-                  wordCount: tokenized.length,
-                });
-              }
-            }
-          }
-          setIsLoading(false);
+          router.replace(`/reader/${docId}?mode=speed-read`);
           return;
         }
 
@@ -128,18 +63,7 @@ function SpeedReadContent() {
     loadText();
   }, [searchParams]);
 
-  // Handle index changes - save to sessionStorage for return-to-word feature
-  const handleIndexChange = useCallback((index: number) => {
-    // Only save if we have document context and index has changed significantly (every 10 words)
-    if (documentId && documentKind && Math.abs(index - lastSavedIndexRef.current) >= 10) {
-      saveSpeedReadSession({
-        documentId,
-        kind: documentKind,
-        wordIndex: index,
-      });
-      lastSavedIndexRef.current = index;
-    }
-  }, [documentId, documentKind]);
+  // No-op index change handler for standalone speed reading (no document context to save to)
 
   const handleBack = () => {
     if (returnPath) {
@@ -207,11 +131,6 @@ function SpeedReadContent() {
             </button>
           )}
 
-          {documentTitle && (
-            <span className="text-zinc-500 text-sm truncate max-w-[300px]">
-              {documentTitle}
-            </span>
-          )}
         </div>
         <ThemeToggle />
       </div>
@@ -220,8 +139,6 @@ function SpeedReadContent() {
       <div className="flex-1 overflow-hidden">
         <SpritzReader
           words={words}
-          initialIndex={startIndex}
-          onIndexChange={handleIndexChange}
         />
       </div>
     </div>
