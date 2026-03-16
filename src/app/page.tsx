@@ -106,10 +106,10 @@ export default function HomePage() {
     <main className="min-h-screen bg-zinc-950 px-3 sm:px-4 py-6 sm:py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <header className="flex items-center justify-between mb-6 sm:mb-8">
-          <div className="flex-1" />
+        <header className="flex items-start justify-between mb-6 sm:mb-8">
+          <div className="flex-1 h-[38px]" />
           <div className="text-center">
-            <h1 className="text-3xl sm:text-4xl font-bold text-zinc-100 tracking-tight">GLYPH</h1>
+            <h1 className="text-3xl sm:text-4xl font-bold text-zinc-100 tracking-tight leading-[38px]">GLYPH</h1>
             <p className="text-zinc-500 text-sm sm:text-base mt-1">Speed reading, one word at a time</p>
           </div>
           <div className="flex-1 flex justify-end">
