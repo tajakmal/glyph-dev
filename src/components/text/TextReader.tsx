@@ -148,7 +148,7 @@ export function TextReader({ documentId }: TextReaderProps) {
 
         wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
-        // Apply persistent highlight — stays until user scrolls or clicks
+        // Apply persistent highlight — stays until user taps/clicks the screen
         wordSpan.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
         wordSpan.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
         wordSpan.style.borderRadius = '3px';
@@ -161,12 +161,14 @@ export function TextReader({ documentId }: TextReaderProps) {
             wordSpan.style.transition = '';
             wordSpan.style.borderRadius = '';
           }, 600);
-          scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
-          document.removeEventListener('click', clearHighlight);
+          document.removeEventListener('pointerdown', clearHighlight);
         };
 
-        scrollContainerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
-        document.addEventListener('click', clearHighlight, { once: true });
+        // Only clear on user interaction (tap/click), not scroll.
+        // Delay listener registration so the tap that triggered "back to reader" doesn't immediately clear it.
+        setTimeout(() => {
+          document.addEventListener('pointerdown', clearHighlight, { once: true });
+        }, 500);
       });
     }
   }, [readerCtx?.viewMode, readerCtx?.currentWordIndex, readerCtx]);
@@ -395,11 +397,12 @@ export function TextReader({ documentId }: TextReaderProps) {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
     const handleSelectionChange = () => {
-      // Debounce: on mobile, selectionchange fires rapidly as handles are dragged
+      // Debounce: on iOS Safari, selectionchange fires rapidly during long-press
+      // and handle dragging. Use a longer debounce to wait for selection to stabilize.
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const sel = window.getSelection();
-        if (!sel || sel.isCollapsed) {
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
           return; // Don't clear selection state here — let the popover handle that
         }
 
@@ -408,8 +411,12 @@ export function TextReader({ documentId }: TextReaderProps) {
         const range = sel.getRangeAt(0);
         if (!textContainerRef.current.contains(range.commonAncestorContainer)) return;
 
+        // On iOS, verify the selection has actual text (not just an empty range from long-press start)
+        const text = sel.toString().trim();
+        if (!text) return;
+
         processSelection();
-      }, 200);
+      }, 300);
     };
 
     document.addEventListener('selectionchange', handleSelectionChange);
@@ -736,72 +743,92 @@ export function TextReader({ documentId }: TextReaderProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Top Bar */}
-      <div className="h-12 bg-zinc-900 border-b border-zinc-800 flex items-center justify-between px-4">
-        {/* Left: Sidebar toggle, Home button, and title */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={toggleSidebar}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <button
-            onClick={handleNavigateHome}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            aria-label="Back to library"
-            title="Back to Library"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-            </svg>
-          </button>
-          <span className="text-zinc-300 text-sm font-medium truncate max-w-[300px]" title={documentTitle}>
-            {documentTitle}
-          </span>
-        </div>
-
-        {/* Center: Position indicator */}
-        <div className="flex items-center gap-2 text-zinc-500 text-sm">
-          {words.length > 0 && (
-            <span aria-live="polite">
-              Word {currentWordIndex + 1} / {words.length} ({Math.round(((currentWordIndex + 1) / words.length) * 100)}%)
+      <div className="bg-zinc-900 border-b border-zinc-800">
+        {/* Main row */}
+        <div className="h-12 flex items-center justify-between px-2 sm:px-4">
+          {/* Left: Sidebar toggle, Home button, and title */}
+          <div className="flex items-center gap-1 sm:gap-3 min-w-0 flex-1">
+            <button
+              onClick={toggleSidebar}
+              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
+              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button
+              onClick={handleNavigateHome}
+              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
+              aria-label="Back to library"
+              title="Back to Library"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+            </button>
+            <span className="text-zinc-300 text-sm font-medium truncate" title={documentTitle}>
+              {documentTitle}
             </span>
-          )}
+          </div>
+
+          {/* Center: Position indicator — hidden on mobile, shown on sm+ */}
+          <div className="hidden sm:flex items-center gap-2 text-zinc-500 text-sm flex-shrink-0 mx-4">
+            {words.length > 0 && (
+              <span aria-live="polite">
+                Word {currentWordIndex + 1} / {words.length} ({Math.round(((currentWordIndex + 1) / words.length) * 100)}%)
+              </span>
+            )}
+          </div>
+
+          {/* Right: Speed Read, Bookmark, Theme */}
+          <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+            <button
+              onClick={handleSpeedRead}
+              disabled={!isTopbarSpeedReadEnabled}
+              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Speed read document"
+              title="Speed read document"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </button>
+            <button
+              onClick={handleBookmarkToggle}
+              className={`p-2 rounded-lg transition-colors ${
+                isCurrentWordBookmarked
+                  ? 'text-orange-500 bg-orange-500/10'
+                  : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
+              }`}
+              aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
+              aria-pressed={isCurrentWordBookmarked}
+              title={isCurrentWordBookmarked ? 'Remove bookmark (B)' : 'Bookmark this position (B)'}
+            >
+              <svg className="w-5 h-5" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+              </svg>
+            </button>
+            <ThemeToggle />
+          </div>
         </div>
 
-        {/* Right: Speed Read, Bookmark */}
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleSpeedRead}
-            disabled={!isTopbarSpeedReadEnabled}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            aria-label="Speed read document"
-            title="Speed read document"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-          </button>
-          <button
-            onClick={handleBookmarkToggle}
-            className={`p-2 rounded-lg transition-colors ${
-              isCurrentWordBookmarked
-                ? 'text-orange-500 bg-orange-500/10'
-                : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
-            }`}
-            aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
-            aria-pressed={isCurrentWordBookmarked}
-            title={isCurrentWordBookmarked ? 'Remove bookmark (B)' : 'Bookmark this position (B)'}
-          >
-            <svg className="w-5 h-5" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-            </svg>
-          </button>
-          <ThemeToggle />
-        </div>
+        {/* Mobile progress bar — shown on mobile only */}
+        {words.length > 0 && (
+          <div className="sm:hidden px-3 pb-1.5">
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-zinc-500 rounded-full transition-all duration-300"
+                  style={{ width: `${Math.round(((currentWordIndex + 1) / words.length) * 100)}%` }}
+                />
+              </div>
+              <span className="text-zinc-500 text-xs tabular-nums flex-shrink-0" aria-live="polite">
+                {Math.round(((currentWordIndex + 1) / words.length) * 100)}%
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Main content area */}
@@ -942,6 +969,7 @@ export function TextReader({ documentId }: TextReaderProps) {
             <div
               ref={textContainerRef}
               className="prose prose-invert prose-zinc max-w-none text-reader-content"
+              style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
               onMouseUp={processSelection}
             >
               {(() => {

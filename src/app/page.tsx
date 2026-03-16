@@ -103,15 +103,18 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen bg-zinc-950 px-4 py-8">
+    <main className="min-h-screen bg-zinc-950 px-3 sm:px-4 py-6 sm:py-8">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <header className="relative text-center mb-8">
-          <div className="absolute right-0 top-0">
+        <header className="flex items-center justify-between mb-6 sm:mb-8">
+          <div className="flex-1" />
+          <div className="text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold text-zinc-100 tracking-tight">GLYPH</h1>
+            <p className="text-zinc-500 text-sm sm:text-base mt-1">Speed reading, one word at a time</p>
+          </div>
+          <div className="flex-1 flex justify-end">
             <ThemeToggle />
           </div>
-          <h1 className="text-4xl font-bold text-zinc-100 tracking-tight">GLYPH</h1>
-          <p className="text-zinc-500 mt-2">Speed reading, one word at a time</p>
         </header>
 
         {/* Upload Zone and Paste Text */}
