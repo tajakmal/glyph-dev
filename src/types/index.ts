@@ -37,6 +37,16 @@ interface DocumentMetaBase {
   lastReadPage?: number;
   /** Base64 JPEG data URL of first page thumbnail */
   thumbnailDataUrl?: string;
+  /** Last word index read (0-based), for speed read resume */
+  lastWordIndex?: number;
+  /** Reading progress (0-1) */
+  readingProgress?: number;
+  /** Total word count (cached for progress calculation) */
+  totalWords?: number;
+  /** Last used WPM for this document */
+  speedReadWpm?: number;
+  /** Unix timestamp (ms) of last reading session */
+  lastReadAt?: number;
 }
 
 /**
