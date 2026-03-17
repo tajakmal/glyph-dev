@@ -237,7 +237,7 @@ export function SpeedReadPanel() {
       tapCountRef.current = 0;
       setIsAutoPlaying(true);
     }
-  }, []);
+  }, [isAutoPlaying]);
 
   const handlePressCancel = useCallback(() => {
     isPressedRef.current = false;
