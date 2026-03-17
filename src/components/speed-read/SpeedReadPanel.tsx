@@ -209,6 +209,18 @@ export function SpeedReadPanel() {
     }
 
     // Was a tap (released before HOLD_THRESHOLD)
+    // If auto-playing, single tap pauses immediately
+    if (isAutoPlaying) {
+      setIsAutoPlaying(false);
+      tapCountRef.current = 0;
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Not auto-playing: detect double-tap to start auto-play
     tapCountRef.current += 1;
 
     if (tapCountRef.current === 1) {
@@ -217,13 +229,13 @@ export function SpeedReadPanel() {
         tapCountRef.current = 0;
       }, DOUBLE_TAP_WINDOW);
     } else if (tapCountRef.current >= 2) {
-      // Double tap — toggle auto-play
+      // Double tap — start auto-play
       if (tapTimerRef.current) {
         clearTimeout(tapTimerRef.current);
         tapTimerRef.current = null;
       }
       tapCountRef.current = 0;
-      setIsAutoPlaying(prev => !prev);
+      setIsAutoPlaying(true);
     }
   }, []);
 
@@ -393,7 +405,7 @@ export function SpeedReadPanel() {
 
         {/* Word Display Card + Context */}
         <div className="flex flex-col items-center justify-center mt-3 sm:mt-0 sm:flex-1 sm:min-h-0 shrink-0">
-          <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-4 sm:p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
+          <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-4 sm:p-8 border border-orange-400/30 shadow-2xl shadow-black/20">
             <div className="relative">
               <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-orange-400 to-transparent rounded-full"></div>
               <div className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-0.5 h-3 bg-gradient-to-t from-orange-400 to-transparent rounded-full"></div>
@@ -431,7 +443,7 @@ export function SpeedReadPanel() {
 
           {/* Context preview — directly under word card */}
           <div className="w-full mt-2 sm:mt-3 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-2.5 sm:p-3 border border-zinc-800/30">
-            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light">
+            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light min-h-[2.5em] sm:min-h-[2.75em]">
               <span className="text-zinc-700 transition-colors duration-150">
                 {words.slice(Math.max(0, currentWordIndex - 5), currentWordIndex).join(' ')}
               </span>
@@ -466,12 +478,12 @@ export function SpeedReadPanel() {
         </div>
 
         {/* Navigation Controls: < bookmark > */}
-        <div className="mt-3 sm:mt-4 space-y-3 shrink-0">
-          <div className="flex items-center justify-center gap-4">
+        <div className="mt-2 sm:mt-4 space-y-2 sm:space-y-3 shrink-0">
+          <div className="flex items-center justify-center gap-3 sm:gap-4">
             {/* Previous word */}
             <button
               onClick={() => setCurrentWordIndex(Math.max(0, currentWordIndex - 1))}
-              className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
+              className="p-2.5 sm:p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
               title="Previous word (←)"
               aria-label="Previous word"
             >
@@ -483,7 +495,7 @@ export function SpeedReadPanel() {
             {/* Bookmark button */}
             <button
               onClick={handleBookmarkToggle}
-              className={`p-3 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 ${
+              className={`p-2.5 sm:p-3 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 ${
                 isCurrentWordBookmarked
                   ? 'bg-orange-500/20 text-orange-400'
                   : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400'
@@ -499,7 +511,7 @@ export function SpeedReadPanel() {
             {/* Next word */}
             <button
               onClick={() => setCurrentWordIndex(Math.min(words.length - 1, currentWordIndex + 1))}
-              className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
+              className="p-2.5 sm:p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
               title="Next word (→)"
               aria-label="Next word"
             >
@@ -515,7 +527,7 @@ export function SpeedReadPanel() {
               onTouchStart={handlePressStart}
               onTouchEnd={handlePressEnd}
               onTouchCancel={handlePressCancel}
-              className={`w-full py-5 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
+              className={`w-full py-3 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
                 isHolding
                   ? 'bg-orange-500/20 border-2 border-orange-400/50 shadow-lg shadow-orange-500/10'
                   : isAutoPlaying
