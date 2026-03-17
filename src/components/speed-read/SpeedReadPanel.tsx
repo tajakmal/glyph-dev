@@ -36,6 +36,10 @@ function formatTime(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
+const WPM_PRESETS = [200, 300, 400, 500, 600];
+const HOLD_THRESHOLD = 200;
+const DOUBLE_TAP_WINDOW = 300;
+
 // =============================================================================
 // SpeedReadPanel Component
 // =============================================================================
@@ -76,11 +80,20 @@ export function SpeedReadPanel() {
     }
   }, [isCurrentWordBookmarked, toggleBookmark, addBookmark, currentWordIndex, words]);
 
-  const [isPlaying, setIsPlaying] = useState(false);
   const [wpm, setWpm] = useState(300);
   const [isHolding, setIsHolding] = useState(false);
+  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
+  const isPlaying = isHolding || isAutoPlaying;
+
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+
+  // Dual-purpose button refs
+  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const tapCountRef = useRef(0);
+  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const isPressedRef = useRef(false);
+  const isHoldRef = useRef(false);
 
   // --- Playback ---
 
@@ -92,7 +105,8 @@ export function SpeedReadPanel() {
       intervalRef.current = setTimeout(() => {
         const nextIndex = currentWordIndex + 1;
         if (nextIndex >= words.length) {
-          setIsPlaying(false);
+          setIsAutoPlaying(false);
+          setIsHolding(false);
         } else {
           setCurrentWordIndex(nextIndex);
         }
@@ -106,6 +120,14 @@ export function SpeedReadPanel() {
     };
   }, [isPlaying, currentWordIndex, words, wordDelay, setCurrentWordIndex]);
 
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    };
+  }, []);
+
   // --- Keyboard shortcuts ---
 
   useEffect(() => {
@@ -115,8 +137,8 @@ export function SpeedReadPanel() {
       if (e.code === 'Space') {
         e.preventDefault();
         if (!e.repeat) {
+          setIsAutoPlaying(false);
           setIsHolding(true);
-          setIsPlaying(true);
         }
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
@@ -127,10 +149,12 @@ export function SpeedReadPanel() {
       } else if (e.code === 'KeyR') {
         e.preventDefault();
         setCurrentWordIndex(0);
-        setIsPlaying(false);
+        setIsAutoPlaying(false);
+        setIsHolding(false);
       } else if (e.code === 'Escape') {
         e.preventDefault();
-        setIsPlaying(false);
+        setIsAutoPlaying(false);
+        setIsHolding(false);
         if (documentKind === 'pdf') {
           jumpToWordInPDF(currentWordIndex);
         } else {
@@ -144,7 +168,6 @@ export function SpeedReadPanel() {
       if (e.code === 'Space') {
         e.preventDefault();
         setIsHolding(false);
-        setIsPlaying(false);
       }
     };
 
@@ -154,40 +177,79 @@ export function SpeedReadPanel() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [currentWordIndex, words.length, setCurrentWordIndex, setViewMode]);
+  }, [currentWordIndex, words.length, setCurrentWordIndex, setViewMode, jumpToWordInPDF, documentKind]);
 
-  // --- Hold to play handlers ---
+  // --- Dual-purpose press handlers (hold + double-tap) ---
 
-  const handleHoldStart = () => {
-    setIsHolding(true);
-    setIsPlaying(true);
-  };
+  const handlePressStart = useCallback(() => {
+    isPressedRef.current = true;
+    isHoldRef.current = false;
 
-  const handleHoldEnd = () => {
-    setIsHolding(false);
-    setIsPlaying(false);
-  };
+    holdTimerRef.current = setTimeout(() => {
+      if (isPressedRef.current) {
+        isHoldRef.current = true;
+        setIsAutoPlaying(false);
+        setIsHolding(true);
+      }
+    }, HOLD_THRESHOLD);
+  }, []);
 
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
-  };
+  const handlePressEnd = useCallback(() => {
+    isPressedRef.current = false;
 
-  const reset = () => {
-    setCurrentWordIndex(0);
-    setIsPlaying(false);
-  };
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+
+    if (isHoldRef.current) {
+      isHoldRef.current = false;
+      setIsHolding(false);
+      return;
+    }
+
+    // Was a tap (released before HOLD_THRESHOLD)
+    tapCountRef.current += 1;
+
+    if (tapCountRef.current === 1) {
+      tapTimerRef.current = setTimeout(() => {
+        // Single tap — do nothing
+        tapCountRef.current = 0;
+      }, DOUBLE_TAP_WINDOW);
+    } else if (tapCountRef.current >= 2) {
+      // Double tap — toggle auto-play
+      if (tapTimerRef.current) {
+        clearTimeout(tapTimerRef.current);
+        tapTimerRef.current = null;
+      }
+      tapCountRef.current = 0;
+      setIsAutoPlaying(prev => !prev);
+    }
+  }, []);
+
+  const handlePressCancel = useCallback(() => {
+    isPressedRef.current = false;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (isHoldRef.current) {
+      isHoldRef.current = false;
+      setIsHolding(false);
+    }
+  }, []);
 
   // --- Navigation handlers ---
 
   const handleShowInDocument = () => {
-    setIsPlaying(false);
+    setIsAutoPlaying(false);
+    setIsHolding(false);
     jumpToWordInPDF(currentWordIndex);
   };
 
   const handleBackToPDF = () => {
-    setIsPlaying(false);
-    // For PDFs: scroll to the correct page and highlight the word
-    // For text: just switch view mode (TextReader handles its own scroll)
+    setIsAutoPlaying(false);
+    setIsHolding(false);
     if (documentKind === 'pdf') {
       jumpToWordInPDF(currentWordIndex);
     } else {
@@ -198,6 +260,16 @@ export function SpeedReadPanel() {
   const handleGoHome = () => {
     router.push('/');
   };
+
+  // --- Hold button label/state ---
+
+  const holdButtonLabel = isHolding
+    ? 'Release to pause'
+    : isAutoPlaying
+      ? 'Tap to pause'
+      : 'Hold to read';
+
+  const holdButtonActive = isHolding || isAutoPlaying;
 
   // --- Render ---
 
@@ -272,10 +344,55 @@ export function SpeedReadPanel() {
         )}
       </div>
 
-      {/* RSVP Display — scrollable content area above the mobile hold zone */}
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full p-4 sm:p-6 overflow-y-auto min-h-0 pb-0 sm:pb-6">
-        {/* Word Display Container */}
-        <div className="flex items-center justify-center py-4 sm:py-8 sm:flex-1 sm:min-h-[120px] shrink-0">
+      {/* Main content area */}
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-4 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3 overflow-y-auto min-h-0">
+
+        {/* Speed Control — moved to top */}
+        <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/50 shrink-0">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Speed</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-3xl sm:text-4xl font-mono font-bold text-zinc-100 tabular-nums">{wpm}</span>
+              <span className="text-sm text-zinc-500 font-light">WPM</span>
+            </div>
+          </div>
+
+          {/* Quick preset buttons */}
+          <div className="flex justify-center gap-2 mb-2">
+            {WPM_PRESETS.map(preset => (
+              <button
+                key={preset}
+                onClick={() => setWpm(preset)}
+                className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all duration-150 ${
+                  wpm === preset
+                    ? 'bg-orange-400/20 text-orange-400 border border-orange-400/30'
+                    : 'bg-zinc-800/80 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 border border-transparent'
+                }`}
+              >
+                {preset}
+              </button>
+            ))}
+          </div>
+
+          {/* Fine-tune slider */}
+          <input
+            type="range"
+            min="100"
+            max="800"
+            step="25"
+            value={wpm}
+            onChange={(e) => setWpm(Number(e.target.value))}
+            className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-400"
+            aria-label="Words per minute speed"
+          />
+          <div className="flex justify-between text-xs text-zinc-600 mt-2">
+            <span>100</span>
+            <span>800</span>
+          </div>
+        </div>
+
+        {/* Word Display Card + Context */}
+        <div className="flex flex-col items-center justify-center mt-3 sm:mt-0 sm:flex-1 sm:min-h-0 shrink-0">
           <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-4 sm:p-8 border border-zinc-800/50 shadow-2xl shadow-black/20">
             <div className="relative">
               <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-orange-400 to-transparent rounded-full"></div>
@@ -311,29 +428,9 @@ export function SpeedReadPanel() {
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Scrubber */}
-        <div className="mt-4 sm:mt-8">
-          <input
-            type="range"
-            min="0"
-            max={Math.max(0, words.length - 1)}
-            value={currentWordIndex}
-            onChange={(e) => setCurrentWordIndex(Number(e.target.value))}
-            className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer transition-all duration-300"
-            style={{
-              background: `linear-gradient(to right, #a1a1aa 0%, #a1a1aa ${progress}%, #27272a ${progress}%, #27272a 100%)`
-            }}
-            aria-label="Reading progress"
-          />
-          <div className="flex justify-between text-xs text-zinc-500 mt-2 font-light">
-            <span className="tabular-nums">{currentWordIndex + 1} / {words.length.toLocaleString()} words</span>
-            <span className="tabular-nums">{formatTime(timeRemaining)} remaining</span>
-          </div>
-
-          {/* Context preview */}
-          <div className="mt-3 sm:mt-4 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/30">
+          {/* Context preview — directly under word card */}
+          <div className="w-full mt-2 sm:mt-3 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-2.5 sm:p-3 border border-zinc-800/30">
             <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light">
               <span className="text-zinc-700 transition-colors duration-150">
                 {words.slice(Math.max(0, currentWordIndex - 5), currentWordIndex).join(' ')}
@@ -348,42 +445,39 @@ export function SpeedReadPanel() {
           </div>
         </div>
 
-        {/* Desktop Controls */}
-        <div className="mt-4 sm:mt-8 space-y-4 shrink-0">
-          {/* Playback Controls */}
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={reset}
-              className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
-              title="Reset (R)"
-              aria-label="Reset to start"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-              </svg>
-            </button>
+        {/* Scrubber */}
+        <div className="shrink-0">
+          <input
+            type="range"
+            min="0"
+            max={Math.max(0, words.length - 1)}
+            value={currentWordIndex}
+            onChange={(e) => setCurrentWordIndex(Number(e.target.value))}
+            className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer transition-all duration-300 accent-orange-400"
+            style={{
+              background: `linear-gradient(to right, #fb923c 0%, #fb923c ${progress}%, #27272a ${progress}%, #27272a 100%)`
+            }}
+            aria-label="Reading progress"
+          />
+          <div className="flex justify-between text-xs text-zinc-500 mt-1.5 font-light">
+            <span className="tabular-nums">{currentWordIndex + 1} / {words.length.toLocaleString()} words</span>
+            <span className="tabular-nums">{formatTime(timeRemaining)} remaining</span>
+          </div>
+        </div>
 
+        {/* Navigation Controls: < bookmark > */}
+        <div className="mt-3 sm:mt-4 space-y-3 shrink-0">
+          <div className="flex items-center justify-center gap-4">
+            {/* Previous word */}
             <button
-              onClick={togglePlayPause}
-              className={`p-5 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 shadow-lg ${
-                isPlaying
-                  ? 'bg-zinc-700 hover:bg-zinc-600 shadow-black/30'
-                  : 'bg-white hover:bg-zinc-100 text-zinc-900 shadow-black/20'
-              }`}
-              title="Play/Pause"
-              aria-label={isPlaying ? 'Pause playback' : 'Start playback'}
+              onClick={() => setCurrentWordIndex(Math.max(0, currentWordIndex - 1))}
+              className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
+              title="Previous word (←)"
+              aria-label="Previous word"
             >
-              {isPlaying ? (
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1"/>
-                  <rect x="14" y="4" width="4" height="16" rx="1"/>
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-7 h-7 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-              )}
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
             </button>
 
             {/* Bookmark button */}
@@ -402,60 +496,91 @@ export function SpeedReadPanel() {
               </svg>
             </button>
 
-            {/* Show in Document (inline) */}
-            {documentKind === 'pdf' && (
-              <button
-                onClick={handleShowInDocument}
-                className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
-                title="Show in Document"
-                aria-label="Show current word in document"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
-                  <polyline points="14 2 14 8 20 8"/>
-                </svg>
-              </button>
-            )}
+            {/* Next word */}
+            <button
+              onClick={() => setCurrentWordIndex(Math.min(words.length - 1, currentWordIndex + 1))}
+              className="p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
+              title="Next word (→)"
+              aria-label="Next word"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
           </div>
 
-          {/* WPM Slider */}
-          <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-4 border border-zinc-800/50">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-zinc-500 text-sm font-light">Speed</span>
-              <span className="text-zinc-400 font-mono font-semibold tabular-nums">{wpm} WPM</span>
-            </div>
-            <input
-              type="range"
-              min="100"
-              max="800"
-              step="25"
-              value={wpm}
-              onChange={(e) => setWpm(Number(e.target.value))}
-              className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-400"
-              aria-label="Words per minute speed"
-            />
-            <div className="flex justify-between text-xs text-zinc-600 mt-2">
-              <span>100</span>
-              <span>800</span>
-            </div>
+          {/* Mobile: Hold to Read (inline, flows with content) */}
+          <div className="sm:hidden">
+            <button
+              onTouchStart={handlePressStart}
+              onTouchEnd={handlePressEnd}
+              onTouchCancel={handlePressCancel}
+              className={`w-full py-5 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
+                isHolding
+                  ? 'bg-orange-500/20 border-2 border-orange-400/50 shadow-lg shadow-orange-500/10'
+                  : isAutoPlaying
+                    ? 'bg-orange-500/10 border-2 border-orange-400/30 ring-2 ring-orange-400/20'
+                    : 'bg-zinc-800/80 border-2 border-zinc-700/50 active:bg-zinc-700'
+              }`}
+              aria-label="Hold to play or double-tap to toggle"
+            >
+              <div className="flex flex-col items-center gap-1">
+                {holdButtonActive ? (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="4" width="4" height="16" rx="1"/>
+                      <rect x="14" y="4" width="4" height="16" rx="1"/>
+                    </svg>
+                    <span className="text-orange-400 text-sm font-medium">{holdButtonLabel}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                    <span className="text-zinc-400 text-sm">{holdButtonLabel}</span>
+                    <span className="text-zinc-600 text-xs">Double-tap to auto-play</span>
+                  </>
+                )}
+              </div>
+            </button>
           </div>
 
-          {/* Desktop: Hold to Play + keyboard hints (hidden on mobile) */}
+          {/* Desktop: Hold to Read + keyboard hints (hidden on mobile) */}
           <div className="hidden sm:block">
             <button
-              onMouseDown={handleHoldStart}
-              onMouseUp={handleHoldEnd}
-              onMouseLeave={handleHoldEnd}
+              onMouseDown={handlePressStart}
+              onMouseUp={handlePressEnd}
+              onMouseLeave={handlePressCancel}
               className={`w-full py-4 rounded-xl font-medium transition-all duration-200 select-none transform active:scale-[0.98] ${
                 isHolding
-                  ? 'bg-zinc-700 shadow-lg shadow-black/20'
-                  : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
+                  ? 'bg-orange-500/20 border border-orange-400/50 shadow-lg shadow-orange-500/10'
+                  : isAutoPlaying
+                    ? 'bg-orange-500/10 border border-orange-400/30 ring-2 ring-orange-400/20'
+                    : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
               }`}
-              aria-label="Hold to play"
+              aria-label="Hold to play or double-tap to toggle"
             >
-              <span className={`transition-colors duration-200 ${isHolding ? 'text-white' : 'text-zinc-400'}`}>
-                {isHolding ? 'Playing...' : 'Hold to Play'}
-              </span>
+              <div className="flex flex-col items-center gap-0.5">
+                <div className="flex items-center gap-2">
+                  {holdButtonActive ? (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="4" width="4" height="16" rx="1"/>
+                      <rect x="14" y="4" width="4" height="16" rx="1"/>
+                    </svg>
+                  ) : (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"/>
+                    </svg>
+                  )}
+                  <span className={`transition-colors duration-200 ${holdButtonActive ? 'text-orange-400' : 'text-zinc-400'}`}>
+                    {holdButtonLabel}
+                  </span>
+                </div>
+                {!holdButtonActive && (
+                  <span className="text-zinc-600 text-xs">Double-click to auto-play</span>
+                )}
+              </div>
             </button>
 
             <div className="flex justify-center gap-4 text-xs text-zinc-600 pt-3">
@@ -467,39 +592,8 @@ export function SpeedReadPanel() {
         </div>
       </div>
 
-      {/* Mobile: Fixed bottom hold-to-play thumb zone */}
-      <div className="sm:hidden flex-shrink-0 px-4 pb-[env(safe-area-inset-bottom,12px)] pt-2 border-t border-zinc-800/50 bg-zinc-950">
-        <button
-          onTouchStart={handleHoldStart}
-          onTouchEnd={handleHoldEnd}
-          onTouchCancel={handleHoldEnd}
-          className={`w-full py-6 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
-            isHolding
-              ? 'bg-orange-500/20 border-2 border-orange-400/50 shadow-lg shadow-orange-500/10'
-              : 'bg-zinc-800/80 border-2 border-zinc-700/50 active:bg-zinc-700'
-          }`}
-          aria-label="Hold to play"
-        >
-          <div className="flex flex-col items-center gap-1">
-            {isHolding ? (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
-                  <rect x="6" y="4" width="4" height="16" rx="1"/>
-                  <rect x="14" y="4" width="4" height="16" rx="1"/>
-                </svg>
-                <span className="text-orange-400 text-sm font-medium">Release to pause</span>
-              </>
-            ) : (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
-                  <polygon points="5 3 19 12 5 21 5 3"/>
-                </svg>
-                <span className="text-zinc-400 text-sm">Hold to read</span>
-              </>
-            )}
-          </div>
-        </button>
-      </div>
+      {/* Mobile: Safe area bottom padding */}
+      <div className="sm:hidden pb-[env(safe-area-inset-bottom,0px)]"></div>
     </div>
   );
 }
