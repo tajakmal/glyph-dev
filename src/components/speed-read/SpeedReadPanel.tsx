@@ -443,7 +443,7 @@ export function SpeedReadPanel() {
 
           {/* Context preview — directly under word card */}
           <div className="w-full mt-2 sm:mt-3 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-2.5 sm:p-3 border border-zinc-800/30">
-            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light min-h-[2.5em] sm:min-h-[2.75em]">
+            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light h-[3.25em] overflow-hidden">
               <span className="text-zinc-700 transition-colors duration-150">
                 {words.slice(Math.max(0, currentWordIndex - 5), currentWordIndex).join(' ')}
               </span>
