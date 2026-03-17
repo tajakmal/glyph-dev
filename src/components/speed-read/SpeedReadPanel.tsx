@@ -357,10 +357,10 @@ export function SpeedReadPanel() {
       </div>
 
       {/* Main content area */}
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-4 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3 overflow-y-auto min-h-0">
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-4 pt-3 pb-6 sm:px-6 sm:pt-4 sm:pb-3 overflow-y-auto min-h-0">
 
-        {/* Speed Control — moved to top */}
-        <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/50 shrink-0">
+        {/* Speed Control — locked at top */}
+        <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/50 shrink-0 mb-2 sm:mb-0">
           <div className="flex items-center justify-between mb-2">
             <span className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Speed</span>
             <div className="flex items-baseline gap-1">
@@ -602,10 +602,11 @@ export function SpeedReadPanel() {
             </div>
           </div>
         </div>
+
       </div>
 
       {/* Mobile: Safe area bottom padding */}
-      <div className="sm:hidden pb-[env(safe-area-inset-bottom,0px)]"></div>
+      <div className="sm:hidden pb-[env(safe-area-inset-bottom,16px)]"></div>
     </div>
   );
 }
