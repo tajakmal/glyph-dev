@@ -41,6 +41,8 @@ export function TextReader({ documentId }: TextReaderProps) {
 
   // Current word index for position tracking
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  // When a bookmark is selected, suppress scroll-based index updates until the scroll settles
+  const suppressScrollIndexRef = useRef(false);
 
   // Tokenize text content into words (moved up so we can pass to highlights hook)
   const words = useMemo(() => {
@@ -284,6 +286,7 @@ export function TextReader({ documentId }: TextReaderProps) {
     let rafId: number | null = null;
 
     const updateCurrentWord = () => {
+      if (suppressScrollIndexRef.current) return;
       const textContainer = textContainerRef.current;
       if (!textContainer) return;
 
@@ -635,6 +638,8 @@ export function TextReader({ documentId }: TextReaderProps) {
 
     // Update currentWordIndex so speed read starts from here
     setCurrentWordIndex(bookmark.wordIndex);
+    // Suppress scroll-based index updates so scrollIntoView doesn't overwrite the bookmark position
+    suppressScrollIndexRef.current = true;
 
     const container = textContainerRef.current;
     const startIdx = bookmark.wordIndex;
@@ -677,6 +682,11 @@ export function TextReader({ documentId }: TextReaderProps) {
       setTimeout(() => {
         document.addEventListener('pointerdown', clearHighlight, { once: true });
       }, 500);
+
+      // Re-enable scroll-based index updates after smooth scroll settles
+      setTimeout(() => {
+        suppressScrollIndexRef.current = false;
+      }, 800);
     });
   }, []);
 
