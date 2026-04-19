@@ -261,6 +261,30 @@ export function TextReader({ documentId }: TextReaderProps) {
     router.push('/');
   }, [documentId, router]);
 
+  /**
+   * Find the first word whose top edge is *at or below* the scroll container's
+   * top — i.e., the first word fully visible on screen, not one clipped above.
+   * Used when the user taps the idle Speed-read FAB so reading starts exactly
+   * where their eyes are.
+   */
+  const getFirstVisibleWordIndex = useCallback((): number => {
+    const scrollContainer = scrollContainerRef.current;
+    const textContainer = textContainerRef.current;
+    if (!scrollContainer || !textContainer) return currentWordIndex;
+
+    const containerTop = scrollContainer.getBoundingClientRect().top;
+    const spans = textContainer.querySelectorAll<HTMLElement>('[data-word-index]');
+    for (const span of spans) {
+      const rect = span.getBoundingClientRect();
+      // Allow a 2px cushion for subpixel rounding
+      if (rect.top >= containerTop - 2) {
+        const idx = parseInt(span.getAttribute('data-word-index') || '', 10);
+        if (Number.isFinite(idx)) return idx;
+      }
+    }
+    return currentWordIndex;
+  }, [currentWordIndex]);
+
   const handleSpeedRead = useCallback(
     (startAt?: number) => {
       const start = startAt ?? currentWordIndex;
@@ -868,7 +892,7 @@ export function TextReader({ documentId }: TextReaderProps) {
         onBookmark={handleBookmarkSelection}
         onCopy={handleCopySelection}
         onDismiss={handleCloseSelection}
-        onIdleSpeedRead={() => handleSpeedRead()}
+        onIdleSpeedRead={() => handleSpeedRead(getFirstVisibleWordIndex())}
       />
 
       {/* Existing highlight edit popover */}
