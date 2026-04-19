@@ -267,6 +267,8 @@ export interface UserPreferences {
   readingFont: 'fraunces' | 'space-grotesk' | 'system';
   /** Text size multiplier for reader body */
   textSize: 'sm' | 'md' | 'lg';
+  /** Anthropic API key for BYOK chat (stored device-local only) */
+  anthropicApiKey?: string;
 }
 
 // =============================================================================

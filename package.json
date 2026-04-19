@@ -17,6 +17,7 @@
     "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/ && cp -r node_modules/pdfjs-dist/cmaps public/"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.90.0",
     "epubjs": "^0.3.93",
     "next": "^16.1.6",
     "pdfjs-dist": "^5.4.530",

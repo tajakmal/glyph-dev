@@ -17,6 +17,7 @@ interface SelectionActionBarProps {
   onSpeedRead: () => void;
   onBookmark: () => void;
   onCopy: () => void;
+  onAsk: () => void;
   onDismiss: () => void;
   /** Called when user taps the idle "Speed-read" chip (no selection active) */
   onIdleSpeedRead: () => void;
@@ -42,6 +43,7 @@ export function SelectionActionBar({
   onSpeedRead,
   onBookmark,
   onCopy,
+  onAsk,
   onDismiss,
   onIdleSpeedRead,
 }: SelectionActionBarProps) {
@@ -202,6 +204,7 @@ export function SelectionActionBar({
               onClick={() => setMode('colors')}
             />
             <ActionButton label="Speed-read" icon="⚡" onClick={handleSpeedRead} />
+            <ActionButton label="Ask" icon="?" onClick={onAsk} />
             <ActionButton label="Bookmark" icon="✎" onClick={handleBookmark} />
             <ActionButton label="Copy" icon="⎘" onClick={handleCopy} />
             <DismissButton onClick={onDismiss} />

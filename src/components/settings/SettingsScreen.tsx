@@ -6,6 +6,7 @@ import { getPreferences, setPreferences } from '@/lib/storage';
 import { AppShell } from '@/components/shell/AppShell';
 import { MicroLabel } from '@/components/shell/MicroLabel';
 import { HeroHeading } from '@/components/shell/HeroHeading';
+import { testApiKey, ChatError } from '@/lib/chat';
 
 type ThemeChoice = 'dark' | 'paper' | 'auto';
 
@@ -225,6 +226,12 @@ export function SettingsScreen() {
           </div>
         </SettingRow>
 
+        <SectionLabel>Claude</SectionLabel>
+        <ClaudeSection
+          apiKey={prefs.anthropicApiKey ?? ''}
+          onSave={(key) => update({ anthropicApiKey: key || undefined })}
+        />
+
         <SectionLabel>About</SectionLabel>
         <SettingRow title="Glyph" value="v1.0 · 2026" />
         <SettingRow title="Made to make knowledge accessible." />
@@ -232,6 +239,196 @@ export function SettingsScreen() {
       </div>
     </AppShell>
   );
+}
+
+type ClaudeStatus =
+  | { kind: 'idle' }
+  | { kind: 'testing' }
+  | { kind: 'ok' }
+  | { kind: 'error'; message: string };
+
+function ClaudeSection({
+  apiKey,
+  onSave,
+}: {
+  apiKey: string;
+  onSave: (key: string) => void;
+}) {
+  const [draft, setDraft] = useState(apiKey);
+  const [status, setStatus] = useState<ClaudeStatus>({ kind: 'idle' });
+  const dirty = draft !== apiKey;
+
+  const handleSave = () => {
+    onSave(draft.trim());
+    setStatus({ kind: 'idle' });
+  };
+
+  const handleClear = () => {
+    setDraft('');
+    onSave('');
+    setStatus({ kind: 'idle' });
+  };
+
+  const handleTest = async () => {
+    const key = draft.trim();
+    if (!key) {
+      setStatus({ kind: 'error', message: 'Enter a key first.' });
+      return;
+    }
+    setStatus({ kind: 'testing' });
+    try {
+      await testApiKey(key);
+      setStatus({ kind: 'ok' });
+    } catch (err) {
+      const msg =
+        err instanceof ChatError
+          ? err.message
+          : err instanceof Error
+          ? err.message
+          : 'Test failed';
+      setStatus({ kind: 'error', message: msg });
+    }
+  };
+
+  return (
+    <div style={{ padding: '14px 0', borderTop: '1px solid var(--rule)' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <div style={{ fontSize: 14, color: 'var(--ink)' }}>Anthropic API key</div>
+        {apiKey && !dirty && (
+          <div
+            style={{
+              fontSize: 10,
+              fontFamily: 'var(--font-mono), monospace',
+              color: 'var(--muted)',
+              letterSpacing: '0.1em',
+            }}
+          >
+            SET
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <input
+          type="password"
+          placeholder="sk-ant-…"
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (status.kind !== 'idle') setStatus({ kind: 'idle' });
+          }}
+          autoComplete="off"
+          spellCheck={false}
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '1px solid var(--rule)',
+            background: 'var(--paper)',
+            color: 'var(--ink)',
+            fontSize: 13,
+            fontFamily: 'var(--font-mono), monospace',
+            outline: 'none',
+          }}
+        />
+
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <button
+            onClick={handleSave}
+            disabled={!dirty}
+            style={actionBtnStyle(dirty, 'primary')}
+          >
+            Save
+          </button>
+          <button
+            onClick={handleTest}
+            disabled={!draft.trim() || status.kind === 'testing'}
+            style={actionBtnStyle(
+              !!draft.trim() && status.kind !== 'testing',
+              'secondary'
+            )}
+          >
+            {status.kind === 'testing' ? 'Testing…' : 'Test'}
+          </button>
+          {apiKey && (
+            <button onClick={handleClear} style={actionBtnStyle(true, 'ghost')}>
+              Clear
+            </button>
+          )}
+        </div>
+
+        {status.kind === 'ok' && (
+          <div style={statusStyle('ok')}>Connection OK</div>
+        )}
+        {status.kind === 'error' && (
+          <div style={statusStyle('error')}>{status.message}</div>
+        )}
+
+        <div
+          style={{
+            fontSize: 11,
+            color: 'var(--muted)',
+            lineHeight: 1.5,
+            marginTop: 2,
+          }}
+        >
+          Your key is stored on this device only. Glyph calls Anthropic directly
+          from your browser — your key and reading never touch our servers.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function actionBtnStyle(
+  active: boolean,
+  variant: 'primary' | 'secondary' | 'ghost'
+): React.CSSProperties {
+  const base: React.CSSProperties = {
+    padding: '8px 14px',
+    borderRadius: 8,
+    fontSize: 10,
+    fontFamily: 'var(--font-mono), monospace',
+    letterSpacing: '0.18em',
+    textTransform: 'uppercase',
+    fontWeight: 700,
+    cursor: active ? 'pointer' : 'not-allowed',
+    opacity: active ? 1 : 0.5,
+    border: 0,
+  };
+  if (variant === 'primary') {
+    return { ...base, background: 'var(--accent)', color: '#fff' };
+  }
+  if (variant === 'secondary') {
+    return {
+      ...base,
+      background: 'transparent',
+      color: 'var(--ink)',
+      border: '1px solid var(--rule)',
+    };
+  }
+  return {
+    ...base,
+    background: 'transparent',
+    color: 'var(--muted)',
+  };
+}
+
+function statusStyle(kind: 'ok' | 'error'): React.CSSProperties {
+  return {
+    fontSize: 11,
+    fontFamily: 'var(--font-mono), monospace',
+    letterSpacing: '0.1em',
+    color: kind === 'ok' ? '#4ade80' : 'var(--accent)',
+    marginTop: 2,
+  };
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {

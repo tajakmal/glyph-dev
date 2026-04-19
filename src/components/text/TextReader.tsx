@@ -36,6 +36,7 @@ import { trackEvent } from '@/lib/telemetry';
 import { ReaderContext } from '@/contexts/ReaderContext';
 import { HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { SelectionActionBar } from './SelectionActionBar';
+import { ChatPanel } from '@/components/chat/ChatPanel';
 
 interface TextReaderProps {
   documentId: string;
@@ -52,6 +53,8 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [error, setError] = useState<string | null>(null);
   const [sheetTab, setSheetTab] = useState<'bookmarks' | 'notes'>('bookmarks');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [pendingQuote, setPendingQuote] = useState<string | null>(null);
   const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
 
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
@@ -469,6 +472,13 @@ export function TextReader({ documentId }: TextReaderProps) {
     addBookmark(selection.startWord, selectedWords.join(' '), selection.endWord);
     handleCloseSelection();
   }, [selection, words, addBookmark, handleCloseSelection]);
+
+  const handleAskSelection = useCallback(() => {
+    if (!selection) return;
+    setPendingQuote(selection.text);
+    setChatOpen(true);
+    handleCloseSelection();
+  }, [selection, handleCloseSelection]);
 
   const handleCopySelection = useCallback(() => {
     if (!selection) return;
@@ -891,8 +901,18 @@ export function TextReader({ documentId }: TextReaderProps) {
         onSpeedRead={handleSpeedReadSelection}
         onBookmark={handleBookmarkSelection}
         onCopy={handleCopySelection}
+        onAsk={handleAskSelection}
         onDismiss={handleCloseSelection}
         onIdleSpeedRead={() => handleSpeedRead(getFirstVisibleWordIndex())}
+      />
+
+      <ChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        documentId={documentId}
+        docText={textContent}
+        pendingQuote={pendingQuote}
+        onQuoteConsumed={() => setPendingQuote(null)}
       />
 
       {/* Existing highlight edit popover */}
