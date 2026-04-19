@@ -1,100 +1,175 @@
 @import "tailwindcss";
 
 /* ============================================
-   Design System CSS Variables
-   ============================================ */
+   GLYPH · Design Tokens
+   ============================================
+   Dark ("kinetic") is the default. Light is a warm paper theme.
+   Accent is shared across themes. --pdf-bg is always the warm dark.
+*/
 :root {
   color-scheme: dark;
-  /* Background */
-  --bg-primary: #09090b;
-  --bg-secondary: #18181b;
-  --bg-tertiary: #27272a;
 
-  /* Text */
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
+  /* Surface */
+  --bg: #0a0a0a;
+  --bg-elevated: rgba(255, 255, 255, 0.04);
+  --bg-glass: rgba(20, 18, 16, 0.92);
+  --ink: #f2efe8;
+  --muted: rgba(242, 239, 232, 0.5);
+  --muted-strong: rgba(242, 239, 232, 0.7);
+  --rule: rgba(242, 239, 232, 0.1);
+  --rule-strong: rgba(242, 239, 232, 0.2);
 
-  /* Accent */
-  --accent-primary: #a1a1aa;
-  --accent-hover: #d4d4d8;
+  /* Accent (shared across themes) */
+  --accent: #ff5a3d;
+  --accent-10: rgba(255, 90, 61, 0.1);
+  --accent-20: rgba(255, 90, 61, 0.2);
+  --accent-35: rgba(255, 90, 61, 0.35);
+  --accent-45: rgba(255, 90, 61, 0.45);
+  --accent-on: #ffffff;
 
-  /* Highlight Colors */
+  /* Paper + PDF surfaces (referenced directly regardless of theme) */
+  --paper: #faf6ed;
+  --paper-ink: #14110c;
+  --paper-muted: rgba(20, 17, 12, 0.55);
+  --paper-rule: rgba(20, 17, 12, 0.1);
+  --pdf-bg: #1a1814;
+
+  /* Legacy highlight swatches (user-chosen, not accent) */
   --highlight-yellow: #fde047;
   --highlight-green: #86efac;
   --highlight-blue: #93c5fd;
   --highlight-pink: #f9a8d4;
   --highlight-orange: #fdba74;
 
-  /* Border */
-  --border-default: #27272a;
-  --border-subtle: #3f3f46;
-
-  /* Spacing (reference) */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-6: 1.5rem;
-  --space-8: 2rem;
+  /* Legacy tokens preserved so existing zinc-mapped components keep working */
+  --bg-primary: var(--bg);
+  --bg-secondary: #18181b;
+  --bg-tertiary: #27272a;
+  --text-primary: var(--ink);
+  --text-secondary: rgba(242, 239, 232, 0.72);
+  --text-muted: var(--muted);
+  --accent-primary: var(--accent);
+  --accent-hover: var(--accent);
+  --border-default: var(--rule);
+  --border-subtle: var(--rule-strong);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg-primary: #fafafa;
+
+  --bg: var(--paper);
+  --bg-elevated: rgba(20, 17, 12, 0.04);
+  --bg-glass: rgba(250, 246, 237, 0.92);
+  --ink: var(--paper-ink);
+  --muted: var(--paper-muted);
+  --muted-strong: rgba(20, 17, 12, 0.75);
+  --rule: var(--paper-rule);
+  --rule-strong: rgba(20, 17, 12, 0.2);
+
+  --bg-primary: var(--bg);
   --bg-secondary: #f4f4f5;
   --bg-tertiary: #e4e4e7;
-
-  --text-primary: #18181b;
-  --text-secondary: #3f3f46;
-  --text-muted: #71717a;
-
-  --border-default: #e4e4e7;
-  --border-subtle: #d4d4d8;
-
-  --color-zinc-950: #fafafa;
-  --color-zinc-900: #f4f4f5;
-  --color-zinc-800: #e4e4e7;
-  --color-zinc-700: #d4d4d8;
-  --color-zinc-600: #a1a1aa;
-  --color-zinc-500: #71717a;
-  --color-zinc-400: #52525b;
-  --color-zinc-300: #3f3f46;
-  --color-zinc-200: #27272a;
-  --color-zinc-100: #18181b;
-  --color-zinc-50: #09090b;
+  --text-primary: var(--ink);
+  --text-secondary: rgba(20, 17, 12, 0.75);
+  --text-muted: var(--muted);
+  --border-default: var(--rule);
+  --border-subtle: var(--rule-strong);
 }
 
 @theme inline {
-  --color-background: var(--bg-primary);
-  --color-foreground: var(--text-primary);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg);
+  --color-foreground: var(--ink);
+  --color-accent: var(--accent);
+  --color-paper: var(--paper);
+  --color-paper-ink: var(--paper-ink);
+  --color-pdf-bg: var(--pdf-bg);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
 }
 
 /* ============================================
-   Body/HTML Base Styles
+   Body / HTML Base
    ============================================ */
-html, body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: system-ui, -apple-system, sans-serif;
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Prevent text selection on UI elements */
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .no-select {
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* Allow text selection (for PDF text layer) */
 .allow-select {
   user-select: text;
   -webkit-user-select: text;
 }
 
 /* ============================================
-   PDF Page & Canvas Styles
+   Typography utilities
+   ============================================ */
+.micro-label {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.micro-label--accent {
+  color: var(--accent);
+}
+
+.micro-label--ink {
+  color: var(--ink);
+}
+
+.hero-display {
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 88px;
+  line-height: 0.88;
+  letter-spacing: -0.06em;
+  color: var(--ink);
+}
+
+.serif-body {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 17px;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+
+/* ============================================
+   PDF Page & Canvas (pdfjs-dist rendering)
    ============================================ */
 .pdf-page {
   position: relative;
@@ -107,11 +182,6 @@ html, body {
   display: block;
 }
 
-/* ============================================
-   PDF Text Layer Styles (pdfjs-dist built-in TextLayer)
-   Using pdfjs-dist's TextLayer CSS conventions for
-   pixel-perfect text positioning
-   ============================================ */
 .pdf-page .textLayer {
   position: absolute;
   text-align: initial;
@@ -126,6 +196,8 @@ html, body {
   transform-origin: 0 0;
   caret-color: CanvasText;
   z-index: 0;
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 .pdf-page .textLayer {
@@ -150,7 +222,8 @@ html, body {
   font-size: calc(var(--text-scale-factor) * var(--font-height));
   --scale-x: 1;
   --rotate: 0deg;
-  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x))
+    scale(var(--min-font-size-inv));
 }
 
 .pdf-page .textLayer .markedContent {
@@ -164,7 +237,6 @@ html, body {
   cursor: default;
 }
 
-/* Word sub-spans inside text layer divs — inherit parent positioning */
 .pdf-page .textLayer span[data-word-index] {
   position: static;
   display: inline;
@@ -173,18 +245,10 @@ html, body {
   font-size: inherit;
 }
 
-/* Ensure text is selectable on iOS Safari (long-press) */
-.pdf-page .textLayer {
-  -webkit-user-select: text;
-  user-select: text;
-}
-
-/* Selection highlight — visible blue tint */
 .pdf-page .textLayer ::selection {
-  background: rgba(59, 130, 246, 0.3);
+  background: var(--accent-35);
 }
 
-/* Search highlight styling */
 .pdf-search-highlight {
   background: rgba(253, 224, 71, 0.6) !important;
   color: transparent;
@@ -192,16 +256,12 @@ html, body {
 }
 
 .pdf-search-highlight.search-match-active {
-  background: rgba(251, 146, 60, 0.7) !important;
+  background: var(--accent-45) !important;
 }
 
-/* Highlight overlay layer */
 .pdf-highlight-layer {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  inset: 0;
   pointer-events: none;
 }
 
@@ -209,36 +269,50 @@ html, body {
   pointer-events: auto;
 }
 
-/* Speed-read return word highlight overlay */
+/* ============================================
+   Speed-read return highlight
+   ============================================ */
 .word-return-highlight {
   animation: word-highlight-pulse 1.5s ease-in-out infinite;
 }
 
 @keyframes word-highlight-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ============================================
-   Animation Keyframes
+   Animations
    ============================================ */
-
-/* Transition defaults */
-.transition-default {
-  transition: all 200ms ease-in-out;
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
 }
 
-/* Highlight pulse on search navigation */
 @keyframes highlight-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .search-match-active {
   animation: highlight-pulse 1s ease-in-out 2;
 }
 
-/* Popover appearance */
 @keyframes popover-in {
   from {
     opacity: 0;
@@ -254,7 +328,6 @@ html, body {
   animation: popover-in 150ms ease-out;
 }
 
-/* Modal appearance */
 @keyframes modal-in {
   from {
     opacity: 0;
@@ -270,60 +343,133 @@ html, body {
   animation: modal-in 200ms ease-out;
 }
 
-/* Fade in */
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .fade-in {
   animation: fade-in 200ms ease-out;
 }
 
-/* Spinner for loading states */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .spinner {
   animation: spin 1s linear infinite;
 }
 
+@keyframes sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sheet-in {
+  animation: sheet-in 220ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+
 /* ============================================
-   Custom Scrollbar Styling (Dark Theme)
+   Scrollbar
    ============================================ */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: 4px;
+  background: var(--rule-strong);
+  border-radius: 8px;
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--muted);
 }
 
 /* ============================================
-   Text Reader Selection Styling
-   Neutral color for text selection
+   Reader selection styles
    ============================================ */
-/* Ensure text is selectable on iOS Safari (long-press) */
 .text-reader-content {
   -webkit-user-select: text;
   user-select: text;
 }
 
 .text-reader-content ::selection {
-  background: rgba(161, 161, 170, 0.3);
+  background: var(--accent-35);
+  color: inherit;
 }
 
 .text-reader-content ::-moz-selection {
-  background: rgba(161, 161, 170, 0.3);
+  background: var(--accent-35);
+  color: inherit;
 }
+
+/* ============================================
+   Range inputs — accent slider
+   ============================================ */
+input[type="range"].glyph-range {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  height: 24px;
+  cursor: pointer;
+}
+
+input[type="range"].glyph-range::-webkit-slider-runnable-track {
+  height: 3px;
+  background: var(--rule);
+  border-radius: 2px;
+}
+
+input[type="range"].glyph-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-20);
+  margin-top: -5.5px;
+  border: 0;
+}
+
+input[type="range"].glyph-range::-moz-range-track {
+  height: 3px;
+  background: var(--rule);
+  border-radius: 2px;
+}
+
+input[type="range"].glyph-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 0;
+  box-shadow: 0 0 0 4px var(--accent-20);
+}
+
+/* ============================================
+   Safe-area helpers
+   ============================================ */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top), 0px);
+}
+
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+/* Marquee/ticker animations can go here if needed */

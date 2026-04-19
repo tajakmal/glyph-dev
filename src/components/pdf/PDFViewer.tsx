@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, useContext } from 'react';
 import { useRouter } from 'next/navigation';
-import type { PDFBookmark, PDFHighlight, HighlightColor } from '@/types';
+import type { PDFHighlight, HighlightColor } from '@/types';
 import { usePDF } from '@/hooks/usePDF';
 import { usePDFSearch } from '@/hooks/usePDFSearch';
 import { usePDFOutline } from '@/hooks/usePDFOutline';
@@ -11,10 +11,11 @@ import { usePinchZoom } from '@/hooks/usePinchZoom';
 import { useBookmarks } from '@/hooks/useBookmarks';
 import { useHighlights } from '@/hooks/useHighlights';
 import { VirtualizedPDFPage } from './VirtualizedPDFPage';
-import { PDFControls } from './PDFControls';
 import { PDFSearch } from './PDFSearch';
-import { PDFSidebar } from './PDFSidebar';
+import { PDFDock, type PDFDockAction } from './PDFDock';
+import { PDFViewSheet } from './PDFViewSheet';
 import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
+import { MicroLabel } from '@/components/shell/MicroLabel';
 import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
@@ -91,24 +92,8 @@ export function PDFViewer({
     anchorRect: { x: number; y: number };
   } | null>(null);
 
-  // Sidebar state with localStorage persistence
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    // Default closed on mobile
-    if (window.innerWidth < 640) return false;
-    const stored = localStorage.getItem('glyph:sidebar-open');
-    return stored !== null ? JSON.parse(stored) : true;
-  });
-
-  // Persist sidebar state
-  useEffect(() => {
-    localStorage.setItem('glyph:sidebar-open', JSON.stringify(sidebarOpen));
-  }, [sidebarOpen]);
-
-  // Toggle sidebar
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev: boolean) => !prev);
-  }, []);
+  // View sheet (zoom/outline/bookmarks/highlights) — replaces old sidebar
+  const [viewSheetOpen, setViewSheetOpen] = useState(false);
 
   // Highlights
   const {
@@ -140,7 +125,6 @@ export function PDFViewer({
     isPageBookmarked,
     toggleBookmark,
     removeBookmark,
-    updateBookmark,
   } = useBookmarks({ documentId });
 
   // PDF Outline (Table of Contents)
@@ -310,13 +294,13 @@ export function PDFViewer({
       }
 
       if (e.key === 's' || e.key === 'S') {
-        toggleSidebar();
+        setViewSheetOpen((v) => !v);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar]);
+  }, []);
 
   // Close search handler
   const handleCloseSearch = useCallback(() => {
@@ -554,11 +538,6 @@ export function PDFViewer({
     container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
   }, [currentPage, pageCount, pageHeights, estimatedPageHeight, onPageChange]);
-
-  // Sidebar handlers
-  const handleBookmarkClick = useCallback((bookmark: PDFBookmark) => {
-    handlePageChange(bookmark.page);
-  }, [handlePageChange]);
 
   const handleSidebarHighlightClick = useCallback((highlight: PDFHighlight) => {
     handlePageChange(highlight.page);
@@ -897,66 +876,191 @@ export function PDFViewer({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full" />
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--pdf-bg)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          className="spinner"
+          style={{
+            width: 28,
+            height: 28,
+            border: '2px solid rgba(242,239,232,0.2)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+          }}
+        />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-        <p>Failed to load PDF</p>
-        <p className="text-sm text-zinc-600">{error.message}</p>
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--pdf-bg)',
+          color: 'var(--ink)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          padding: 24,
+          textAlign: 'center',
+        }}
+      >
+        <p style={{ fontSize: 18, fontWeight: 600 }}>Failed to load PDF</p>
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>{error.message}</p>
       </div>
     );
   }
 
+  const PAGE_STRIP_COUNT = 11;
+  const currentPageSafe = Math.max(1, Math.min(pageCount, currentPage));
+  const stripStart = Math.max(
+    1,
+    Math.min(
+      pageCount - PAGE_STRIP_COUNT + 1,
+      currentPageSafe - Math.floor(PAGE_STRIP_COUNT / 2)
+    )
+  );
+  const stripPages = Array.from(
+    { length: Math.min(PAGE_STRIP_COUNT, pageCount) },
+    (_, i) => stripStart + i
+  );
+
+  const handleDockAction = (action: PDFDockAction) => {
+    switch (action) {
+      case 'mark':
+        handleTopbarBookmarkToggle();
+        break;
+      case 'speed':
+        handleSpeedReadDocument();
+        break;
+      case 'note':
+        // Hint the user to select text
+        alert('Select text on the page, then tap "Note" in the pill that appears.');
+        break;
+      case 'find':
+        setSearchOpen((v) => !v);
+        break;
+      case 'copy':
+        navigator.clipboard
+          ?.writeText(window.getSelection()?.toString() || documentTitle)
+          .catch(() => {});
+        break;
+      case 'view':
+        setViewSheetOpen((v) => !v);
+        break;
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      <PDFControls
-        zoom={zoom}
-        onZoomChange={handleZoomChange}
-        currentPage={currentPage}
-        pageCount={pageCount}
-        onPageChange={handlePageChange}
-        title={documentTitle}
-        onSidebarToggle={toggleSidebar}
-        isSidebarOpen={sidebarOpen}
-        isBookmarked={isPageBookmarked(currentPage)}
-        onBookmarkToggle={handleTopbarBookmarkToggle}
-        onSpeedReadDocument={handleSpeedReadDocument}
-      />
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile backdrop */}
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        background: 'var(--pdf-bg)',
+        color: 'var(--ink)',
+        position: 'relative',
+      }}
+    >
+      {/* Thin top bar */}
+      <div
+        style={{
+          padding: 'max(env(safe-area-inset-top), 20px) 16px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+        }}
+      >
+        <button
+          onClick={() => router.push('/')}
+          aria-label="Back to library"
+          style={pdfIconBtnStyle}
+        >
+          <svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true">
+            <path
+              d="M7 1L3 6l4 5"
+              stroke="var(--ink)"
+              strokeWidth="1.5"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </svg>
+        </button>
+        <MicroLabel tone="muted" style={{ flex: 1, textAlign: 'center' }}>
+          {meta?.fileName ?? documentTitle} · {currentPage}/{pageCount}
+        </MicroLabel>
+        <button
+          onClick={() => setSearchOpen((v) => !v)}
+          aria-label={searchOpen ? 'Close search' : 'Open search'}
+          aria-pressed={searchOpen}
+          style={pdfIconBtnStyle}
+          className="micro-label"
+        >
+          <span style={{ fontSize: 10, letterSpacing: '0.1em' }}>⌘F</span>
+        </button>
+      </div>
+
+      {/* Pagination strip */}
+      {pageCount > 0 && (
         <div
-          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
-            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-          onClick={toggleSidebar}
-        />
-        {/* Sidebar */}
-        <PDFSidebar
-          isOpen={sidebarOpen}
-          onToggle={toggleSidebar}
-          documentTitle={documentTitle}
-          outline={outline}
-          isOutlineLoading={isOutlineLoading}
-          bookmarks={bookmarks}
-          highlights={highlights}
-          onOutlineClick={handlePageChange}
-          onBookmarkClick={handleBookmarkClick}
-          onBookmarkDelete={removeBookmark}
-          onBookmarkRename={updateBookmark}
-          onHighlightClick={handleSidebarHighlightClick}
-          onExport={handleExport}
-        />
+          style={{
+            padding: '0 16px 8px',
+            display: 'flex',
+            gap: 2,
+          }}
+        >
+          {stripPages.map((p) => (
+            <button
+              key={p}
+              onClick={() => handlePageChange(p)}
+              aria-label={`Page ${p}`}
+              aria-current={p === currentPage ? 'page' : undefined}
+              style={{
+                flex: 1,
+                height: 24,
+                borderRadius: 2,
+                background: p === currentPage ? 'var(--accent)' : 'var(--bg-elevated)',
+                border: p === currentPage ? 0 : '1px solid var(--rule)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 9,
+                fontFamily: 'var(--font-mono), monospace',
+                color: p === currentPage ? '#fff' : 'var(--muted)',
+                cursor: 'pointer',
+                padding: 0,
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Scroll container */}
+      <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
         <div
           ref={containerRef}
-          className="pdf-viewer overflow-auto flex-1 bg-zinc-900 relative"
+          className="pdf-viewer"
           data-testid="pdf-viewer"
+          style={{
+            overflow: 'auto',
+            width: '100%',
+            height: '100%',
+            background: 'var(--pdf-bg)',
+          }}
         >
-          {/* Search UI */}
           {searchOpen && (
             <PDFSearch
               query={searchQuery}
@@ -969,79 +1073,81 @@ export function PDFViewer({
               onClose={handleCloseSearch}
             />
           )}
-          {/* Virtualized page container with total height for scrolling */}
+
           <div
             className="flex flex-col items-center relative"
-            style={{ minHeight: totalHeight }}
+            style={{
+              minHeight: totalHeight,
+              paddingBottom: 140,
+            }}
           >
-            {pdf && Array.from({ length: pageCount }, (_, i) => {
-              const pageNumber = i + 1;
-              const isInRange = pageNumber >= visibleRange.start && pageNumber <= visibleRange.end;
-              const pageHeight = pageHeights.get(pageNumber) || estimatedPageHeight;
-              const topOffset = getPageOffset(pageNumber);
+            {pdf &&
+              Array.from({ length: pageCount }, (_, i) => {
+                const pageNumber = i + 1;
+                const isInRange =
+                  pageNumber >= visibleRange.start &&
+                  pageNumber <= visibleRange.end;
+                const pageHeight =
+                  pageHeights.get(pageNumber) || estimatedPageHeight;
+                const topOffset = getPageOffset(pageNumber);
 
-              if (!isInRange) {
-                // Render placeholder for non-visible pages
+                if (!isInRange) {
+                  return (
+                    <div
+                      key={pageNumber}
+                      className="pdf-page-placeholder"
+                      style={{
+                        position: 'absolute',
+                        top: topOffset,
+                        height: pageHeight,
+                        width:
+                          pageDimensions.get(pageNumber)?.width || 'auto',
+                      }}
+                      data-page-number={pageNumber}
+                      data-placeholder="true"
+                    />
+                  );
+                }
+
                 return (
                   <div
                     key={pageNumber}
-                    className="pdf-page-placeholder"
-                    style={{
-                      position: 'absolute',
-                      top: topOffset,
-                      height: pageHeight,
-                      width: pageDimensions.get(pageNumber)?.width || 'auto',
-                    }}
-                    data-page-number={pageNumber}
-                    data-placeholder="true"
-                  />
+                    style={{ position: 'absolute', top: topOffset }}
+                  >
+                    <VirtualizedPDFPage
+                      pdf={pdf}
+                      pageNumber={pageNumber}
+                      zoom={zoom}
+                      searchMatches={getMatchesForPage(i)}
+                      activeMatchIndex={currentMatchIndex}
+                      allMatches={searchMatches}
+                      isBookmarked={isPageBookmarked(pageNumber)}
+                      onBookmarkToggle={() => {
+                        toggleBookmark(pageNumber);
+                        trackEvent('pdf_reader_bookmark_toggled', {
+                          documentId,
+                          page: pageNumber,
+                          source: 'page',
+                        });
+                      }}
+                      highlights={getHighlightsForPage(pageNumber)}
+                      onHighlightClick={handleHighlightClick}
+                      selectedHighlightId={highlightPopover?.highlight.id}
+                      onTextSelect={handleTextSelect}
+                      onDimensionsReady={(width, height) => {
+                        handlePageDimensionsReady(pageNumber, width, height);
+                      }}
+                      wordHighlightIndex={
+                        wordHighlightTarget?.page === pageNumber
+                          ? wordHighlightTarget.indexOnPage
+                          : undefined
+                      }
+                    />
+                  </div>
                 );
-              }
-
-              // Render actual virtualized page
-              return (
-                <div
-                  key={pageNumber}
-                  style={{
-                    position: 'absolute',
-                    top: topOffset,
-                  }}
-                >
-                  <VirtualizedPDFPage
-                    pdf={pdf}
-                    pageNumber={pageNumber}
-                    zoom={zoom}
-                    searchMatches={getMatchesForPage(i)}
-                    activeMatchIndex={currentMatchIndex}
-                    allMatches={searchMatches}
-                    isBookmarked={isPageBookmarked(pageNumber)}
-                    onBookmarkToggle={() => {
-                      toggleBookmark(pageNumber);
-                      trackEvent('pdf_reader_bookmark_toggled', {
-                        documentId,
-                        page: pageNumber,
-                        source: 'page',
-                      });
-                    }}
-                    highlights={getHighlightsForPage(pageNumber)}
-                    onHighlightClick={handleHighlightClick}
-                    selectedHighlightId={highlightPopover?.highlight.id}
-                    onTextSelect={handleTextSelect}
-                    onDimensionsReady={(width, height) => {
-                      handlePageDimensionsReady(pageNumber, width, height);
-                    }}
-                    wordHighlightIndex={
-                      wordHighlightTarget?.page === pageNumber
-                        ? wordHighlightTarget.indexOnPage
-                        : undefined
-                    }
-                  />
-                </div>
-              );
-            })}
+              })}
           </div>
 
-          {/* Selection Popover */}
           {selectionPopover && (
             <SelectionPopover
               text={selectionPopover.selection.text}
@@ -1053,7 +1159,6 @@ export function PDFViewer({
             />
           )}
 
-          {/* Highlight Popover */}
           {highlightPopover && (
             <HighlightPopover
               highlight={highlightPopover.highlight}
@@ -1066,7 +1171,56 @@ export function PDFViewer({
             />
           )}
         </div>
+
+        {/* Annotation dock */}
+        <PDFDock
+          isBookmarked={isPageBookmarked(currentPage)}
+          searchOpen={searchOpen}
+          viewSheetOpen={viewSheetOpen}
+          onAction={handleDockAction}
+        />
+
+        {/* View sheet */}
+        {viewSheetOpen && (
+          <PDFViewSheet
+            zoom={zoom}
+            onZoomChange={handleZoomChange}
+            outline={outline}
+            isOutlineLoading={isOutlineLoading}
+            bookmarks={bookmarks}
+            highlights={highlights}
+            onOutlineClick={(page) => {
+              handlePageChange(page);
+              setViewSheetOpen(false);
+            }}
+            onBookmarkClick={(page) => {
+              handlePageChange(page);
+              setViewSheetOpen(false);
+            }}
+            onBookmarkDelete={removeBookmark}
+            onHighlightClick={(h) => {
+              handleSidebarHighlightClick(h);
+              setViewSheetOpen(false);
+            }}
+            onExport={handleExport}
+            onClose={() => setViewSheetOpen(false)}
+          />
+        )}
       </div>
     </div>
   );
 }
+
+const pdfIconBtnStyle: React.CSSProperties = {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  background: 'var(--bg-elevated)',
+  border: '1px solid var(--rule)',
+  color: 'var(--ink)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  padding: 0,
+};

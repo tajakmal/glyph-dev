@@ -1,25 +1,47 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo, useContext } from 'react';
+import React, {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter } from 'next/navigation';
-import type { DocumentMeta, HighlightColor, TextHighlight, TextBookmark } from '@/types';
+import type {
+  DocumentMeta,
+  HighlightColor,
+  TextHighlight,
+  TextBookmark,
+} from '@/types';
 import { HIGHLIGHT_COLORS } from '@/types';
-import { getDocument, getText, updateLastOpened, deleteDocumentComplete } from '@/lib/storage';
+import {
+  getDocument,
+  getText,
+  updateLastOpened,
+  deleteDocumentComplete,
+} from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
-import { SelectionPopover, HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { useTextHighlights } from '@/hooks/useTextHighlights';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
-import { getSpeedReadSession, clearSpeedReadSession, navigateToDocumentSpeedRead } from '@/lib/speed-read';
-import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import {
+  getSpeedReadSession,
+  clearSpeedReadSession,
+  navigateToDocumentSpeedRead,
+} from '@/lib/speed-read';
 import { getFeatureFlag } from '@/lib/feature-flags';
+import { getPreferences } from '@/lib/storage';
 import { trackEvent } from '@/lib/telemetry';
 import { ReaderContext } from '@/contexts/ReaderContext';
+import { HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
+import { SelectionPill } from '@/components/reader/SelectionPill';
 
 interface TextReaderProps {
   documentId: string;
 }
 
-type SidebarTab = 'bookmarks' | 'notes';
+const PROGRESS_TICKS = 60;
 
 export function TextReader({ documentId }: TextReaderProps) {
   const router = useRouter();
@@ -28,29 +50,37 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    // Default closed on mobile
-    if (window.innerWidth < 640) return false;
-    const stored = localStorage.getItem('glyph:sidebar-open');
-    return stored !== null ? JSON.parse(stored) : true;
-  });
-  const [activeTab, setActiveTab] = useState<SidebarTab>('bookmarks');
-  const isTopbarSpeedReadEnabled = getFeatureFlag('textreader_topbar_speedread_enabled');
+  const [sheetTab, setSheetTab] = useState<'bookmarks' | 'notes'>('bookmarks');
+  const [sheetOpen, setSheetOpen] = useState(false);
   const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
 
-  // Current word index for position tracking
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
-  // When a bookmark is selected, suppress scroll-based index updates until the scroll settles
   const suppressScrollIndexRef = useRef(false);
 
-  // Tokenize text content into words (moved up so we can pass to highlights hook)
+  // Read typography preferences once on mount
+  const [readingFont, setReadingFont] = useState<'fraunces' | 'space-grotesk' | 'system'>('fraunces');
+  const [textSize, setTextSize] = useState<'sm' | 'md' | 'lg'>('md');
+  useEffect(() => {
+    const prefs = getPreferences();
+     
+    setReadingFont(prefs.readingFont);
+     
+    setTextSize(prefs.textSize);
+  }, []);
+
+  const bodyFontFamily =
+    readingFont === 'space-grotesk'
+      ? 'var(--font-sans), system-ui, sans-serif'
+      : readingFont === 'system'
+      ? 'system-ui, -apple-system, sans-serif'
+      : 'var(--font-serif), Georgia, serif';
+  const bodyFontSize = textSize === 'sm' ? 15 : textSize === 'lg' ? 19 : 17;
+
   const words = useMemo(() => {
     if (!textContent) return [];
     return tokenize(textContent);
   }, [textContent]);
 
-  // Text highlights hook
   const {
     highlights,
     addHighlight,
@@ -60,7 +90,6 @@ export function TextReader({ documentId }: TextReaderProps) {
     getHighlightAtWord,
   } = useTextHighlights({ documentId, words });
 
-  // Text bookmarks hook
   const {
     bookmarks,
     addBookmark,
@@ -69,12 +98,11 @@ export function TextReader({ documentId }: TextReaderProps) {
     isWordBookmarked,
   } = useTextBookmarks({ documentId });
 
-  // Check if current word is bookmarked
-  const isCurrentWordBookmarked = useMemo(() => {
-    return isWordBookmarked(currentWordIndex);
-  }, [isWordBookmarked, currentWordIndex]);
+  const isCurrentWordBookmarked = useMemo(
+    () => isWordBookmarked(currentWordIndex),
+    [isWordBookmarked, currentWordIndex]
+  );
 
-  // Selection state
   const textContainerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [selection, setSelection] = useState<{
@@ -83,46 +111,31 @@ export function TextReader({ documentId }: TextReaderProps) {
     text: string;
     anchorRect: { x: number; y: number };
   } | null>(null);
-
-  // Active highlight for popover (when clicking a highlighted word)
   const [activeHighlight, setActiveHighlight] = useState<{
     highlight: TextHighlight;
     anchorRect: { x: number; y: number };
   } | null>(null);
 
-  // Persist sidebar state
-  useEffect(() => {
-    localStorage.setItem('glyph:sidebar-open', JSON.stringify(sidebarOpen));
-  }, [sidebarOpen]);
-
-  // Load document metadata and content
+  // Load document
   useEffect(() => {
     async function loadDocument() {
       setIsLoading(true);
       setError(null);
-
       try {
-        // Get document metadata
         const docMeta = getDocument(documentId);
         if (!docMeta) {
           setError('Document not found');
           setIsLoading(false);
           return;
         }
-
         setMeta(docMeta);
-
-        // Update lastOpenedAt
         updateLastOpened(documentId);
-
-        // Get text content from IndexedDB
         const content = await getText(documentId);
         if (content === null) {
           setError('Text content not found');
           setIsLoading(false);
           return;
         }
-
         setTextContent(content);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'Failed to load document');
@@ -130,11 +143,10 @@ export function TextReader({ documentId }: TextReaderProps) {
         setIsLoading(false);
       }
     }
-
     loadDocument();
   }, [documentId]);
 
-  // Highlight + scroll to current word when returning from speed-read mode
+  // Highlight word when returning from speed-read
   const prevViewModeRef = useRef(readerCtx?.viewMode);
   useEffect(() => {
     const prevMode = prevViewModeRef.current;
@@ -143,20 +155,15 @@ export function TextReader({ documentId }: TextReaderProps) {
 
     if (prevMode === 'speed-read' && curMode === 'pdf' && readerCtx) {
       const wordIndex = readerCtx.currentWordIndex;
-
       requestAnimationFrame(() => {
         const wordSpan = textContainerRef.current?.querySelector(
           `[data-word-index="${wordIndex}"]`
         ) as HTMLElement | null;
         if (!wordSpan) return;
-
         wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-        // Apply persistent highlight — stays until user taps/clicks the screen
-        wordSpan.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
-        wordSpan.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
+        wordSpan.style.backgroundColor = 'var(--accent-35)';
+        wordSpan.style.boxShadow = '0 0 0 4px var(--accent-20)';
         wordSpan.style.borderRadius = '3px';
-
         const clearHighlight = () => {
           wordSpan.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
           wordSpan.style.backgroundColor = '';
@@ -167,9 +174,6 @@ export function TextReader({ documentId }: TextReaderProps) {
           }, 600);
           document.removeEventListener('pointerdown', clearHighlight);
         };
-
-        // Only clear on user interaction (tap/click), not scroll.
-        // Delay listener registration so the tap that triggered "back to reader" doesn't immediately clear it.
         setTimeout(() => {
           document.addEventListener('pointerdown', clearHighlight, { once: true });
         }, 500);
@@ -177,104 +181,36 @@ export function TextReader({ documentId }: TextReaderProps) {
     }
   }, [readerCtx?.viewMode, readerCtx?.currentWordIndex, readerCtx]);
 
-  // Check for speed read session and scroll to the word with focus highlight
+  // Scroll to speed-read resume target
   useEffect(() => {
     if (isLoading || !textContent) return;
-
     const session = getSpeedReadSession();
     if (!session || session.documentId !== documentId || session.kind !== 'text') {
       return;
     }
-
-    // Clear the session to prevent re-triggering
     clearSpeedReadSession();
-
-    // Wait for next frame to ensure DOM is ready
     requestAnimationFrame(() => {
       const wordSpan = textContainerRef.current?.querySelector(
         `[data-word-index="${session.wordIndex}"]`
       );
       if (!wordSpan) return;
-
-      // Scroll to the word
       wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      // Add temporary focus highlight
-      wordSpan.classList.add('ring-2', 'ring-zinc-400', 'bg-zinc-400/20', 'rounded');
-
-      // Remove highlight on user interaction or after 3 seconds
-      const clearHighlight = () => {
-        wordSpan.classList.remove('ring-2', 'ring-zinc-400', 'bg-zinc-400/20', 'rounded');
-        scrollContainerRef.current?.removeEventListener('scroll', clearHighlight);
-        document.removeEventListener('click', clearHighlight);
-      };
-
-      // Set up listeners to clear on interaction
-      scrollContainerRef.current?.addEventListener('scroll', clearHighlight, { once: true });
-      document.addEventListener('click', clearHighlight, { once: true });
-
-      // Also clear after 3 seconds
-      setTimeout(clearHighlight, 3000);
+      (wordSpan as HTMLElement).style.backgroundColor = 'var(--accent-35)';
+      (wordSpan as HTMLElement).style.boxShadow = '0 0 0 4px var(--accent-20)';
+      setTimeout(() => {
+        (wordSpan as HTMLElement).style.transition = 'all .6s ease';
+        (wordSpan as HTMLElement).style.backgroundColor = '';
+        (wordSpan as HTMLElement).style.boxShadow = '';
+      }, 2500);
     });
   }, [isLoading, textContent, documentId]);
 
-  const toggleSidebar = useCallback(() => {
-    setSidebarOpen((prev: boolean) => !prev);
-  }, []);
-
-  const handleNavigateHome = useCallback(() => {
-    router.push('/');
-  }, [router]);
-
-  const handleDelete = useCallback(async () => {
-    await deleteDocumentComplete(documentId);
-    router.push('/');
-  }, [documentId, router]);
-
-  const handleSpeedRead = useCallback(() => {
-    if (!isTopbarSpeedReadEnabled) return;
-
-    if (readerCtx) {
-      readerCtx.startSpeedReadAt(currentWordIndex > 0 ? currentWordIndex : 0);
-    } else {
-      navigateToDocumentSpeedRead(router, documentId, {
-        returnPath: `/reader/${documentId}`,
-        startWordIndex: currentWordIndex > 0 ? currentWordIndex : undefined,
-        kind: 'text',
-      });
-    }
-    trackEvent('text_reader_speedread_started', {
-      documentId,
-      startWordIndex: currentWordIndex,
-      source: 'topbar',
-    });
-  }, [isTopbarSpeedReadEnabled, readerCtx, router, documentId, currentWordIndex]);
-
-  const handleBookmarkToggle = useCallback(() => {
-    // If already bookmarked, remove it
-    if (isCurrentWordBookmarked) {
-      toggleWordBookmark(currentWordIndex);
-    } else {
-      // No selection — bookmark the first visible word with ellipsis label
-      const word = words[currentWordIndex] || '';
-      const label = word + '...';
-      addBookmark(currentWordIndex, label);
-    }
-    trackEvent('text_reader_bookmark_toggled', {
-      documentId,
-      wordIndex: currentWordIndex,
-    });
-  }, [toggleWordBookmark, addBookmark, currentWordIndex, isCurrentWordBookmarked, words, documentId]);
-
-  // Persist live text reading position for future unified progress sync.
+  // Persist live reading position
   useEffect(() => {
     if (!isProgressTrackingEnabled || words.length === 0) return;
     sessionStorage.setItem(
       `glyph:text-last-word:${documentId}`,
-      JSON.stringify({
-        wordIndex: currentWordIndex,
-        updatedAt: Date.now(),
-      })
+      JSON.stringify({ wordIndex: currentWordIndex, updatedAt: Date.now() })
     );
   }, [isProgressTrackingEnabled, currentWordIndex, words.length, documentId]);
 
@@ -282,183 +218,185 @@ export function TextReader({ documentId }: TextReaderProps) {
   useEffect(() => {
     const scrollContainer = scrollContainerRef.current;
     if (!scrollContainer) return;
-
     let rafId: number | null = null;
 
     const updateCurrentWord = () => {
       if (suppressScrollIndexRef.current) return;
       const textContainer = textContainerRef.current;
       if (!textContainer) return;
-
-      // Get the scroll container's bounding rect
       const containerRect = scrollContainer.getBoundingClientRect();
-      // Target point: near the top of the visible area with a small offset
-      const targetY = containerRect.top + 80; // 80px offset from top
+      const targetY = containerRect.top + 80;
       const targetX = containerRect.left + containerRect.width / 2;
-
-      // Find element at this point
       const element = document.elementFromPoint(targetX, targetY);
       if (!element) return;
-
-      // Find the nearest word span
-      const wordSpan = element.closest('[data-word-index]') ||
-                       element.querySelector('[data-word-index]');
-
+      const wordSpan =
+        element.closest('[data-word-index]') ||
+        element.querySelector('[data-word-index]');
       if (wordSpan) {
-        const wordIndex = parseInt(wordSpan.getAttribute('data-word-index') || '0', 10);
+        const wordIndex = parseInt(
+          wordSpan.getAttribute('data-word-index') || '0',
+          10
+        );
         setCurrentWordIndex(wordIndex);
       }
     };
 
     const handleScroll = () => {
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
+      if (rafId !== null) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(updateCurrentWord);
     };
 
-    // Initial update
     updateCurrentWord();
-
     scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
     return () => {
       scrollContainer.removeEventListener('scroll', handleScroll);
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
+      if (rafId !== null) cancelAnimationFrame(rafId);
     };
   }, [textContent]);
 
-  // Keyboard shortcuts for sidebar toggle and bookmark
+  // Navigation handlers
+  const handleNavigateHome = useCallback(() => router.push('/'), [router]);
+  const handleDelete = useCallback(async () => {
+    await deleteDocumentComplete(documentId);
+    router.push('/');
+  }, [documentId, router]);
+
+  const handleSpeedRead = useCallback(
+    (startAt?: number) => {
+      const start = startAt ?? currentWordIndex;
+      if (readerCtx) {
+        readerCtx.startSpeedReadAt(start);
+      } else {
+        navigateToDocumentSpeedRead(router, documentId, {
+          returnPath: `/reader/${documentId}`,
+          startWordIndex: start,
+          kind: 'text',
+        });
+      }
+      trackEvent('text_reader_speedread_started', {
+        documentId,
+        startWordIndex: start,
+        source: startAt !== undefined ? 'selection' : 'fab',
+      });
+    },
+    [readerCtx, router, documentId, currentWordIndex]
+  );
+
+  const handleBookmarkToggle = useCallback(() => {
+    if (isCurrentWordBookmarked) {
+      toggleWordBookmark(currentWordIndex);
+    } else {
+      const word = words[currentWordIndex] || '';
+      addBookmark(currentWordIndex, word + '...');
+    }
+    trackEvent('text_reader_bookmark_toggled', {
+      documentId,
+      wordIndex: currentWordIndex,
+    });
+  }, [
+    isCurrentWordBookmarked,
+    toggleWordBookmark,
+    currentWordIndex,
+    words,
+    addBookmark,
+    documentId,
+  ]);
+
+  // Keyboard
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
         return;
       }
-      if (e.key === 's' || e.key === 'S') {
-        toggleSidebar();
-      }
-      if (e.key === 'b' || e.key === 'B') {
-        handleBookmarkToggle();
-      }
+      if (e.key === 'b' || e.key === 'B') handleBookmarkToggle();
+      if (e.key === 's' || e.key === 'S') setSheetOpen((v) => !v);
     };
-
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidebar, handleBookmarkToggle]);
+  }, [handleBookmarkToggle]);
 
-  // Handle text selection (works for both mouse and touch via selectionchange)
+  // Selection detection
   const processSelection = useCallback(() => {
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0 || !textContainerRef.current) {
       return;
     }
-
     const range = sel.getRangeAt(0);
     const selectedText = sel.toString().trim();
-    if (!selectedText) {
-      return;
-    }
-
+    if (!selectedText) return;
     const container = textContainerRef.current;
-    if (!container.contains(range.commonAncestorContainer)) {
-      return;
-    }
+    if (!container.contains(range.commonAncestorContainer)) return;
 
-    // Try to find word spans from selection endpoints
     const findWordSpan = (node: Node): Element | null => {
       let el: Node | null = node;
-      if (el.nodeType === Node.TEXT_NODE) {
-        el = el.parentElement;
-      }
+      if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
       if (!el || !(el instanceof Element)) return null;
-      // Try closest first (works when selection is inside a word span)
-      const span = el.closest('[data-word-index]');
-      if (span) return span;
-      // Fallback: if we're on a container element, find the first/last child word span
-      return null;
+      return el.closest('[data-word-index]');
     };
 
     let startSpan = findWordSpan(range.startContainer);
     let endSpan = findWordSpan(range.endContainer);
 
-    // Fallback: if closest() failed (e.g., selection starts in whitespace between spans
-    // on iOS Safari), find intersecting word spans by checking all spans against the range
     if (!startSpan || !endSpan) {
       const wordSpans = container.querySelectorAll('[data-word-index]');
       let firstMatch: Element | null = null;
       let lastMatch: Element | null = null;
-
       for (const span of wordSpans) {
         if (range.intersectsNode(span)) {
           if (!firstMatch) firstMatch = span;
           lastMatch = span;
         }
       }
-
       if (!firstMatch || !lastMatch) return;
       startSpan = startSpan || firstMatch;
       endSpan = endSpan || lastMatch;
     }
 
-    if (!container.contains(startSpan) || !container.contains(endSpan)) {
-      return;
-    }
+    if (!container.contains(startSpan) || !container.contains(endSpan)) return;
 
     const startWord = parseInt(startSpan.getAttribute('data-word-index') || '0', 10);
     const endWord = parseInt(endSpan.getAttribute('data-word-index') || '0', 10);
-
     const normalizedStart = Math.min(startWord, endWord);
     const normalizedEnd = Math.max(startWord, endWord);
 
-    // Get anchor position for popover (center-top of selection)
     const rects = range.getClientRects();
-    // Fallback to getBoundingClientRect if getClientRects is empty (iOS edge case)
-    const rect = rects.length > 0
-      ? { first: rects[0], last: rects[rects.length - 1] }
-      : { first: range.getBoundingClientRect(), last: range.getBoundingClientRect() };
-
+    const rect =
+      rects.length > 0
+        ? { first: rects[0], last: rects[rects.length - 1] }
+        : {
+            first: range.getBoundingClientRect(),
+            last: range.getBoundingClientRect(),
+          };
     if (rect.first.width === 0 && rect.first.height === 0) return;
-
-    const anchorX = (rect.first.left + rect.last.right) / 2;
-    const anchorY = rect.first.top;
 
     setSelection({
       startWord: normalizedStart,
       endWord: normalizedEnd,
       text: selectedText,
-      anchorRect: { x: anchorX, y: anchorY },
+      anchorRect: {
+        x: (rect.first.left + rect.last.right) / 2,
+        y: rect.first.top,
+      },
     });
   }, []);
 
-  // Listen for selectionchange to support mobile text selection (long-press + handle drag)
-  // Also handles desktop mouseup selection
   useEffect(() => {
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
     const handleSelectionChange = () => {
-      // Debounce: on iOS Safari, selectionchange fires rapidly during long-press
-      // and handle dragging. Use a longer debounce to wait for selection to stabilize.
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const sel = window.getSelection();
-        if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-          return; // Don't clear selection state here — let the popover handle that
-        }
-
-        // Only process if the selection is within our text container
+        if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
         if (!textContainerRef.current) return;
         const range = sel.getRangeAt(0);
         if (!textContainerRef.current.contains(range.commonAncestorContainer)) return;
-
-        // On iOS, verify the selection has actual text (not just an empty range from long-press start)
-        const text = sel.toString().trim();
-        if (!text) return;
-
+        if (!sel.toString().trim()) return;
         processSelection();
       }, 300);
     };
-
     document.addEventListener('selectionchange', handleSelectionChange);
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
@@ -466,205 +404,124 @@ export function TextReader({ documentId }: TextReaderProps) {
     };
   }, [processSelection]);
 
-  // Close selection popover
   const handleCloseSelection = useCallback(() => {
     setSelection(null);
     window.getSelection()?.removeAllRanges();
   }, []);
 
-  // Handle highlight creation
-  const handleCreateHighlight = useCallback((color: HighlightColor, note?: string) => {
-    if (!selection) return;
+  const handleCreateHighlight = useCallback(
+    (color: HighlightColor, note?: string) => {
+      if (!selection) return;
+      const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
+      const text = selectedWords.join(' ');
+      addHighlight({
+        startWord: selection.startWord,
+        endWord: selection.endWord,
+        text,
+        color,
+        note,
+      });
+      trackEvent('text_reader_highlight_created', {
+        documentId,
+        color,
+        startWord: selection.startWord,
+        endWord: selection.endWord,
+        hasNote: Boolean(note && note.trim()),
+      });
+      handleCloseSelection();
+    },
+    [selection, words, addHighlight, handleCloseSelection, documentId]
+  );
 
-    // Build the text from the selected word range
-    const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
-    const text = selectedWords.join(' ');
-
-    addHighlight({
-      startWord: selection.startWord,
-      endWord: selection.endWord,
-      text,
-      color,
-      note,
-    });
-    trackEvent('text_reader_highlight_created', {
-      documentId,
-      color,
-      startWord: selection.startWord,
-      endWord: selection.endWord,
-      hasNote: Boolean(note && note.trim()),
-    });
-
-    handleCloseSelection();
-  }, [selection, words, addHighlight, handleCloseSelection, documentId]);
-
-  // Handle speed read from selection - starts at selected word and continues to end
   const handleSpeedReadSelection = useCallback(() => {
     if (!selection) return;
-
-    if (readerCtx) {
-      readerCtx.startSpeedReadAt(selection.startWord);
-    } else {
-      navigateToDocumentSpeedRead(router, documentId, {
-        returnPath: `/reader/${documentId}`,
-        startWordIndex: selection.startWord,
-        kind: 'text',
-      });
-    }
-    trackEvent('text_reader_speedread_started', {
-      documentId,
-      startWordIndex: selection.startWord,
-      source: 'selection',
-    });
-
+    handleSpeedRead(selection.startWord);
     handleCloseSelection();
-  }, [selection, readerCtx, documentId, router, handleCloseSelection]);
+  }, [selection, handleSpeedRead, handleCloseSelection]);
 
-  // Handle click on highlighted word
-  const handleHighlightClick = useCallback((e: React.MouseEvent<HTMLSpanElement>) => {
-    const target = e.target as HTMLElement;
-    const highlightId = target.getAttribute('data-highlight-id');
-    if (!highlightId) return;
+  const handleBookmarkSelection = useCallback(() => {
+    if (!selection) return;
+    const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
+    addBookmark(selection.startWord, selectedWords.join(' '), selection.endWord);
+    handleCloseSelection();
+  }, [selection, words, addBookmark, handleCloseSelection]);
 
-    const highlight = highlights.find((h) => h.id === highlightId);
-    if (!highlight) return;
+  const handleCopySelection = useCallback(() => {
+    if (!selection) return;
+    navigator.clipboard?.writeText(selection.text).catch(() => {});
+    handleCloseSelection();
+  }, [selection, handleCloseSelection]);
 
-    // Prevent text selection when clicking a highlight
-    e.stopPropagation();
-
-    // Get anchor position for popover
-    const rect = target.getBoundingClientRect();
-    const anchorX = rect.left + rect.width / 2;
-    const anchorY = rect.top;
-
-    setActiveHighlight({
-      highlight,
-      anchorRect: { x: anchorX, y: anchorY },
-    });
-  }, [highlights]);
-
-  // Close highlight popover
-  const handleCloseHighlightPopover = useCallback(() => {
-    setActiveHighlight(null);
-  }, []);
-
-  // Handle highlight color change
-  const handleHighlightColorChange = useCallback((color: HighlightColor) => {
-    if (activeHighlight) {
-      updateHighlightColor(activeHighlight.highlight.id, color);
-      trackEvent('text_reader_highlight_color_changed', {
-        documentId,
-        highlightId: activeHighlight.highlight.id,
-        color,
+  // Highlight click → edit popover
+  const handleHighlightClick = useCallback(
+    (e: React.MouseEvent<HTMLSpanElement>) => {
+      const target = e.target as HTMLElement;
+      const highlightId = target.getAttribute('data-highlight-id');
+      if (!highlightId) return;
+      const highlight = highlights.find((h) => h.id === highlightId);
+      if (!highlight) return;
+      e.stopPropagation();
+      const rect = target.getBoundingClientRect();
+      setActiveHighlight({
+        highlight,
+        anchorRect: { x: rect.left + rect.width / 2, y: rect.top },
       });
-    }
-  }, [activeHighlight, updateHighlightColor, documentId]);
+    },
+    [highlights]
+  );
 
-  // Handle highlight note update
-  const handleHighlightNoteUpdate = useCallback((note: string) => {
-    if (activeHighlight) {
-      updateHighlightNote(activeHighlight.highlight.id, note);
-      trackEvent('text_reader_highlight_note_updated', {
-        documentId,
-        highlightId: activeHighlight.highlight.id,
-        noteLength: note.length,
-      });
-    }
-  }, [activeHighlight, updateHighlightNote, documentId]);
-
-  // Handle highlight delete
+  const handleCloseHighlightPopover = useCallback(
+    () => setActiveHighlight(null),
+    []
+  );
+  const handleHighlightColorChange = useCallback(
+    (color: HighlightColor) => {
+      if (activeHighlight) updateHighlightColor(activeHighlight.highlight.id, color);
+    },
+    [activeHighlight, updateHighlightColor]
+  );
+  const handleHighlightNoteUpdate = useCallback(
+    (note: string) => {
+      if (activeHighlight) updateHighlightNote(activeHighlight.highlight.id, note);
+    },
+    [activeHighlight, updateHighlightNote]
+  );
   const handleHighlightDelete = useCallback(() => {
     if (activeHighlight) {
       removeHighlight(activeHighlight.highlight.id);
-      trackEvent('text_reader_highlight_deleted', {
-        documentId,
-        highlightId: activeHighlight.highlight.id,
-      });
       setActiveHighlight(null);
     }
-  }, [activeHighlight, removeHighlight, documentId]);
-
-  // Handle speed read from highlight - starts at highlight's start word and continues to end
+  }, [activeHighlight, removeHighlight]);
   const handleHighlightSpeedRead = useCallback(() => {
     if (!activeHighlight) return;
+    handleSpeedRead(activeHighlight.highlight.startWord);
+    setActiveHighlight(null);
+  }, [activeHighlight, handleSpeedRead]);
 
-    if (readerCtx) {
-      readerCtx.startSpeedReadAt(activeHighlight.highlight.startWord);
-    } else {
-      navigateToDocumentSpeedRead(router, documentId, {
-        returnPath: `/reader/${documentId}`,
-        startWordIndex: activeHighlight.highlight.startWord,
-        kind: 'text',
-      });
-    }
-    trackEvent('text_reader_speedread_started', {
-      documentId,
-      startWordIndex: activeHighlight.highlight.startWord,
-      source: 'highlight',
-    });
-
-    handleCloseHighlightPopover();
-  }, [activeHighlight, readerCtx, documentId, router, handleCloseHighlightPopover]);
-
-  // Scroll to a highlight by finding the first word span
-  const scrollToHighlight = useCallback((highlight: TextHighlight) => {
-    if (!textContainerRef.current) return;
-
-    const wordSpan = textContainerRef.current.querySelector(
-      `[data-word-index="${highlight.startWord}"]`
-    );
-    if (wordSpan) {
-      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      // Flash effect to indicate the highlight
-      const highlightSpans = textContainerRef.current.querySelectorAll(
-        `[data-highlight-id="${highlight.id}"]`
-      );
-      highlightSpans.forEach((span) => {
-        span.classList.add('ring-2', 'ring-zinc-400');
-        setTimeout(() => {
-          span.classList.remove('ring-2', 'ring-zinc-400');
-        }, 1500);
-      });
-    }
-  }, []);
-
-  // Scroll to a bookmark: collapse sidebar, scroll to word, highlight in orange until tap/click
+  // Bookmark jump
   const scrollToBookmark = useCallback((bookmark: TextBookmark) => {
     if (!textContainerRef.current) return;
-
-    // Collapse the sidebar
-    setSidebarOpen(false);
-
-    // Update currentWordIndex so speed read starts from here
+    setSheetOpen(false);
     setCurrentWordIndex(bookmark.wordIndex);
-    // Suppress scroll-based index updates so scrollIntoView doesn't overwrite the bookmark position
     suppressScrollIndexRef.current = true;
-
     const container = textContainerRef.current;
     const startIdx = bookmark.wordIndex;
     const endIdx = bookmark.endWordIndex ?? bookmark.wordIndex;
-
-    // Collect all word spans in the bookmark range
     const spans: HTMLElement[] = [];
     for (let i = startIdx; i <= endIdx; i++) {
-      const span = container.querySelector(`[data-word-index="${i}"]`) as HTMLElement | null;
+      const span = container.querySelector(
+        `[data-word-index="${i}"]`
+      ) as HTMLElement | null;
       if (span) spans.push(span);
     }
-
     if (spans.length === 0) return;
-
-    // Scroll to first span
     requestAnimationFrame(() => {
       spans[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-
-      // Apply persistent orange highlight to all spans in the range
       spans.forEach((span) => {
-        span.style.backgroundColor = 'rgba(251, 146, 60, 0.5)';
-        span.style.boxShadow = '0 0 0 4px rgba(251, 146, 60, 0.35)';
+        span.style.backgroundColor = 'var(--accent-35)';
+        span.style.boxShadow = '0 0 0 4px var(--accent-20)';
         span.style.borderRadius = '3px';
       });
-
       const clearHighlight = () => {
         spans.forEach((span) => {
           span.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
@@ -677,477 +534,594 @@ export function TextReader({ documentId }: TextReaderProps) {
         });
         document.removeEventListener('pointerdown', clearHighlight);
       };
-
-      // Delay listener so the click that triggered "select bookmark" doesn't immediately clear
       setTimeout(() => {
         document.addEventListener('pointerdown', clearHighlight, { once: true });
       }, 500);
-
-      // Re-enable scroll-based index updates after smooth scroll settles
       setTimeout(() => {
         suppressScrollIndexRef.current = false;
       }, 800);
     });
   }, []);
 
-  // Generate a snippet for a bookmark (40-60 chars centered on the word)
-  const getBookmarkSnippet = useCallback((wordIndex: number): string => {
-    if (words.length === 0) return '';
+  const scrollToHighlight = useCallback(
+    (highlight: TextHighlight) => {
+      if (!textContainerRef.current) return;
+      setSheetOpen(false);
+      const wordSpan = textContainerRef.current.querySelector(
+        `[data-word-index="${highlight.startWord}"]`
+      );
+      if (wordSpan) {
+        wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    },
+    []
+  );
 
-    // Target around 50 characters, centered on the bookmarked word
-    const targetLength = 50;
-    const wordsPerSide = 5; // Approximate words on each side
+  const getBookmarkSnippet = useCallback(
+    (wordIndex: number): string => {
+      if (words.length === 0) return '';
+      const startIdx = Math.max(0, wordIndex - 5);
+      const endIdx = Math.min(words.length - 1, wordIndex + 5);
+      let snippet = words.slice(startIdx, endIdx + 1).join(' ');
+      if (startIdx > 0) snippet = '…' + snippet;
+      if (endIdx < words.length - 1) snippet = snippet + '…';
+      return snippet;
+    },
+    [words]
+  );
 
-    const startIdx = Math.max(0, wordIndex - wordsPerSide);
-    const endIdx = Math.min(words.length - 1, wordIndex + wordsPerSide);
+  const highlightsWithNotes = useMemo(
+    () => highlights.filter((h) => h.note && h.note.trim().length > 0),
+    [highlights]
+  );
 
-    let snippet = words.slice(startIdx, endIdx + 1).join(' ');
-
-    // Trim to target length if needed
-    if (snippet.length > 60) {
-      // Find the bookmarked word position in the snippet
-      const beforeWords = words.slice(startIdx, wordIndex).join(' ');
-      const targetWord = words[wordIndex];
-      const afterWords = words.slice(wordIndex + 1, endIdx + 1).join(' ');
-
-      // Build a centered snippet
-      const halfTarget = Math.floor((targetLength - targetWord.length) / 2);
-      const beforeSnippet = beforeWords.length > halfTarget
-        ? '...' + beforeWords.slice(-halfTarget + 3)
-        : beforeWords;
-      const afterSnippet = afterWords.length > halfTarget
-        ? afterWords.slice(0, halfTarget - 3) + '...'
-        : afterWords;
-
-      snippet = `${beforeSnippet} ${targetWord} ${afterSnippet}`.trim();
-    }
-
-    // Add ellipsis if not at the start/end
-    if (startIdx > 0 && !snippet.startsWith('...')) {
-      snippet = '...' + snippet;
-    }
-    if (endIdx < words.length - 1 && !snippet.endsWith('...')) {
-      snippet = snippet + '...';
-    }
-
-    return snippet;
-  }, [words]);
-
-  // Get position string for a bookmark
-  const getBookmarkPosition = useCallback((wordIndex: number): string => {
-    const totalWords = words.length;
-    if (totalWords === 0) return '';
-    const percent = Math.round(((wordIndex + 1) / totalWords) * 100);
-    return `Word ${wordIndex + 1} / ${totalWords} (${percent}%)`;
-  }, [words]);
-
-  // Filter highlights to only those with notes
-  const highlightsWithNotes = useMemo(() => {
-    return highlights.filter((h) => h.note && h.note.trim().length > 0);
-  }, [highlights]);
-
-  // Document title
   const documentTitle = meta?.title || 'Untitled Document';
+  const progress = words.length
+    ? (currentWordIndex + 1) / words.length
+    : 0;
+  const pct = Math.round(progress * 100);
 
-  // Loading state
   if (isLoading) {
     return (
-      <div className="flex flex-col h-full bg-zinc-950">
-      <div className="flex items-center justify-center h-full">
-          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-zinc-300 rounded-full animate-spin" aria-label="Loading text reader" />
-        </div>
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--paper)',
+          color: 'var(--paper-ink)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <div
+          className="spinner"
+          style={{
+            width: 32,
+            height: 32,
+            border: '2px solid rgba(20,17,12,0.15)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+          }}
+          aria-label="Loading"
+        />
       </div>
     );
   }
 
-  // Error state: document not found
-  if (error === 'Document not found') {
-    return (
-      <div className="flex flex-col h-full bg-zinc-950">
-        <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-          <svg className="w-16 h-16 mb-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-lg mb-2">Document not found</p>
-          <p className="text-sm text-zinc-500 mb-6">This document may have been deleted.</p>
-          <button
-            onClick={handleNavigateHome}
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors"
-          >
-            Back to Library
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state: text content missing
-  if (error === 'Text content not found') {
-    return (
-      <div className="flex flex-col h-full bg-zinc-950">
-        <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-          <svg className="w-16 h-16 mb-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-          </svg>
-          <p className="text-lg mb-2">Text content not found</p>
-          <p className="text-sm text-zinc-500 mb-6">The content for this document is missing from storage.</p>
-          <button
-            onClick={handleDelete}
-            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
-          >
-            Delete Document
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Generic error state
   if (error) {
     return (
-      <div className="flex flex-col h-full bg-zinc-950">
-        <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-          <svg className="w-16 h-16 mb-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
-          </svg>
-          <p className="text-lg mb-2">Failed to load document</p>
-          <p className="text-sm text-zinc-500 mb-6">{error}</p>
-          <button
-            onClick={handleNavigateHome}
-            className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors"
-          >
-            Back to Library
-          </button>
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--paper)',
+          color: 'var(--paper-ink)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          padding: 24,
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ fontSize: 20, fontWeight: 600 }}>
+          {error === 'Document not found'
+            ? 'Document not found'
+            : error === 'Text content not found'
+            ? 'Content missing'
+            : 'Failed to load'}
         </div>
+        <div style={{ color: 'var(--paper-muted)', fontSize: 14 }}>{error}</div>
+        <button
+          onClick={error === 'Text content not found' ? handleDelete : handleNavigateHome}
+          style={{
+            marginTop: 8,
+            padding: '10px 18px',
+            borderRadius: 999,
+            background: 'var(--paper-ink)',
+            color: 'var(--paper)',
+            border: 0,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+          }}
+        >
+          {error === 'Text content not found' ? 'Delete document' : 'Back to library'}
+        </button>
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Top Bar */}
-      <div className="bg-zinc-900 border-b border-zinc-800">
-        {/* Main row */}
-        <div className="h-12 flex items-center justify-between px-2 sm:px-4">
-          {/* Left: Sidebar toggle, Home button, and title */}
-          <div className="flex items-center gap-1 sm:gap-3 min-w-0 flex-1">
-            <button
-              onClick={toggleSidebar}
-              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
-              aria-label={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <button
-              onClick={handleNavigateHome}
-              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors flex-shrink-0"
-              aria-label="Back to library"
-              title="Back to Library"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-              </svg>
-            </button>
-            <span className="text-zinc-300 text-sm font-medium truncate" title={documentTitle}>
-              {documentTitle}
-            </span>
-          </div>
-
-          {/* Center: Position indicator — hidden on mobile, shown on sm+ */}
-          <div className="hidden sm:flex items-center gap-2 text-zinc-500 text-sm flex-shrink-0 mx-4">
-            {words.length > 0 && (
-              <span aria-live="polite">
-                Word {currentWordIndex + 1} / {words.length} ({Math.round(((currentWordIndex + 1) / words.length) * 100)}%)
-              </span>
-            )}
-          </div>
-
-          {/* Right: Speed Read, Bookmark, Theme */}
-          <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
-            <button
-              onClick={handleSpeedRead}
-              disabled={!isTopbarSpeedReadEnabled}
-              className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              aria-label="Speed read document"
-              title="Speed read document"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </button>
-            <button
-              onClick={handleBookmarkToggle}
-              className={`p-2 rounded-lg transition-colors ${
-                isCurrentWordBookmarked
-                  ? 'text-orange-500 bg-orange-500/10'
-                  : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'
-              }`}
-              aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
-              aria-pressed={isCurrentWordBookmarked}
-              title={isCurrentWordBookmarked ? 'Remove bookmark (B)' : 'Bookmark this position (B)'}
-            >
-              <svg className="w-5 h-5" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-              </svg>
-            </button>
-            <ThemeToggle />
-          </div>
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'var(--paper)',
+        color: 'var(--paper-ink)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Top bar */}
+      <div
+        style={{
+          padding: 'max(env(safe-area-inset-top), 20px) 16px 10px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderBottom: '1px solid var(--paper-rule)',
+          gap: 12,
+        }}
+      >
+        <button
+          onClick={handleNavigateHome}
+          aria-label="Back to library"
+          style={topIconStyle}
+        >
+          <svg width="10" height="12" viewBox="0 0 10 12" aria-hidden="true">
+            <path
+              d="M7 1L3 6l4 5"
+              stroke="var(--paper-ink)"
+              strokeWidth="1.5"
+              fill="none"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <div
+          className="micro-label"
+          style={{ color: 'var(--paper-muted)', flex: 1, textAlign: 'center' }}
+          title={documentTitle}
+        >
+          {documentTitle.length > 24
+            ? documentTitle.slice(0, 22) + '…'
+            : documentTitle}{' '}
+          · {pct}%
         </div>
-
-        {/* Mobile progress bar — shown on mobile only */}
-        {words.length > 0 && (
-          <div className="sm:hidden px-3 pb-1.5">
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-1 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-zinc-500 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.round(((currentWordIndex + 1) / words.length) * 100)}%` }}
-                />
-              </div>
-              <span className="text-zinc-500 text-xs tabular-nums flex-shrink-0" aria-live="polite">
-                {Math.round(((currentWordIndex + 1) / words.length) * 100)}%
-              </span>
-            </div>
-          </div>
-        )}
+        <div style={{ display: 'flex', gap: 4 }}>
+          <button
+            onClick={handleBookmarkToggle}
+            aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this position'}
+            aria-pressed={isCurrentWordBookmarked}
+            style={topIconStyle}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 1h10v14l-5-3-5 3V1z"
+                stroke="var(--paper-ink)"
+                strokeWidth="1.3"
+                fill={isCurrentWordBookmarked ? 'var(--accent)' : 'none'}
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          <button
+            onClick={() => setSheetOpen((v) => !v)}
+            aria-label="Open bookmarks and notes"
+            style={topIconStyle}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="1.5" fill="var(--paper-ink)" />
+              <circle cx="3" cy="8" r="1.5" fill="var(--paper-ink)" />
+              <circle cx="13" cy="8" r="1.5" fill="var(--paper-ink)" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      {/* Main content area */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Mobile backdrop */}
-        <div
-          className={`sm:hidden fixed inset-0 bg-black/50 z-20 transition-opacity duration-300 ${
-            sidebarOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
-          }`}
-          onClick={toggleSidebar}
-        />
+      {/* Progress strip */}
+      <div style={{ padding: '6px 16px 0', display: 'flex', gap: 2 }}>
+        {Array.from({ length: PROGRESS_TICKS }).map((_, i) => (
+          <div
+            key={i}
+            style={{
+              flex: 1,
+              height: 2,
+              background:
+                i / PROGRESS_TICKS < progress
+                  ? 'var(--accent)'
+                  : 'rgba(20,17,12,0.08)',
+            }}
+          />
+        ))}
+      </div>
 
-        {/* Sidebar — slide-over overlay on mobile, inline on desktop */}
-        <div
-          className={`
-            h-full bg-zinc-900 border-r border-zinc-800 flex flex-col w-[280px]
-            fixed sm:relative z-30 sm:z-auto top-0 left-0
-            transition-transform duration-300 ease-in-out sm:transition-none
-            ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-            ${!sidebarOpen ? 'sm:hidden' : ''}
-          `}
+      {/* Body */}
+      <div
+        ref={scrollContainerRef}
+        style={{
+          flex: 1,
+          padding: '28px 24px 120px',
+          overflow: 'auto',
+        }}
+      >
+        <div className="micro-label" style={{ color: 'var(--paper-muted)', marginBottom: 8 }}>
+          {meta?.kind === 'text' && words.length ? `${words.length.toLocaleString()} words` : 'Text'}
+        </div>
+        <h1
+          style={{
+            fontFamily: 'var(--font-serif), Georgia, serif',
+            fontSize: 30,
+            fontWeight: 500,
+            margin: '0 0 18px',
+            letterSpacing: '-0.03em',
+            lineHeight: 1.05,
+            color: 'var(--paper-ink)',
+          }}
         >
-            {/* Sidebar Header */}
-            <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
-              <h2 className="text-zinc-200 text-sm font-medium truncate flex-1" title={documentTitle}>
-                {documentTitle}
-              </h2>
-              <button
-                onClick={toggleSidebar}
-                className="p-1 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded"
-                aria-label="Close sidebar"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
-                </svg>
-              </button>
-            </div>
+          <span style={{ fontStyle: 'italic' }}>{documentTitle}</span>
+        </h1>
+        <div
+          ref={textContainerRef}
+          className="text-reader-content"
+          style={{
+            fontFamily: bodyFontFamily,
+            fontSize: bodyFontSize,
+            lineHeight: 1.65,
+            color: 'var(--paper-ink)',
+            WebkitUserSelect: 'text',
+            userSelect: 'text',
+          }}
+          onMouseUp={processSelection}
+        >
+          {(() => {
+            if (!textContent) return null;
+            const paragraphs = textContent.split('\n');
+            let globalWordIndex = 0;
+            return paragraphs.map((paragraph, pIndex) => {
+              const paragraphWords = tokenize(paragraph);
+              if (paragraphWords.length === 0) {
+                return (
+                  <p key={pIndex} style={{ margin: '0 0 16px' }}>
+                    {'\u00A0'}
+                  </p>
+                );
+              }
+              const wordElements = paragraphWords.map((word, wIndex) => {
+                const currentIndex = globalWordIndex;
+                globalWordIndex++;
+                const highlight = getHighlightAtWord(currentIndex);
+                const bgStyle = highlight
+                  ? { backgroundColor: HIGHLIGHT_COLORS[highlight.color].bg }
+                  : undefined;
+                return (
+                  <React.Fragment key={`${pIndex}-${wIndex}`}>
+                    <span
+                      data-word-index={currentIndex}
+                      data-highlight-id={highlight?.id}
+                      style={{
+                        ...bgStyle,
+                        padding: highlight ? '1px 2px' : undefined,
+                        borderRadius: highlight ? 2 : undefined,
+                        cursor: highlight ? 'pointer' : undefined,
+                      }}
+                      onClick={highlight ? handleHighlightClick : undefined}
+                    >
+                      {word}
+                    </span>
+                    {wIndex < paragraphWords.length - 1 && ' '}
+                  </React.Fragment>
+                );
+              });
+              return (
+                <p key={pIndex} style={{ margin: '0 0 16px', textWrap: 'pretty' }}>
+                  {wordElements}
+                </p>
+              );
+            });
+          })()}
+        </div>
+      </div>
 
-            {/* Sidebar Tabs */}
-            <div className="flex border-b border-zinc-800">
-              <button
-                onClick={() => setActiveTab('bookmarks')}
-                className={`flex-1 py-2 text-sm transition-colors ${
-                  activeTab === 'bookmarks'
-                    ? 'text-zinc-900 dark:text-white border-b-2 border-zinc-400'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                Bookmarks
-              </button>
-              <button
-                onClick={() => setActiveTab('notes')}
-                className={`flex-1 py-2 text-sm transition-colors ${
-                  activeTab === 'notes'
-                    ? 'text-zinc-900 dark:text-white border-b-2 border-zinc-400'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                Notes
-              </button>
-            </div>
+      {/* Floating Speed-read FAB */}
+      <button
+        onClick={() => handleSpeedRead()}
+        aria-label="Start speed-read from here"
+        style={{
+          position: 'absolute',
+          right: 16,
+          bottom: 34,
+          zIndex: 20,
+          height: 52,
+          padding: '0 22px 0 18px',
+          borderRadius: 26,
+          background: 'var(--accent)',
+          color: '#fff',
+          border: 0,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          boxShadow: '0 10px 24px rgba(255,90,61,0.45)',
+          fontFamily: 'var(--font-mono), monospace',
+          fontSize: 11,
+          letterSpacing: '0.22em',
+          textTransform: 'uppercase',
+          fontWeight: 700,
+        }}
+      >
+        <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true">
+          <path d="M1 1l12 7-12 7V1z" fill="#fff" />
+        </svg>
+        Speed-read
+      </button>
 
-            {/* Sidebar Content */}
-            <div className="flex-1 overflow-y-auto">
-              {activeTab === 'bookmarks' && (
+      {/* Selection pill */}
+      {selection && (
+        <SelectionPill
+          anchorRect={selection.anchorRect}
+          onHighlight={handleCreateHighlight}
+          onSpeedRead={handleSpeedReadSelection}
+          onBookmark={handleBookmarkSelection}
+          onCopy={handleCopySelection}
+          onClose={handleCloseSelection}
+        />
+      )}
+
+      {/* Existing highlight edit popover */}
+      {activeHighlight && (
+        <HighlightPopover
+          highlight={activeHighlight.highlight}
+          anchorRect={activeHighlight.anchorRect}
+          onUpdateNote={handleHighlightNoteUpdate}
+          onUpdateColor={handleHighlightColorChange}
+          onDelete={handleHighlightDelete}
+          onSpeedRead={handleHighlightSpeedRead}
+          onClose={handleCloseHighlightPopover}
+        />
+      )}
+
+      {/* Bottom sheet: bookmarks + notes */}
+      {sheetOpen && (
+        <>
+          <div
+            onClick={() => setSheetOpen(false)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'rgba(20,17,12,0.25)',
+              zIndex: 40,
+            }}
+          />
+          <div
+            className="sheet-in"
+            style={{
+              position: 'absolute',
+              left: 12,
+              right: 12,
+              bottom: 'calc(20px + env(safe-area-inset-bottom))',
+              zIndex: 50,
+              borderRadius: 20,
+              background: 'var(--paper)',
+              border: '1px solid var(--paper-rule)',
+              boxShadow: '0 16px 40px rgba(20,17,12,0.2)',
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                padding: '12px 16px',
+                display: 'flex',
+                gap: 4,
+                borderBottom: '1px solid var(--paper-rule)',
+              }}
+            >
+              <SheetTab
+                active={sheetTab === 'bookmarks'}
+                onClick={() => setSheetTab('bookmarks')}
+              >
+                Bookmarks · {bookmarks.length}
+              </SheetTab>
+              <SheetTab
+                active={sheetTab === 'notes'}
+                onClick={() => setSheetTab('notes')}
+              >
+                Notes · {highlightsWithNotes.length}
+              </SheetTab>
+            </div>
+            <div style={{ maxHeight: '40vh', overflow: 'auto' }}>
+              {sheetTab === 'bookmarks' ? (
                 bookmarks.length === 0 ? (
-                  <div className="p-4 text-zinc-500 text-sm text-center">
-                    No bookmarks yet.
-                    <br />
-                    Use the bookmark button to save your position.
-                  </div>
+                  <SheetEmpty text="No bookmarks yet. Use the bookmark icon to save a spot." />
                 ) : (
-                  <div className="p-2">
-                    {bookmarks.map((bookmark) => (
-                      <div
-                        key={bookmark.id}
-                        className="flex items-start gap-1 p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2 group/bm"
-                      >
-                        <button
-                          onClick={() => scrollToBookmark(bookmark)}
-                          className="flex-1 text-left flex items-start gap-2 min-w-0"
-                        >
-                          <svg className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-                          </svg>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-zinc-300 text-sm line-clamp-2 mb-1">
-                              &quot;{bookmark.label || getBookmarkSnippet(bookmark.wordIndex)}&quot;
-                            </p>
-                            <p className="text-zinc-500 text-xs">
-                              {getBookmarkPosition(bookmark.wordIndex)}
-                            </p>
-                          </div>
-                        </button>
-                        <button
-                          onClick={() => removeBookmark(bookmark.id)}
-                          className="p-1 rounded text-zinc-600 hover:text-red-400 hover:bg-zinc-700 transition-colors sm:opacity-0 sm:group-hover/bm:opacity-100 flex-shrink-0"
-                          aria-label="Remove bookmark"
-                        >
-                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )
-              )}
-              {activeTab === 'notes' && (
-                highlightsWithNotes.length === 0 ? (
-                  <div className="p-4 text-zinc-500 text-sm text-center">
-                    No notes yet.
-                    <br />
-                    Select text to add highlights and notes.
-                  </div>
-                ) : (
-                  <div className="p-2">
-                    {highlightsWithNotes.map((highlight) => (
+                  bookmarks.map((bm) => (
+                    <div
+                      key={bm.id}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid var(--paper-rule)',
+                        display: 'flex',
+                        gap: 8,
+                      }}
+                    >
                       <button
-                        key={highlight.id}
-                        onClick={() => scrollToHighlight(highlight)}
-                        className="w-full text-left p-3 rounded-lg hover:bg-zinc-800 transition-colors mb-2"
+                        onClick={() => scrollToBookmark(bm)}
+                        style={{
+                          flex: 1,
+                          textAlign: 'left',
+                          background: 'transparent',
+                          border: 0,
+                          padding: 0,
+                          cursor: 'pointer',
+                          color: 'var(--paper-ink)',
+                          font: 'inherit',
+                        }}
                       >
-                        <div className="flex items-start gap-2">
-                          <div
-                            className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
-                            style={{ backgroundColor: HIGHLIGHT_COLORS[highlight.color].hex }}
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-zinc-300 text-sm line-clamp-2 mb-1">
-                              &quot;{highlight.text.slice(0, 100)}{highlight.text.length > 100 ? '...' : ''}&quot;
-                            </p>
-                            <p className="text-zinc-500 text-xs line-clamp-2">
-                              {highlight.note}
-                            </p>
-                          </div>
+                        <div
+                          style={{
+                            fontSize: 13,
+                            fontFamily: 'var(--font-serif), Georgia, serif',
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          &ldquo;{bm.label || getBookmarkSnippet(bm.wordIndex)}&rdquo;
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontFamily: 'var(--font-mono), monospace',
+                            color: 'var(--paper-muted)',
+                            letterSpacing: '0.12em',
+                            marginTop: 4,
+                          }}
+                        >
+                          Word {bm.wordIndex + 1} / {words.length}
                         </div>
                       </button>
-                    ))}
-                  </div>
+                      <button
+                        onClick={() => removeBookmark(bm.id)}
+                        aria-label="Remove bookmark"
+                        style={{
+                          background: 'transparent',
+                          border: 0,
+                          color: 'var(--paper-muted)',
+                          cursor: 'pointer',
+                          padding: 4,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
                 )
+              ) : highlightsWithNotes.length === 0 ? (
+                <SheetEmpty text="No notes yet. Highlight text and attach a note." />
+              ) : (
+                highlightsWithNotes.map((h) => (
+                  <button
+                    key={h.id}
+                    onClick={() => scrollToHighlight(h)}
+                    style={{
+                      display: 'block',
+                      width: '100%',
+                      textAlign: 'left',
+                      padding: '12px 16px',
+                      borderBottom: '1px solid var(--paper-rule)',
+                      background: 'transparent',
+                      border: 0,
+                      cursor: 'pointer',
+                      color: 'var(--paper-ink)',
+                      font: 'inherit',
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 13,
+                        fontFamily: 'var(--font-serif), Georgia, serif',
+                        fontStyle: 'italic',
+                        lineHeight: 1.45,
+                        borderLeft: `2px solid ${HIGHLIGHT_COLORS[h.color].hex}`,
+                        paddingLeft: 10,
+                      }}
+                    >
+                      &ldquo;
+                      {h.text.length > 110 ? h.text.slice(0, 108) + '…' : h.text}
+                      &rdquo;
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        color: 'var(--paper-muted)',
+                        marginTop: 6,
+                        paddingLeft: 10,
+                      }}
+                    >
+                      {h.note}
+                    </div>
+                  </button>
+                ))
               )}
             </div>
           </div>
+        </>
+      )}
+    </div>
+  );
+}
 
-        {/* Text Content Area */}
-        <div ref={scrollContainerRef} className="flex-1 overflow-auto bg-zinc-950">
-          <div className="max-w-3xl mx-auto px-8 py-12">
-            <div
-              ref={textContainerRef}
-              className="prose prose-invert prose-zinc max-w-none text-reader-content"
-              style={{ WebkitUserSelect: 'text', userSelect: 'text' }}
-              onMouseUp={processSelection}
-            >
-              {(() => {
-                if (!textContent) return null;
-                const paragraphs = textContent.split('\n');
-                let globalWordIndex = 0;
+const topIconStyle: React.CSSProperties = {
+  width: 32,
+  height: 32,
+  borderRadius: 8,
+  background: 'transparent',
+  border: 0,
+  color: 'var(--paper-ink)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  padding: 0,
+};
 
-                return paragraphs.map((paragraph, pIndex) => {
-                  const paragraphWords = tokenize(paragraph);
-                  if (paragraphWords.length === 0) {
-                    return (
-                      <p key={pIndex} className="text-zinc-300 text-base leading-relaxed mb-4">
-                        {'\u00A0'}
-                      </p>
-                    );
-                  }
+function SheetTab({
+  children,
+  active,
+  onClick,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: '5px 12px',
+        borderRadius: 20,
+        background: active ? 'var(--paper-ink)' : 'transparent',
+        color: active ? 'var(--paper)' : 'var(--paper-ink)',
+        border: `1px solid ${active ? 'var(--paper-ink)' : 'var(--paper-rule)'}`,
+        fontSize: 10,
+        fontFamily: 'var(--font-mono), monospace',
+        letterSpacing: '0.15em',
+        textTransform: 'uppercase',
+        fontWeight: 600,
+        cursor: 'pointer',
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
-                  const wordElements = paragraphWords.map((word, wIndex) => {
-                    const currentIndex = globalWordIndex;
-                    globalWordIndex++;
-
-                    // Check if this word is part of a highlight
-                    const highlight = getHighlightAtWord(currentIndex);
-                    const bgStyle = highlight
-                      ? { backgroundColor: HIGHLIGHT_COLORS[highlight.color].bg }
-                      : undefined;
-
-                    return (
-                      <React.Fragment key={`${pIndex}-${wIndex}`}>
-                        <span
-                          data-word-index={currentIndex}
-                          data-highlight-id={highlight?.id}
-                          style={bgStyle}
-                          className={highlight ? 'cursor-pointer rounded-sm' : undefined}
-                          onClick={highlight ? handleHighlightClick : undefined}
-                        >
-                          {word}
-                        </span>
-                        {wIndex < paragraphWords.length - 1 && ' '}
-                      </React.Fragment>
-                    );
-                  });
-
-                  return (
-                    <p key={pIndex} className="text-zinc-300 text-base leading-relaxed mb-4">
-                      {wordElements}
-                    </p>
-                  );
-                });
-              })()}
-            </div>
-          </div>
-        </div>
-
-        {/* Selection Popover */}
-        {selection && (
-          <SelectionPopover
-            text={selection.text}
-            page={0}
-            anchorRect={selection.anchorRect}
-            onCreateHighlight={handleCreateHighlight}
-            onSpeedRead={handleSpeedReadSelection}
-            onBookmark={() => {
-              const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
-              const label = selectedWords.join(' ');
-              addBookmark(selection.startWord, label, selection.endWord);
-            }}
-            onClose={handleCloseSelection}
-          />
-        )}
-
-        {/* Highlight Popover */}
-        {activeHighlight && (
-          <HighlightPopover
-            highlight={activeHighlight.highlight}
-            anchorRect={activeHighlight.anchorRect}
-            onUpdateNote={handleHighlightNoteUpdate}
-            onUpdateColor={handleHighlightColorChange}
-            onDelete={handleHighlightDelete}
-            onSpeedRead={handleHighlightSpeedRead}
-            onClose={handleCloseHighlightPopover}
-          />
-        )}
-      </div>
+function SheetEmpty({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        padding: '28px 18px',
+        textAlign: 'center',
+        fontSize: 13,
+        color: 'var(--paper-muted)',
+      }}
+    >
+      {text}
     </div>
   );
 }

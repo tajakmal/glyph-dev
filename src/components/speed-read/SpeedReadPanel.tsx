@@ -1,48 +1,28 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useRouter } from 'next/navigation';
 import { useReaderContext } from '@/contexts/ReaderContext';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
+import {
+  useSpeedReader,
+  formatRemaining,
+} from '@/hooks/useSpeedReader';
+import { getPreferences } from '@/lib/storage';
+import { ORPWord } from './ORPWord';
+import { ContextStrip } from './ContextStrip';
+import { DocMiniMap } from './DocMiniMap';
 
-// =============================================================================
-// ORP Calculation (shared with SpritzReader)
-// =============================================================================
-
-function getORP(word: string): number {
-  const len = word.length;
-  if (len <= 1) return 0;
-  if (len <= 5) return Math.floor(len / 2) - 1;
-  if (len <= 9) return Math.floor(len / 2);
-  return Math.floor(len / 2) + 1;
-}
-
-function getWordDelay(word: string, wpm: number): number {
-  const baseDelay = 60000 / wpm;
-  let multiplier = 1;
-
-  if (/[.!?]$/.test(word)) multiplier = 2.5;
-  else if (/[,;:]$/.test(word)) multiplier = 1.5;
-
-  if (word.length > 8) multiplier *= 1.2;
-
-  return baseDelay * multiplier;
-}
-
-function formatTime(seconds: number): string {
-  if (seconds < 60) return `${seconds}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}m ${secs}s`;
-}
-
-const WPM_PRESETS = [200, 300, 400, 500, 600];
-const HOLD_THRESHOLD = 200;
-const DOUBLE_TAP_WINDOW = 300;
-
-// =============================================================================
-// SpeedReadPanel Component
-// =============================================================================
+const HOLD_THRESHOLD = 200; // ms
+const DOUBLE_TAP_WINDOW = 300; // ms
+const MIN_SESSION_WORDS = 50;
+const MIN_SESSION_MS = 5_000;
 
 export function SpeedReadPanel() {
   const router = useRouter();
@@ -52,561 +32,867 @@ export function SpeedReadPanel() {
     setCurrentWordIndex,
     isTextReady,
     documentMeta,
-    jumpToWordInPDF,
-    setViewMode,
     documentKind,
     documentId,
+    jumpToWordInPDF,
+    setViewMode,
+    speedReadWpm,
+    setSpeedReadWpm,
   } = useReaderContext();
 
-  // Bookmarks
   const {
     addBookmark,
     isWordBookmarked,
     toggleBookmark,
   } = useTextBookmarks({ documentId });
 
-  const isCurrentWordBookmarked = useMemo(
+  type ReadMode = 'single' | 'ghost';
+  // Read preferences once on mount so Settings defaults propagate to new sessions
+  const [readMode, setReadMode] = useState<ReadMode>(
+    () => getPreferences().speedReadMode
+  );
+  const [expressive, setExpressive] = useState(
+    () => getPreferences().expressivePacing
+  );
+  const [autoPauseOnInterrupt] = useState(
+    () => getPreferences().autoPauseOnInterrupt
+  );
+  const [showScrub, setShowScrub] = useState(false);
+
+  const engine = useSpeedReader({
+    words,
+    wpm: speedReadWpm,
+    expressive,
+    index: currentWordIndex,
+    onIndexChange: setCurrentWordIndex,
+  });
+
+  // Session tracking for the Return screen. The ref is seeded in a mount
+  // effect so Date.now() isn't called during render (React 19 purity rule).
+  const sessionStartIndexRef = useRef(currentWordIndex);
+  const sessionStartedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    sessionStartedAtRef.current = Date.now();
+  }, []);
+  const lastActionRef = useRef<'none' | 'close' | 'end'>('none');
+
+  const isBookmarked = useMemo(
     () => isWordBookmarked(currentWordIndex),
     [isWordBookmarked, currentWordIndex]
   );
 
   const handleBookmarkToggle = useCallback(() => {
-    if (isCurrentWordBookmarked) {
+    if (isBookmarked) {
       toggleBookmark(currentWordIndex);
     } else {
       const word = words[currentWordIndex] || '';
-      const label = word + '...';
-      addBookmark(currentWordIndex, label);
+      addBookmark(currentWordIndex, word + '...');
     }
-  }, [isCurrentWordBookmarked, toggleBookmark, addBookmark, currentWordIndex, words]);
+  }, [isBookmarked, toggleBookmark, currentWordIndex, words, addBookmark]);
 
-  const [wpm, setWpm] = useState(300);
-  const [isHolding, setIsHolding] = useState(false);
-  const [isAutoPlaying, setIsAutoPlaying] = useState(false);
-  const isPlaying = isHolding || isAutoPlaying;
+  // Hand off to the Return screen if the session was substantive.
+  const emitSessionReceipt = useCallback(
+    (reason: 'close' | 'end'): boolean => {
+      const endIndex = engine.index;
+      const startIndex = sessionStartIndexRef.current;
+      const wordsRead = Math.max(0, endIndex - startIndex);
+      const startedAt = sessionStartedAtRef.current ?? Date.now();
+      const duration = Date.now() - startedAt;
+      if (wordsRead < MIN_SESSION_WORDS || duration < MIN_SESSION_MS) {
+        return false;
+      }
+      const avgWpm = duration > 0 ? Math.round((wordsRead / duration) * 60_000) : speedReadWpm;
+      try {
+        sessionStorage.setItem(
+          'glyph:speedread-session-receipt',
+          JSON.stringify({
+            documentId,
+            startIndex,
+            endIndex,
+            startedAt,
+            endedAt: Date.now(),
+            avgWpm,
+            wpm: speedReadWpm,
+            mode: readMode,
+            reason,
+          })
+        );
+      } catch {
+        return false;
+      }
+      return true;
+    },
+    [engine.index, documentId, speedReadWpm, readMode]
+  );
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
+  const exitToReader = useCallback(() => {
+    engine.pause();
+    lastActionRef.current = 'close';
+    const showReceipt = emitSessionReceipt('close');
+    if (showReceipt) {
+      router.push(`/reader/${documentId}/return`);
+      return;
+    }
+    if (documentKind === 'pdf') {
+      jumpToWordInPDF(currentWordIndex);
+    } else {
+      setViewMode('pdf');
+    }
+  }, [
+    engine,
+    emitSessionReceipt,
+    router,
+    documentId,
+    documentKind,
+    jumpToWordInPDF,
+    currentWordIndex,
+    setViewMode,
+  ]);
 
-  // Dual-purpose button refs
-  const tapTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const tapCountRef = useRef(0);
-  const holdTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // End of document → receipt
+  useEffect(() => {
+    if (!engine.playing && engine.index >= words.length - 1 && words.length > 0 && lastActionRef.current === 'none') {
+      lastActionRef.current = 'end';
+      const showReceipt = emitSessionReceipt('end');
+      if (showReceipt) {
+        router.push(`/reader/${documentId}/return`);
+      }
+    }
+  }, [engine.playing, engine.index, words.length, emitSessionReceipt, router, documentId]);
+
+  // Dual-press: hold for temporary play, double-tap for autoplay toggle
   const isPressedRef = useRef(false);
   const isHoldRef = useRef(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapCountRef = useRef(0);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // --- Playback ---
-
-  const wordDelay = useCallback((word: string) => getWordDelay(word, wpm), [wpm]);
-
-  useEffect(() => {
-    if (isPlaying && words.length > 0 && currentWordIndex < words.length) {
-      const delay = wordDelay(words[currentWordIndex]);
-      intervalRef.current = setTimeout(() => {
-        const nextIndex = currentWordIndex + 1;
-        if (nextIndex >= words.length) {
-          setIsAutoPlaying(false);
-          setIsHolding(false);
-        } else {
-          setCurrentWordIndex(nextIndex);
-        }
-      }, delay);
-    }
-
-    return () => {
-      if (intervalRef.current) {
-        clearTimeout(intervalRef.current);
+  const startPress = useCallback(() => {
+    isPressedRef.current = true;
+    isHoldRef.current = false;
+    holdTimerRef.current = setTimeout(() => {
+      if (isPressedRef.current) {
+        isHoldRef.current = true;
+        engine.play();
       }
-    };
-  }, [isPlaying, currentWordIndex, words, wordDelay, setCurrentWordIndex]);
+    }, HOLD_THRESHOLD);
+  }, [engine]);
 
-  // Cleanup timers on unmount
+  const endPress = useCallback(() => {
+    isPressedRef.current = false;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (isHoldRef.current) {
+      isHoldRef.current = false;
+      engine.pause();
+      return;
+    }
+    // Tap: toggle play/pause with debounce to detect double-tap → ensure autoplay
+    if (engine.playing) {
+      engine.pause();
+      return;
+    }
+    tapCountRef.current += 1;
+    if (tapCountRef.current === 1) {
+      tapTimerRef.current = setTimeout(() => {
+        tapCountRef.current = 0;
+      }, DOUBLE_TAP_WINDOW);
+    } else {
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+      tapCountRef.current = 0;
+      engine.play();
+    }
+  }, [engine]);
+
+  const cancelPress = useCallback(() => {
+    isPressedRef.current = false;
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (isHoldRef.current) {
+      isHoldRef.current = false;
+      engine.pause();
+    }
+  }, [engine]);
+
   useEffect(() => {
     return () => {
-      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
     };
   }, []);
 
-  // --- Keyboard shortcuts ---
+  // Auto-pause when the tab loses focus (respects user preference)
+  useEffect(() => {
+    if (!autoPauseOnInterrupt) return;
+    const handleVisibility = () => {
+      if (document.hidden) engine.pause();
+    };
+    const handleBlur = () => engine.pause();
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('blur', handleBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('blur', handleBlur);
+    };
+  }, [engine, autoPauseOnInterrupt]);
 
+  // Keyboard shortcuts: Space hold, arrows, R reset, Esc close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
-
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
       if (e.code === 'Space') {
         e.preventDefault();
-        if (!e.repeat) {
-          setIsAutoPlaying(false);
-          setIsHolding(true);
-        }
+        if (!e.repeat) engine.play();
       } else if (e.code === 'ArrowLeft') {
         e.preventDefault();
-        setCurrentWordIndex(Math.max(0, currentWordIndex - 1));
+        engine.step(-1);
       } else if (e.code === 'ArrowRight') {
         e.preventDefault();
-        setCurrentWordIndex(Math.min(words.length - 1, currentWordIndex + 1));
+        engine.step(1);
       } else if (e.code === 'KeyR') {
         e.preventDefault();
-        setCurrentWordIndex(0);
-        setIsAutoPlaying(false);
-        setIsHolding(false);
+        engine.reset();
       } else if (e.code === 'Escape') {
         e.preventDefault();
-        setIsAutoPlaying(false);
-        setIsHolding(false);
-        if (documentKind === 'pdf') {
-          jumpToWordInPDF(currentWordIndex);
-        } else {
-          setViewMode('pdf');
-        }
+        exitToReader();
       }
     };
-
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLInputElement) return;
       if (e.code === 'Space') {
         e.preventDefault();
-        setIsHolding(false);
+        engine.pause();
       }
     };
-
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [currentWordIndex, words.length, setCurrentWordIndex, setViewMode, jumpToWordInPDF, documentKind]);
+  }, [engine, exitToReader]);
 
-  // --- Dual-purpose press handlers (hold + double-tap) ---
-
-  const handlePressStart = useCallback(() => {
-    isPressedRef.current = true;
-    isHoldRef.current = false;
-
-    holdTimerRef.current = setTimeout(() => {
-      if (isPressedRef.current) {
-        isHoldRef.current = true;
-        setIsAutoPlaying(false);
-        setIsHolding(true);
-      }
-    }, HOLD_THRESHOLD);
-  }, []);
-
-  const handlePressEnd = useCallback(() => {
-    isPressedRef.current = false;
-
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-
-    if (isHoldRef.current) {
-      isHoldRef.current = false;
-      setIsHolding(false);
-      return;
-    }
-
-    // Was a tap (released before HOLD_THRESHOLD)
-    // If auto-playing, single tap pauses immediately
-    if (isAutoPlaying) {
-      setIsAutoPlaying(false);
-      tapCountRef.current = 0;
-      if (tapTimerRef.current) {
-        clearTimeout(tapTimerRef.current);
-        tapTimerRef.current = null;
-      }
-      return;
-    }
-
-    // Not auto-playing: detect double-tap to start auto-play
-    tapCountRef.current += 1;
-
-    if (tapCountRef.current === 1) {
-      tapTimerRef.current = setTimeout(() => {
-        // Single tap — do nothing
-        tapCountRef.current = 0;
-      }, DOUBLE_TAP_WINDOW);
-    } else if (tapCountRef.current >= 2) {
-      // Double tap — start auto-play
-      if (tapTimerRef.current) {
-        clearTimeout(tapTimerRef.current);
-        tapTimerRef.current = null;
-      }
-      tapCountRef.current = 0;
-      setIsAutoPlaying(true);
-    }
-  }, [isAutoPlaying]);
-
-  const handlePressCancel = useCallback(() => {
-    isPressedRef.current = false;
-    if (holdTimerRef.current) {
-      clearTimeout(holdTimerRef.current);
-      holdTimerRef.current = null;
-    }
-    if (isHoldRef.current) {
-      isHoldRef.current = false;
-      setIsHolding(false);
-    }
-  }, []);
-
-  // --- Navigation handlers ---
-
-  const handleShowInDocument = () => {
-    setIsAutoPlaying(false);
-    setIsHolding(false);
-    jumpToWordInPDF(currentWordIndex);
-  };
-
-  const handleBackToPDF = () => {
-    setIsAutoPlaying(false);
-    setIsHolding(false);
-    if (documentKind === 'pdf') {
-      jumpToWordInPDF(currentWordIndex);
-    } else {
-      setViewMode('pdf');
-    }
-  };
-
-  const handleGoHome = () => {
-    router.push('/');
-  };
-
-  // --- Hold button label/state ---
-
-  const holdButtonLabel = isHolding
-    ? 'Release to pause'
-    : isAutoPlaying
-      ? 'Tap to pause'
-      : 'Hold to read';
-
-  const holdButtonActive = isHolding || isAutoPlaying;
-
-  // --- Render ---
-
+  // Loading state
   if (!isTextReady || words.length === 0) {
     return (
-      <div className="h-full flex items-center justify-center bg-zinc-950">
-        <div className="flex flex-col items-center gap-4">
-          <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
-          <p className="text-zinc-400">Preparing text...</p>
-        </div>
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--bg)',
+          color: 'var(--ink)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexDirection: 'column',
+          gap: 12,
+        }}
+      >
+        <div
+          className="spinner"
+          style={{
+            width: 28,
+            height: 28,
+            border: '2px solid var(--rule-strong)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+          }}
+        />
+        <div className="micro-label">Preparing text…</div>
       </div>
     );
   }
 
-  const currentWord = words[currentWordIndex] || '';
-  const orp = getORP(currentWord);
-  const beforeORP = currentWord.slice(0, orp);
-  const orpLetter = currentWord[orp] || '';
-  const afterORP = currentWord.slice(orp + 1);
-
-  const progress = words.length > 0 ? ((currentWordIndex + 1) / words.length) * 100 : 0;
-  const timeRemaining = words.length > 0
-    ? Math.ceil((words.length - currentWordIndex - 1) * (60 / wpm))
-    : 0;
+  const focal = engine.focalToken;
+  const prev = engine.prevToken;
+  const next = engine.nextToken;
+  const pct = Math.round(engine.progress * 100);
+  const remaining = Math.max(0, words.length - engine.index - 1);
+  const timeLeft = formatRemaining(remaining, speedReadWpm);
 
   return (
-    <div ref={panelRef} className="h-full flex flex-col bg-gradient-to-b from-zinc-950 via-zinc-950 to-zinc-900 text-zinc-100">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-        <div className="flex items-center gap-3">
-          {/* Home button */}
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'var(--bg)',
+        color: 'var(--ink)',
+        display: 'flex',
+        flexDirection: 'column',
+        fontFamily: 'var(--font-sans), system-ui, sans-serif',
+        overflow: 'hidden',
+        position: 'relative',
+      }}
+    >
+      {/* Top bar */}
+      <div style={{ padding: 'max(env(safe-area-inset-top), 20px) 20px 0' }}>
+        <div
+          style={{
+            marginTop: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
           <button
-            onClick={handleGoHome}
-            className="p-2 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            title="Back to Library"
+            onClick={exitToReader}
+            className="micro-label"
+            aria-label="Close speed-read"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'transparent',
+              border: 0,
+              color: 'var(--muted)',
+              cursor: 'pointer',
+              padding: 0,
+            }}
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path
+                d="M8 2L3 6l5 4"
+                stroke="var(--ink)"
+                strokeWidth="1.5"
+                fill="none"
+                strokeLinecap="round"
+              />
             </svg>
+            close
           </button>
-
-          {/* Back to document button */}
-          <button
-            onClick={handleBackToPDF}
-            className="flex items-center gap-2 text-zinc-400 hover:text-zinc-100 transition-colors"
+          <div
+            className="micro-label"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              color: engine.playing ? 'var(--accent)' : 'var(--muted)',
+            }}
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span className="text-sm hidden sm:inline">Back to Reader</span>
-          </button>
+            <span
+              style={{
+                width: 5,
+                height: 5,
+                borderRadius: '50%',
+                background: engine.playing ? 'var(--accent)' : 'var(--muted)',
+                animation: engine.playing ? 'pulse 1s infinite' : 'none',
+              }}
+            />
+            {engine.playing ? 'reading' : 'paused'}
+          </div>
+          <div className="micro-label">{speedReadWpm} wpm</div>
+        </div>
 
-          {documentMeta && (
-            <span className="text-zinc-500 text-sm truncate max-w-[150px] sm:max-w-[300px]">
-              {documentMeta.title}
+        {/* Title + position */}
+        <div
+          style={{
+            marginTop: 18,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 12,
+          }}
+        >
+          <div style={{ minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 16,
+                fontWeight: 600,
+                letterSpacing: '-0.01em',
+                color: 'var(--ink)',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={documentMeta?.title}
+            >
+              {documentMeta?.title ?? 'Untitled'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>
+              {documentMeta?.kind === 'pdf'
+                ? `${documentMeta?.pageCount ?? 0} pages`
+                : `${words.length.toLocaleString()} words`}
+            </div>
+          </div>
+          <div
+            className="micro-label"
+            style={{ letterSpacing: '0.1em', whiteSpace: 'nowrap' }}
+          >
+            {pct}% · {timeLeft}
+          </div>
+        </div>
+
+        {/* Minimap */}
+        <div style={{ marginTop: 16 }}>
+          <DocMiniMap
+            index={engine.index}
+            total={words.length}
+            height={2}
+          />
+        </div>
+      </div>
+
+      {/* Word display area */}
+      <div
+        onPointerDown={startPress}
+        onPointerUp={endPress}
+        onPointerCancel={cancelPress}
+        onPointerLeave={() => {
+          if (isPressedRef.current) cancelPress();
+        }}
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          position: 'relative',
+          cursor: 'pointer',
+          userSelect: 'none',
+          padding: '0 20px',
+          touchAction: 'manipulation',
+        }}
+      >
+        <div
+          style={{
+            position: 'relative',
+            width: '100%',
+            display: 'flex',
+            justifyContent: 'center',
+          }}
+        >
+          {/* Crosshair ticks */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              top: -36,
+              transform: 'translateX(-50%)',
+              width: 1,
+              height: 20,
+              background: 'var(--accent)',
+            }}
+          />
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              left: '50%',
+              bottom: -36,
+              transform: 'translateX(-50%)',
+              width: 1,
+              height: 20,
+              background: 'var(--accent)',
+            }}
+          />
+          <div
+            style={{
+              minHeight: 76,
+              display: 'flex',
+              alignItems: 'baseline',
+              gap: 18,
+              justifyContent: 'center',
+            }}
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            {readMode === 'ghost' && prev && (
+              <span
+                aria-hidden="true"
+                style={{
+                  fontSize: 26,
+                  fontWeight: 400,
+                  color: 'var(--ink)',
+                  opacity: 0.22,
+                  letterSpacing: '-0.01em',
+                  fontFamily: 'var(--font-sans), system-ui, sans-serif',
+                }}
+              >
+                {prev.word}
+              </span>
+            )}
+            <ORPWord word={focal?.word || ''} size={56} weight={500} />
+            {readMode === 'ghost' && next && (
+              <span
+                aria-hidden="true"
+                style={{
+                  fontSize: 26,
+                  fontWeight: 400,
+                  color: 'var(--ink)',
+                  opacity: 0.22,
+                  letterSpacing: '-0.01em',
+                  fontFamily: 'var(--font-sans), system-ui, sans-serif',
+                }}
+              >
+                {next.word}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Punctuation beat */}
+        <div
+          aria-hidden="true"
+          style={{
+            marginTop: 40,
+            height: 14,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          {focal?.endsSentence && (
+            <span
+              className="micro-label micro-label--accent"
+              style={{ letterSpacing: '0.3em' }}
+            >
+              · · ·
+            </span>
+          )}
+          {focal?.endsClause && !focal?.endsSentence && (
+            <span
+              className="micro-label"
+              style={{
+                color: 'var(--accent)',
+                opacity: 0.7,
+                letterSpacing: '0.3em',
+              }}
+            >
+              · ·
             </span>
           )}
         </div>
 
-        {/* Show in Document button */}
-        {documentKind === 'pdf' && (
-          <button
-            onClick={handleShowInDocument}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 rounded-lg transition-colors"
-            title="Show current word in document"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <span className="hidden sm:inline">Show in Document</span>
-          </button>
+        {/* Context strip */}
+        <div style={{ marginTop: 24, width: '100%' }}>
+          <ContextStrip
+            words={words}
+            index={engine.index}
+            before={5}
+            after={5}
+            color="rgba(242,239,232,0.22)"
+            focalColor="var(--ink)"
+          />
+        </div>
+      </div>
+
+      {/* Bottom controls */}
+      <div
+        style={{
+          padding:
+            '0 20px calc(32px + env(safe-area-inset-bottom))',
+          position: 'relative',
+          zIndex: 10,
+        }}
+      >
+        {showScrub && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ position: 'relative', height: 32 }}>
+              <div style={{ position: 'absolute', inset: '14px 0 auto 0' }}>
+                <DocMiniMap
+                  index={engine.index}
+                  total={words.length}
+                  height={4}
+                />
+              </div>
+              <input
+                aria-label="Scrub through document"
+                type="range"
+                min={0}
+                max={Math.max(0, words.length - 1)}
+                value={engine.index}
+                onChange={(e) => engine.seek(+e.target.value)}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  width: '100%',
+                  opacity: 0.01,
+                  cursor: 'pointer',
+                }}
+              />
+              <div
+                aria-hidden="true"
+                style={{
+                  position: 'absolute',
+                  top: 10,
+                  left: `${engine.progress * 100}%`,
+                  transform: 'translate(-50%, 0)',
+                  width: 12,
+                  height: 12,
+                  borderRadius: '50%',
+                  background: 'var(--accent)',
+                  boxShadow: '0 0 0 4px var(--accent-20)',
+                  pointerEvents: 'none',
+                }}
+              />
+            </div>
+          </div>
         )}
-      </div>
 
-      {/* Main content area */}
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full px-4 pt-3 pb-6 sm:px-6 sm:pt-4 sm:pb-3 overflow-y-auto min-h-0">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => engine.step(-15)}
+            style={sqBtnStyle}
+            aria-label="Back 15 words"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path
+                d="M13 1L5 7l8 6M5 1v12"
+                stroke="var(--ink)"
+                strokeWidth="1.5"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
 
-        {/* Speed Control — locked at top */}
-        <div className="bg-zinc-900/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border border-zinc-800/50 shrink-0 mb-2 sm:mb-0">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-zinc-500 text-xs font-medium uppercase tracking-wider">Speed</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-3xl sm:text-4xl font-mono font-bold text-zinc-100 tabular-nums">{wpm}</span>
-              <span className="text-sm text-zinc-500 font-light">WPM</span>
-            </div>
-          </div>
-
-          {/* Quick preset buttons */}
-          <div className="flex justify-center gap-2 mb-2">
-            {WPM_PRESETS.map(preset => (
-              <button
-                key={preset}
-                onClick={() => setWpm(preset)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-mono font-medium transition-all duration-150 ${
-                  wpm === preset
-                    ? 'bg-orange-400/20 text-orange-400 border border-orange-400/30'
-                    : 'bg-zinc-800/80 text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 border border-transparent'
-                }`}
-              >
-                {preset}
-              </button>
-            ))}
-          </div>
-
-          {/* Fine-tune slider */}
-          <input
-            type="range"
-            min="100"
-            max="800"
-            step="25"
-            value={wpm}
-            onChange={(e) => setWpm(Number(e.target.value))}
-            className="w-full h-1.5 bg-zinc-700 rounded-full appearance-none cursor-pointer accent-zinc-400"
-            aria-label="Words per minute speed"
-          />
-          <div className="flex justify-between text-xs text-zinc-600 mt-2">
-            <span>100</span>
-            <span>800</span>
-          </div>
-        </div>
-
-        {/* Word Display Card + Context */}
-        <div className="flex flex-col items-center justify-center mt-3 sm:mt-0 sm:flex-1 sm:min-h-0 shrink-0">
-          <div className="w-full bg-zinc-900/50 backdrop-blur-sm rounded-2xl p-4 sm:p-8 border border-orange-400/30 shadow-2xl shadow-black/20">
-            <div className="relative">
-              <div className="absolute left-1/2 -translate-x-1/2 -top-3 w-0.5 h-3 bg-gradient-to-b from-orange-400 to-transparent rounded-full"></div>
-              <div className="absolute left-1/2 -translate-x-1/2 -bottom-3 w-0.5 h-3 bg-gradient-to-t from-orange-400 to-transparent rounded-full"></div>
-
-              <div className="h-16 sm:h-24 flex items-center justify-center font-mono text-3xl sm:text-5xl relative">
-                <div className="absolute left-1/2 -translate-x-1/2 h-full w-px bg-gradient-to-b from-transparent via-zinc-800 to-transparent"></div>
-
-                <div className="flex items-baseline">
-                  <span
-                    className="text-zinc-500 text-right transition-all duration-75"
-                    style={{ minWidth: '100px', display: 'flex', justifyContent: 'flex-end' }}
-                  >
-                    {beforeORP}
-                  </span>
-                  <span
-                    className="text-orange-400 font-bold w-6 sm:w-8 text-center transition-all duration-75"
-                    style={{
-                      textShadow: isPlaying
-                        ? '0 0 20px rgba(251, 146, 60, 0.5), 0 0 40px rgba(251, 146, 60, 0.3)'
-                        : '0 0 10px rgba(251, 146, 60, 0.3)'
-                    }}
-                  >
-                    {orpLetter}
-                  </span>
-                  <span
-                    className="text-zinc-500 text-left transition-all duration-75"
-                    style={{ minWidth: '100px' }}
-                  >
-                    {afterORP}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Context preview — directly under word card */}
-          <div className="w-full mt-2 sm:mt-3 bg-zinc-900/30 backdrop-blur-sm rounded-xl p-2.5 sm:p-3 border border-zinc-800/30">
-            <p className="text-xs sm:text-sm text-zinc-500 text-center leading-relaxed font-light h-[3.25em] overflow-hidden">
-              <span className="text-zinc-700 transition-colors duration-150">
-                {words.slice(Math.max(0, currentWordIndex - 5), currentWordIndex).join(' ')}
-              </span>
-              {currentWordIndex > 0 && ' '}
-              <span className="text-orange-400/90 font-normal">{words[currentWordIndex]}</span>
-              {currentWordIndex < words.length - 1 && ' '}
-              <span className="text-zinc-700 transition-colors duration-150">
-                {words.slice(currentWordIndex + 1, currentWordIndex + 6).join(' ')}
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {/* Scrubber */}
-        <div className="shrink-0">
-          <input
-            type="range"
-            min="0"
-            max={Math.max(0, words.length - 1)}
-            value={currentWordIndex}
-            onChange={(e) => setCurrentWordIndex(Number(e.target.value))}
-            className="w-full h-1.5 bg-zinc-800 rounded-full appearance-none cursor-pointer transition-all duration-300 accent-orange-400"
+          <button
+            onClick={engine.toggle}
+            aria-label={engine.playing ? 'Pause' : 'Play'}
             style={{
-              background: `linear-gradient(to right, #fb923c 0%, #fb923c ${progress}%, #27272a ${progress}%, #27272a 100%)`
+              flex: 1,
+              height: 56,
+              background: engine.playing ? 'var(--ink)' : 'var(--accent)',
+              color: engine.playing ? 'var(--bg)' : '#fff',
+              border: 0,
+              borderRadius: 28,
+              cursor: 'pointer',
+              fontSize: 12,
+              letterSpacing: '0.25em',
+              textTransform: 'uppercase',
+              fontWeight: 700,
+              fontFamily: 'inherit',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+              transition: 'background 180ms ease, color 180ms ease',
             }}
-            aria-label="Reading progress"
-          />
-          <div className="flex justify-between text-xs text-zinc-500 mt-1.5 font-light">
-            <span className="tabular-nums">{currentWordIndex + 1} / {words.length.toLocaleString()} words</span>
-            <span className="tabular-nums">{formatTime(timeRemaining)} remaining</span>
-          </div>
+          >
+            {engine.playing ? (
+              <>
+                <span
+                  aria-hidden="true"
+                  style={{ display: 'inline-flex', gap: 3 }}
+                >
+                  <span
+                    style={{
+                      width: 3,
+                      height: 12,
+                      background: 'var(--bg)',
+                      borderRadius: 1,
+                    }}
+                  />
+                  <span
+                    style={{
+                      width: 3,
+                      height: 12,
+                      background: 'var(--bg)',
+                      borderRadius: 1,
+                    }}
+                  />
+                </span>
+                pause
+              </>
+            ) : (
+              <>
+                <svg
+                  width="12"
+                  height="14"
+                  viewBox="0 0 12 14"
+                  aria-hidden="true"
+                >
+                  <path d="M1 1l10 6-10 6V1z" fill="#fff" />
+                </svg>
+                read
+              </>
+            )}
+          </button>
+
+          <button
+            onClick={() => engine.step(15)}
+            style={sqBtnStyle}
+            aria-label="Forward 15 words"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <path
+                d="M1 1l8 6-8 6M9 1v12"
+                stroke="var(--ink)"
+                strokeWidth="1.5"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
         </div>
 
-        {/* Navigation Controls: < bookmark > */}
-        <div className="mt-2 sm:mt-4 space-y-2 sm:space-y-3 shrink-0">
-          <div className="flex items-center justify-center gap-3 sm:gap-4">
-            {/* Previous word */}
-            <button
-              onClick={() => setCurrentWordIndex(Math.max(0, currentWordIndex - 1))}
-              className="p-2.5 sm:p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
-              title="Previous word (←)"
-              aria-label="Previous word"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-
-            {/* Bookmark button */}
-            <button
-              onClick={handleBookmarkToggle}
-              className={`p-2.5 sm:p-3 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95 ${
-                isCurrentWordBookmarked
-                  ? 'bg-orange-500/20 text-orange-400'
-                  : 'bg-zinc-800/80 hover:bg-zinc-700 text-zinc-400'
-              }`}
-              title={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this word'}
-              aria-label={isCurrentWordBookmarked ? 'Remove bookmark' : 'Bookmark this word'}
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill={isCurrentWordBookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                <path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
-              </svg>
-            </button>
-
-            {/* Next word */}
-            <button
-              onClick={() => setCurrentWordIndex(Math.min(words.length - 1, currentWordIndex + 1))}
-              className="p-2.5 sm:p-3 bg-zinc-800/80 hover:bg-zinc-700 rounded-full transition-all duration-200 transform hover:scale-105 active:scale-95"
-              title="Next word (→)"
-              aria-label="Next word"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
+        <div
+          style={{
+            marginTop: 18,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          <div style={{ flex: 1 }}>
+            <div className="micro-label" style={{ marginBottom: 6 }}>
+              wpm
+            </div>
+            <input
+              className="glyph-range"
+              type="range"
+              min={120}
+              max={650}
+              step={10}
+              value={speedReadWpm}
+              onChange={(e) => setSpeedReadWpm(+e.target.value)}
+              style={{ width: '100%' }}
+              aria-label="Words per minute"
+            />
           </div>
-
-          {/* Mobile: Hold to Read (inline, flows with content) */}
-          <div className="sm:hidden">
-            <button
-              onTouchStart={handlePressStart}
-              onTouchEnd={handlePressEnd}
-              onTouchCancel={handlePressCancel}
-              className={`w-full py-3 rounded-2xl font-medium transition-all duration-150 select-none touch-none ${
-                isHolding
-                  ? 'bg-orange-500/20 border-2 border-orange-400/50 shadow-lg shadow-orange-500/10'
-                  : isAutoPlaying
-                    ? 'bg-orange-500/10 border-2 border-orange-400/30 ring-2 ring-orange-400/20'
-                    : 'bg-zinc-800/80 border-2 border-zinc-700/50 active:bg-zinc-700'
-              }`}
-              aria-label="Hold to play or double-tap to toggle"
-            >
-              <div className="flex flex-col items-center gap-1">
-                {holdButtonActive ? (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="4" width="4" height="16" rx="1"/>
-                      <rect x="14" y="4" width="4" height="16" rx="1"/>
-                    </svg>
-                    <span className="text-orange-400 text-sm font-medium">{holdButtonLabel}</span>
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                    <span className="text-zinc-400 text-sm">{holdButtonLabel}</span>
-                    <span className="text-zinc-600 text-xs">Double-tap to auto-play</span>
-                  </>
-                )}
-              </div>
-            </button>
-          </div>
-
-          {/* Desktop: Hold to Read + keyboard hints (hidden on mobile) */}
-          <div className="hidden sm:block">
-            <button
-              onMouseDown={handlePressStart}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressCancel}
-              className={`w-full py-4 rounded-xl font-medium transition-all duration-200 select-none transform active:scale-[0.98] ${
-                isHolding
-                  ? 'bg-orange-500/20 border border-orange-400/50 shadow-lg shadow-orange-500/10'
-                  : isAutoPlaying
-                    ? 'bg-orange-500/10 border border-orange-400/30 ring-2 ring-orange-400/20'
-                    : 'bg-zinc-800/80 hover:bg-zinc-700 border border-zinc-700/50'
-              }`}
-              aria-label="Hold to play or double-tap to toggle"
-            >
-              <div className="flex flex-col items-center gap-0.5">
-                <div className="flex items-center gap-2">
-                  {holdButtonActive ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
-                      <rect x="6" y="4" width="4" height="16" rx="1"/>
-                      <rect x="14" y="4" width="4" height="16" rx="1"/>
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-zinc-400" viewBox="0 0 24 24" fill="currentColor">
-                      <polygon points="5 3 19 12 5 21 5 3"/>
-                    </svg>
-                  )}
-                  <span className={`transition-colors duration-200 ${holdButtonActive ? 'text-orange-400' : 'text-zinc-400'}`}>
-                    {holdButtonLabel}
-                  </span>
-                </div>
-                {!holdButtonActive && (
-                  <span className="text-zinc-600 text-xs">Double-click to auto-play</span>
-                )}
-              </div>
-            </button>
-
-            <div className="flex justify-center gap-4 text-xs text-zinc-600 pt-3">
-              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Space</kbd> hold to play</span>
-              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">←</kbd> <kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">→</kbd> navigate</span>
-              <span><kbd className="px-1.5 py-0.5 bg-zinc-800 rounded text-zinc-500">Esc</kbd> back to doc</span>
+          <div>
+            <div className="micro-label" style={{ marginBottom: 6 }}>
+              mode
+            </div>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {(
+                [
+                  { key: 'single' as const, label: '1', title: 'Single word' },
+                  { key: 'ghost' as const, label: '3', title: 'Ghost: prev + focal + next' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  onClick={() => setReadMode(opt.key)}
+                  aria-pressed={readMode === opt.key}
+                  aria-label={opt.title}
+                  title={opt.title}
+                  style={{
+                    width: 38,
+                    height: 26,
+                    borderRadius: 6,
+                    background: readMode === opt.key ? 'var(--accent)' : 'transparent',
+                    color: readMode === opt.key ? '#fff' : 'var(--ink)',
+                    border: `1px solid ${readMode === opt.key ? 'var(--accent)' : 'var(--rule)'}`,
+                    cursor: 'pointer',
+                    fontSize: 10,
+                    fontFamily: 'var(--font-mono), monospace',
+                    padding: 0,
+                    letterSpacing: '0.08em',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {opt.key === 'single' ? 'ONE' : 'GHOST'}
+                </button>
+              ))}
             </div>
           </div>
+          <button
+            onClick={() => setShowScrub((v) => !v)}
+            aria-label="Toggle scrub bar"
+            aria-pressed={showScrub}
+            title="Scrub"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: showScrub ? 'var(--rule)' : 'transparent',
+              border: '1px solid var(--rule)',
+              color: 'var(--ink)',
+              cursor: 'pointer',
+              marginTop: 18,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: 0,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+              <circle cx="4" cy="7" r="2" fill="var(--ink)" />
+              <circle cx="10" cy="7" r="2" fill="none" stroke="var(--ink)" strokeWidth="1.5" />
+              <path d="M1 7h12" stroke="var(--ink)" strokeWidth="0.8" />
+            </svg>
+          </button>
         </div>
 
+        <div
+          style={{
+            marginTop: 12,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+          }}
+        >
+          <button
+            onClick={() => setExpressive((v) => !v)}
+            aria-pressed={expressive}
+            className="micro-label"
+            style={{
+              background: 'transparent',
+              border: 0,
+              cursor: 'pointer',
+              color: expressive ? 'var(--accent)' : 'var(--muted)',
+              padding: 0,
+            }}
+          >
+            {expressive ? '✦ expressive pacing' : '✧ expressive pacing'}
+          </button>
+          <button
+            onClick={handleBookmarkToggle}
+            className="micro-label"
+            aria-pressed={isBookmarked}
+            aria-label={isBookmarked ? 'Remove bookmark' : 'Bookmark this word'}
+            style={{
+              background: 'transparent',
+              border: 0,
+              cursor: 'pointer',
+              color: isBookmarked ? 'var(--accent)' : 'var(--muted)',
+              padding: 0,
+              display: 'inline-flex',
+              gap: 6,
+              alignItems: 'center',
+            }}
+          >
+            <svg width="11" height="13" viewBox="0 0 11 13" aria-hidden="true">
+              <path
+                d="M1 1h9v11l-4.5-2.5L1 12V1z"
+                stroke="currentColor"
+                strokeWidth="1.2"
+                fill={isBookmarked ? 'currentColor' : 'none'}
+                strokeLinejoin="round"
+              />
+            </svg>
+            bookmark
+          </button>
+        </div>
       </div>
-
-      {/* Mobile: Safe area bottom padding */}
-      <div className="sm:hidden pb-[env(safe-area-inset-bottom,16px)]"></div>
     </div>
   );
 }
+
+const sqBtnStyle: React.CSSProperties = {
+  width: 48,
+  height: 48,
+  borderRadius: 14,
+  background: 'transparent',
+  border: '1px solid var(--rule)',
+  color: 'var(--ink)',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  fontFamily: 'inherit',
+  padding: 0,
+};

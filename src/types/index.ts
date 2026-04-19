@@ -251,12 +251,22 @@ export interface PDFOutlineItem {
 export interface UserPreferences {
   /** Default zoom level */
   defaultZoom: number;
-  /** Default sidebar state */
+  /** Default sidebar state (legacy — the mobile revamp no longer uses a sidebar) */
   defaultSidebarOpen: boolean;
   /** Show page numbers in viewer */
   showPageNumbers: boolean;
   /** Default WPM for speed reader */
   defaultWpm: number;
+  /** Expressive pacing on punctuation / long words */
+  expressivePacing: boolean;
+  /** Auto-pause the speed reader when tab loses focus / interruption */
+  autoPauseOnInterrupt: boolean;
+  /** Speed-reader word mode */
+  speedReadMode: 'single' | 'ghost';
+  /** Reading font family for text reader body */
+  readingFont: 'fraunces' | 'space-grotesk' | 'system';
+  /** Text size multiplier for reader body */
+  textSize: 'sm' | 'md' | 'lg';
 }
 
 // =============================================================================
@@ -281,7 +291,7 @@ export const STORAGE_KEYS = {
  */
 export const INDEXEDDB_CONFIG = {
   DB_NAME: 'glyph-db',
-  DB_VERSION: 2,
+  DB_VERSION: 3,
   STORE_PDFS: 'pdfs',
   STORE_TEXTS: 'texts',
 } as const;

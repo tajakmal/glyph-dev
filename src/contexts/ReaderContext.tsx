@@ -9,7 +9,7 @@ import { getText as getTextContent } from '@/lib/storage';
 import { tokenize } from '@/lib/tokenize';
 import { buildPageWordCounts, mapWordIndexToPage } from '@/lib/word-mapping';
 import { useReadingProgress } from '@/hooks/useReadingProgress';
-import { getDocument as getDocumentMeta } from '@/lib/storage';
+import { getDocument as getDocumentMeta, getPreferences } from '@/lib/storage';
 
 // =============================================================================
 // Types
@@ -48,6 +48,10 @@ interface ReaderContextValue {
   currentPage: number;
   setCurrentPage: (page: number) => void;
 
+  /** Current speed-read WPM (shared so progress auto-save can persist it) */
+  speedReadWpm: number;
+  setSpeedReadWpm: (wpm: number) => void;
+
   // ==========================================================================
   // Bidirectional navigation
   // ==========================================================================
@@ -76,6 +80,8 @@ interface ReaderProviderProps {
   documentId: string;
   documentKind: DocumentKind;
   initialMode?: ViewMode;
+  /** Optional override for starting word index (e.g. from ?start= param) */
+  initialWordIndex?: number;
   children: React.ReactNode;
 }
 
@@ -83,16 +89,21 @@ export function ReaderProvider({
   documentId,
   documentKind,
   initialMode = 'pdf',
+  initialWordIndex: overrideWordIndex,
   children,
 }: ReaderProviderProps) {
   // Load saved progress for resume
   const savedDoc = getDocumentMeta(documentId);
-  const initialWordIndex = savedDoc?.lastWordIndex ?? 0;
+  const initialWordIndex = overrideWordIndex ?? savedDoc?.lastWordIndex ?? 0;
   const initialPage = savedDoc?.lastReadPage ?? 1;
+  const initialWpm =
+    savedDoc?.speedReadWpm ??
+    (typeof window !== 'undefined' ? getPreferences().defaultWpm : 320);
 
   const [viewMode, setViewMode] = useState<ViewMode>(initialMode);
   const [currentWordIndex, setCurrentWordIndex] = useState(initialWordIndex);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [speedReadWpm, setSpeedReadWpm] = useState(initialWpm);
   const [words, setWords] = useState<string[]>([]);
   const [pageWordCounts, setPageWordCounts] = useState<number[]>([]);
   const [isTextReady, setIsTextReady] = useState(false);
@@ -174,6 +185,7 @@ export function ReaderProvider({
     currentWordIndex,
     currentPage,
     totalWords: words.length,
+    wpm: speedReadWpm,
     isSpeedReading,
   });
 
@@ -226,6 +238,8 @@ export function ReaderProvider({
     setCurrentWordIndex,
     currentPage,
     setCurrentPage,
+    speedReadWpm,
+    setSpeedReadWpm,
     startSpeedReadAt,
     jumpToWordInPDF,
     registerPdfScrollToPage,

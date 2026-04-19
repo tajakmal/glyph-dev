@@ -27,26 +27,75 @@ function ReaderContent({ id }: { id: string }) {
   const modeParam = searchParams.get('mode');
   const initialMode: ViewMode = modeParam === 'speed-read' ? 'speed-read' : 'pdf';
 
+  // Support ?start=N to resume from a specific word index (used by Return screen)
+  const startParam = searchParams.get('start');
+  const initialWordIndex =
+    startParam != null && /^\d+$/.test(startParam)
+      ? Number.parseInt(startParam, 10)
+      : undefined;
+
   // Loading state (matches on both server and client)
   if (documentMeta === undefined) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full animate-spin" />
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg)',
+        }}
+      >
+        <div
+          className="spinner"
+          style={{
+            width: 28,
+            height: 28,
+            border: '2px solid var(--rule-strong)',
+            borderTopColor: 'var(--accent)',
+            borderRadius: '50%',
+          }}
+        />
       </div>
     );
   }
 
   if (!documentMeta) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-zinc-400">
-        <svg className="w-16 h-16 mb-4 text-zinc-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-        <p className="text-lg mb-2">Document not found</p>
-        <p className="text-sm text-zinc-500 mb-6">This document may have been deleted.</p>
+      <div
+        style={{
+          height: '100%',
+          background: 'var(--bg)',
+          color: 'var(--ink)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          padding: 24,
+          textAlign: 'center',
+        }}
+      >
+        <p style={{ fontSize: 18, fontWeight: 600 }}>Document not found</p>
+        <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+          This document may have been deleted.
+        </p>
         <button
           onClick={() => router.push('/')}
-          className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg transition-colors"
+          style={{
+            marginTop: 8,
+            padding: '10px 18px',
+            borderRadius: 999,
+            background: 'var(--accent)',
+            color: '#fff',
+            border: 0,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontSize: 12,
+            letterSpacing: '0.2em',
+            textTransform: 'uppercase',
+            fontWeight: 600,
+          }}
         >
           Back to Library
         </button>
@@ -59,6 +108,7 @@ function ReaderContent({ id }: { id: string }) {
       documentId={id}
       documentKind={documentMeta.kind}
       initialMode={initialMode}
+      initialWordIndex={initialWordIndex}
     >
       <UnifiedReaderLayout />
     </ReaderProvider>
@@ -69,13 +119,38 @@ export default function ReaderPage({ params }: ReaderPageProps) {
   const { id } = use(params);
 
   return (
-    <main className="h-screen flex flex-col bg-zinc-950">
-      <div className="flex-1 overflow-hidden">
-        <Suspense fallback={
-          <div className="h-full flex items-center justify-center">
-            <div className="spinner w-8 h-8 border-2 border-zinc-600 border-t-red-500 rounded-full" />
-          </div>
-        }>
+    <main
+      style={{
+        height: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        background: 'var(--bg)',
+      }}
+    >
+      <div style={{ flex: 1, overflow: 'hidden' }}>
+        <Suspense
+          fallback={
+            <div
+              style={{
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <div
+                className="spinner"
+                style={{
+                  width: 28,
+                  height: 28,
+                  border: '2px solid var(--rule-strong)',
+                  borderTopColor: 'var(--accent)',
+                  borderRadius: '50%',
+                }}
+              />
+            </div>
+          }
+        >
           <ReaderContent id={id} />
         </Suspense>
       </div>

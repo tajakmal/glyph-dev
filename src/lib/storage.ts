@@ -270,6 +270,12 @@ function normalizeDocument(doc: unknown): DocumentMeta | null {
     fileSize: typeof d.fileSize === 'number' ? d.fileSize : undefined,
     lastReadPage: typeof d.lastReadPage === 'number' ? d.lastReadPage : undefined,
     thumbnailDataUrl: typeof d.thumbnailDataUrl === 'string' ? d.thumbnailDataUrl : undefined,
+    // Reading-progress fields — previously dropped, causing Continue card + resume regressions
+    lastWordIndex: typeof d.lastWordIndex === 'number' ? d.lastWordIndex : undefined,
+    readingProgress: typeof d.readingProgress === 'number' ? d.readingProgress : undefined,
+    totalWords: typeof d.totalWords === 'number' ? d.totalWords : undefined,
+    speedReadWpm: typeof d.speedReadWpm === 'number' ? d.speedReadWpm : undefined,
+    lastReadAt: typeof d.lastReadAt === 'number' ? d.lastReadAt : undefined,
   };
 
   if (kind === 'pdf') {
@@ -588,14 +594,25 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   defaultZoom: 1,
   defaultSidebarOpen: true,
   showPageNumbers: true,
-  defaultWpm: 300,
+  defaultWpm: 320,
+  expressivePacing: true,
+  autoPauseOnInterrupt: true,
+  speedReadMode: 'single',
+  readingFont: 'fraunces',
+  textSize: 'md',
 };
 
 /**
  * Get user preferences from localStorage.
+ * Backwards-safe: merges stored values over new defaults so older saves
+ * don't lose the newer fields.
  */
 export function getPreferences(): UserPreferences {
-  return getFromStorage<UserPreferences>(STORAGE_KEYS.PREFERENCES, DEFAULT_PREFERENCES);
+  const stored = getFromStorage<Partial<UserPreferences>>(
+    STORAGE_KEYS.PREFERENCES,
+    {} as Partial<UserPreferences>
+  );
+  return { ...DEFAULT_PREFERENCES, ...stored };
 }
 
 /**

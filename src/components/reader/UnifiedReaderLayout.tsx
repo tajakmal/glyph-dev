@@ -11,20 +11,38 @@ export function UnifiedReaderLayout() {
 
   if (error) {
     return (
-      <div className="h-full flex items-center justify-center text-zinc-400">
-        <div className="text-center">
-          <p className="text-lg mb-2">Failed to load document</p>
-          <p className="text-sm text-zinc-500">{error.message}</p>
+      <div
+        style={{
+          height: '100%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--bg)',
+          color: 'var(--muted)',
+          padding: 24,
+          textAlign: 'center',
+        }}
+      >
+        <div>
+          <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--ink)' }}>
+            Failed to load document
+          </p>
+          <p style={{ fontSize: 13, marginTop: 6 }}>{error.message}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="h-full relative">
+    <div style={{ height: '100%', position: 'relative' }}>
       {/* PDF/Text viewer — always mounted to preserve scroll state */}
       <div
-        className={viewMode === 'pdf' ? 'h-full' : 'h-full absolute inset-0 invisible'}
+        style={{
+          height: '100%',
+          position: viewMode === 'pdf' ? 'relative' : 'absolute',
+          inset: viewMode === 'pdf' ? undefined : 0,
+          visibility: viewMode === 'pdf' ? 'visible' : 'hidden',
+        }}
         aria-hidden={viewMode !== 'pdf'}
       >
         {documentKind === 'pdf' ? (
@@ -36,7 +54,7 @@ export function UnifiedReaderLayout() {
 
       {/* Speed read panel — full screen overlay */}
       {viewMode === 'speed-read' && (
-        <div className="absolute inset-0 z-10">
+        <div style={{ position: 'absolute', inset: 0, zIndex: 10 }}>
           <SpeedReadPanel />
         </div>
       )}
