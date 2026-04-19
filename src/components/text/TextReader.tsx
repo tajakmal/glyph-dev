@@ -35,7 +35,7 @@ import { getPreferences } from '@/lib/storage';
 import { trackEvent } from '@/lib/telemetry';
 import { ReaderContext } from '@/contexts/ReaderContext';
 import { HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
-import { SelectionPill } from '@/components/reader/SelectionPill';
+import { SelectionActionBar } from './SelectionActionBar';
 
 interface TextReaderProps {
   documentId: string;
@@ -448,7 +448,27 @@ export function TextReader({ documentId }: TextReaderProps) {
 
   const handleCopySelection = useCallback(() => {
     if (!selection) return;
-    navigator.clipboard?.writeText(selection.text).catch(() => {});
+    const text = selection.text;
+    const doFallback = () => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('readonly', 'true');
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        // Silent — toast still shows; user can long-press to copy via native menu
+      }
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(doFallback);
+    } else {
+      doFallback();
+    }
     handleCloseSelection();
   }, [selection, handleCloseSelection]);
 
@@ -840,50 +860,16 @@ export function TextReader({ documentId }: TextReaderProps) {
         </div>
       </div>
 
-      {/* Floating Speed-read FAB */}
-      <button
-        onClick={() => handleSpeedRead()}
-        aria-label="Start speed-read from here"
-        style={{
-          position: 'absolute',
-          right: 16,
-          bottom: 34,
-          zIndex: 20,
-          height: 52,
-          padding: '0 22px 0 18px',
-          borderRadius: 26,
-          background: 'var(--accent)',
-          color: '#fff',
-          border: 0,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          boxShadow: '0 10px 24px rgba(255,90,61,0.45)',
-          fontFamily: 'var(--font-mono), monospace',
-          fontSize: 11,
-          letterSpacing: '0.22em',
-          textTransform: 'uppercase',
-          fontWeight: 700,
-        }}
-      >
-        <svg width="14" height="16" viewBox="0 0 14 16" aria-hidden="true">
-          <path d="M1 1l12 7-12 7V1z" fill="#fff" />
-        </svg>
-        Speed-read
-      </button>
-
-      {/* Selection pill */}
-      {selection && (
-        <SelectionPill
-          anchorRect={selection.anchorRect}
-          onHighlight={handleCreateHighlight}
-          onSpeedRead={handleSpeedReadSelection}
-          onBookmark={handleBookmarkSelection}
-          onCopy={handleCopySelection}
-          onClose={handleCloseSelection}
-        />
-      )}
+      {/* Floating action bar — morphs between idle (Speed-read FAB) and selection actions */}
+      <SelectionActionBar
+        selection={selection}
+        onHighlight={handleCreateHighlight}
+        onSpeedRead={handleSpeedReadSelection}
+        onBookmark={handleBookmarkSelection}
+        onCopy={handleCopySelection}
+        onDismiss={handleCloseSelection}
+        onIdleSpeedRead={() => handleSpeedRead()}
+      />
 
       {/* Existing highlight edit popover */}
       {activeHighlight && (

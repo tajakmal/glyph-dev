@@ -579,8 +579,6 @@ export function SpeedReadPanel() {
             index={engine.index}
             before={5}
             after={5}
-            color="rgba(242,239,232,0.22)"
-            focalColor="var(--ink)"
           />
         </div>
       </div>

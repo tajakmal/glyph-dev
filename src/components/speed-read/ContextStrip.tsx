@@ -12,13 +12,15 @@ interface ContextStripProps {
 /**
  * Dimmed context strip showing a few words before and after the focal word.
  * Addresses parafoveal-preview loss inherent to RSVP.
+ * Defaults use `var(--muted)` and `var(--ink)` so the strip stays readable
+ * in both dark and paper themes.
  */
 export function ContextStrip({
   words,
   index,
   before = 5,
   after = 5,
-  color = 'rgba(242,239,232,0.22)',
+  color = 'var(--muted)',
   focalColor = 'var(--ink)',
 }: ContextStripProps) {
   const start = Math.max(0, index - before);
