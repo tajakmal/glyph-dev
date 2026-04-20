@@ -38,6 +38,7 @@ type Action =
     }
   | { type: 'COMMIT_PAYLOAD'; payload: GoalPayload }
   | { type: 'GENERATION_ERROR'; message: string }
+  | { type: 'RESET_TO_GENERATING' }
   | { type: 'BEGIN_READING' }
   | { type: 'FINISH_CHUNK'; chunkIndex: number }
   | {
@@ -108,6 +109,13 @@ function reducer(
         ...state,
         state: { kind: 'error', message: action.message },
       };
+    }
+
+    case 'RESET_TO_GENERATING': {
+      if (!state) return state;
+      // Only valid coming out of an error state — used by Retry.
+      if (state.state.kind !== 'error') return state;
+      return { ...state, state: { kind: 'generating' } };
     }
 
     case 'BEGIN_READING': {
@@ -225,6 +233,8 @@ export interface UseGoalSessionResult {
   }) => GoalRange[];
   commitPayload: (payload: GoalPayload) => void;
   setGenerationError: (message: string) => void;
+  /** Reset the session from 'error' back to 'generating' (used on Retry). */
+  resetToGenerating: () => void;
   beginReading: () => void;
   finishChunk: (chunkIndex: number) => void;
   answer: (chunkIndex: number, question: QuizQuestion, choiceIndex: number) => void;
@@ -255,6 +265,11 @@ export function useGoalSession(): UseGoalSessionResult {
 
   const setGenerationError = useCallback(
     (message: string) => dispatch({ type: 'GENERATION_ERROR', message }),
+    []
+  );
+
+  const resetToGenerating = useCallback(
+    () => dispatch({ type: 'RESET_TO_GENERATING' }),
     []
   );
 
@@ -358,6 +373,7 @@ export function useGoalSession(): UseGoalSessionResult {
     startGoal,
     commitPayload,
     setGenerationError,
+    resetToGenerating,
     beginReading,
     finishChunk,
     answer,

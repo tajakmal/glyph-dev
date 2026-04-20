@@ -48,7 +48,16 @@ export function SpeedReadPanel() {
     toggleBookmark,
   } = useTextBookmarks({ documentId });
 
-  const { session: goalSession, finishChunk, openPrimer } = useGoalContext();
+  const { session: goalSession, finishChunk, openPrimer, showSource: goalShowSource } = useGoalContext();
+
+  // When a goal is active and NOT in the "reading" phase (quiz / between /
+  // final / error / showing-source), the speed-read panel is hidden behind
+  // an overlay. Its keyboard shortcuts should stand down so Escape, Space,
+  // R etc. don't punch through to exit the goal or restart the engine.
+  const suppressShortcuts = Boolean(
+    goalSession &&
+      (goalSession.state.kind !== 'reading' || goalShowSource)
+  );
 
   // Extract current-goal chunk range so playback is scoped correctly.
   const activeChunkRange = useMemo(() => {
@@ -293,6 +302,7 @@ export function SpeedReadPanel() {
       ) {
         return;
       }
+      if (suppressShortcuts) return;
       if (e.code === 'Space') {
         e.preventDefault();
         if (!e.repeat) engine.play();
@@ -315,6 +325,7 @@ export function SpeedReadPanel() {
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
+      if (suppressShortcuts) return;
       if (e.code === 'Space') {
         e.preventDefault();
         engine.pause();
@@ -326,7 +337,7 @@ export function SpeedReadPanel() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [engine, exitToReader, goalSession]);
+  }, [engine, exitToReader, goalSession, openPrimer, suppressShortcuts]);
 
   // Loading state
   if (!isTextReady || words.length === 0) {

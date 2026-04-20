@@ -110,6 +110,7 @@ export function GoalProvider({ children }: GoalProviderProps) {
     startGoal,
     commitPayload,
     setGenerationError,
+    resetToGenerating,
     beginReading: beginReadingSession,
     finishChunk,
     answer,
@@ -178,8 +179,11 @@ export function GoalProvider({ children }: GoalProviderProps) {
     if (!session) return;
     const chunks = session.chunks.map((c) => c.range);
     generation.reset();
+    // Move session out of 'error' so the commit-payload effect fires again
+    // once the retry produces a payload.
+    resetToGenerating();
     generation.start({ words: reader.words, range: session.range, chunks });
-  }, [session, reader.words, generation]);
+  }, [session, reader.words, generation, resetToGenerating]);
 
   const cancelGeneration = useCallback(() => {
     generation.abort();
@@ -250,7 +254,11 @@ export function GoalProvider({ children }: GoalProviderProps) {
     generation.reset();
     setPrimerOpen(false);
     setShowSource(null);
-  }, [exitGoal, generation]);
+    // If we were mid-read / mid-quiz, bring the underlying reader back into
+    // view. Without this, the user lands on a speed-read panel with no goal
+    // and has to press Close to exit.
+    reader.setViewMode('pdf');
+  }, [exitGoal, generation, reader]);
 
   const revealSource = useCallback<GoalContextValue['revealSource']>(
     (chunkIndex, question) => {
@@ -276,6 +284,11 @@ export function GoalProvider({ children }: GoalProviderProps) {
     []
   );
 
+  // Stable references for the primer-modal open/close actions so the context
+  // value object doesn't invalidate every render.
+  const openPrimer = useCallback(() => setPrimerOpen(true), []);
+  const closePrimer = useCallback(() => setPrimerOpen(false), []);
+
   // Finalize: when user hits Done on the final summary → exit cleanly.
   const exitGoalWrapper = useCallback(() => {
     if (session && session.state.kind === 'finalSummary') {
@@ -299,8 +312,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
       generationError: generation.error,
 
       primerOpen,
-      openPrimer: () => setPrimerOpen(true),
-      closePrimer: () => setPrimerOpen(false),
+      openPrimer,
+      closePrimer,
 
       showSource,
       revealSource,
@@ -335,6 +348,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
       generation.payload,
       generation.error,
       primerOpen,
+      openPrimer,
+      closePrimer,
       showSource,
       revealSource,
       backToQuiz,
