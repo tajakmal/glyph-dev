@@ -42,3 +42,4 @@ next-env.d.ts
 
 # Ralph (development task runner - not part of app)
 /ralph
+specs/*
