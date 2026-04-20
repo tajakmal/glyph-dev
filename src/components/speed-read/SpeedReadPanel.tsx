@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { useRouter } from 'next/navigation';
 import { useReaderContext } from '@/contexts/ReaderContext';
+import { useGoalContext } from '@/contexts/GoalContext';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
 import {
   useSpeedReader,
@@ -18,6 +19,7 @@ import { getPreferences } from '@/lib/storage';
 import { ORPWord } from './ORPWord';
 import { ContextStrip } from './ContextStrip';
 import { DocMiniMap } from './DocMiniMap';
+import { PrimerPill } from '@/components/goal-read/PrimerPill';
 
 const HOLD_THRESHOLD = 200; // ms
 const DOUBLE_TAP_WINDOW = 300; // ms
@@ -46,6 +48,23 @@ export function SpeedReadPanel() {
     toggleBookmark,
   } = useTextBookmarks({ documentId });
 
+  const { session: goalSession, finishChunk, openPrimer } = useGoalContext();
+
+  // Extract current-goal chunk range so playback is scoped correctly.
+  const activeChunkRange = useMemo(() => {
+    if (!goalSession) return null;
+    const s = goalSession.state;
+    if (s.kind === 'reading') {
+      return goalSession.chunks[s.chunkIndex]?.range ?? null;
+    }
+    return null;
+  }, [goalSession]);
+
+  const engineRange = useMemo(() => {
+    if (!activeChunkRange) return undefined;
+    return { start: activeChunkRange.startWord, end: activeChunkRange.endWord };
+  }, [activeChunkRange]);
+
   type ReadMode = 'single' | 'ghost';
   // Read preferences once on mount so Settings defaults propagate to new sessions
   const [readMode, setReadMode] = useState<ReadMode>(
@@ -59,12 +78,25 @@ export function SpeedReadPanel() {
   );
   const [showScrub, setShowScrub] = useState(false);
 
+  const handleRangeEnd = useCallback(
+    (_endIndex: number) => {
+      if (!goalSession) return;
+      const s = goalSession.state;
+      if (s.kind === 'reading') {
+        finishChunk(s.chunkIndex);
+      }
+    },
+    [goalSession, finishChunk]
+  );
+
   const engine = useSpeedReader({
     words,
     wpm: speedReadWpm,
     expressive,
     index: currentWordIndex,
     onIndexChange: setCurrentWordIndex,
+    range: engineRange,
+    onRangeEnd: handleRangeEnd,
   });
 
   // Session tracking for the Return screen. The ref is seeded in a mount
@@ -125,9 +157,18 @@ export function SpeedReadPanel() {
     [engine.index, documentId, speedReadWpm, readMode]
   );
 
+  const { exitGoal: exitGoalSession } = useGoalContext();
+
   const exitToReader = useCallback(() => {
     engine.pause();
     lastActionRef.current = 'close';
+    // If a goal is active, discard it and return to the reader without
+    // firing a session receipt (goal flow has its own completion screens).
+    if (goalSession) {
+      exitGoalSession();
+      setViewMode('pdf');
+      return;
+    }
     const showReceipt = emitSessionReceipt('close');
     if (showReceipt) {
       router.push(`/reader/${documentId}/return`);
@@ -140,6 +181,8 @@ export function SpeedReadPanel() {
     }
   }, [
     engine,
+    goalSession,
+    exitGoalSession,
     emitSessionReceipt,
     router,
     documentId,
@@ -149,8 +192,9 @@ export function SpeedReadPanel() {
     setViewMode,
   ]);
 
-  // End of document → receipt
+  // End of document → receipt (suppressed while a goal session is active)
   useEffect(() => {
+    if (goalSession) return;
     if (!engine.playing && engine.index >= words.length - 1 && words.length > 0 && lastActionRef.current === 'none') {
       lastActionRef.current = 'end';
       const showReceipt = emitSessionReceipt('end');
@@ -158,7 +202,7 @@ export function SpeedReadPanel() {
         router.push(`/reader/${documentId}/return`);
       }
     }
-  }, [engine.playing, engine.index, words.length, emitSessionReceipt, router, documentId]);
+  }, [engine.playing, engine.index, words.length, emitSessionReceipt, router, documentId, goalSession]);
 
   // Dual-press: hold for temporary play, double-tap for autoplay toggle
   const isPressedRef = useRef(false);
@@ -261,6 +305,10 @@ export function SpeedReadPanel() {
       } else if (e.code === 'KeyR') {
         e.preventDefault();
         engine.reset();
+      } else if (e.code === 'KeyP' && goalSession) {
+        e.preventDefault();
+        engine.pause();
+        openPrimer();
       } else if (e.code === 'Escape') {
         e.preventDefault();
         exitToReader();
@@ -278,7 +326,7 @@ export function SpeedReadPanel() {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [engine, exitToReader]);
+  }, [engine, exitToReader, goalSession]);
 
   // Loading state
   if (!isTextReady || words.length === 0) {
@@ -314,7 +362,9 @@ export function SpeedReadPanel() {
   const prev = engine.prevToken;
   const next = engine.nextToken;
   const pct = Math.round(engine.progress * 100);
-  const remaining = Math.max(0, words.length - engine.index - 1);
+  const scrubMin = activeChunkRange?.startWord ?? 0;
+  const scrubMax = activeChunkRange?.endWord ?? Math.max(0, words.length - 1);
+  const remaining = Math.max(0, scrubMax - engine.index);
   const timeLeft = formatRemaining(remaining, speedReadWpm);
 
   return (
@@ -387,7 +437,12 @@ export function SpeedReadPanel() {
             />
             {engine.playing ? 'reading' : 'paused'}
           </div>
-          <div className="micro-label">{speedReadWpm} wpm</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {goalSession && (
+              <PrimerPill onPauseEngine={engine.pause} />
+            )}
+            <div className="micro-label">{speedReadWpm} wpm</div>
+          </div>
         </div>
 
         {/* Title + position */}
@@ -429,11 +484,19 @@ export function SpeedReadPanel() {
           </div>
         </div>
 
-        {/* Minimap */}
+        {/* Minimap — chunk-scoped while a goal is active */}
         <div style={{ marginTop: 16 }}>
           <DocMiniMap
-            index={engine.index}
-            total={words.length}
+            index={
+              activeChunkRange
+                ? Math.max(0, engine.index - activeChunkRange.startWord)
+                : engine.index
+            }
+            total={
+              activeChunkRange
+                ? Math.max(1, activeChunkRange.endWord - activeChunkRange.startWord + 1)
+                : words.length
+            }
             height={2}
           />
         </div>
@@ -605,8 +668,8 @@ export function SpeedReadPanel() {
               <input
                 aria-label="Scrub through document"
                 type="range"
-                min={0}
-                max={Math.max(0, words.length - 1)}
+                min={scrubMin}
+                max={scrubMax}
                 value={engine.index}
                 onChange={(e) => engine.seek(+e.target.value)}
                 style={{

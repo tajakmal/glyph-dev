@@ -4,7 +4,8 @@ export type FeatureFlagKey =
   | "library_search_enabled"
   | "reader_progress_unified"
   | "pdf_selection_mapping_v2"
-  | "textreader_topbar_speedread_enabled";
+  | "textreader_topbar_speedread_enabled"
+  | "goalBasedReading";
 
 export type FeatureFlags = Record<FeatureFlagKey, boolean>;
 
@@ -17,6 +18,7 @@ const DEFAULT_FLAGS: FeatureFlags = {
   reader_progress_unified: true,
   pdf_selection_mapping_v2: true,
   textreader_topbar_speedread_enabled: true,
+  goalBasedReading: true,
 };
 
 const ENV_KEYS: Record<FeatureFlagKey, string> = {
@@ -27,6 +29,7 @@ const ENV_KEYS: Record<FeatureFlagKey, string> = {
   pdf_selection_mapping_v2: "NEXT_PUBLIC_FLAG_PDF_SELECTION_MAPPING_V2",
   textreader_topbar_speedread_enabled:
     "NEXT_PUBLIC_FLAG_TEXTREADER_TOPBAR_SPEEDREAD_ENABLED",
+  goalBasedReading: "NEXT_PUBLIC_FLAG_GOAL_BASED_READING",
 };
 
 function parseBoolean(value: string | undefined): boolean | null {

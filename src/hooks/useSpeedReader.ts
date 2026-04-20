@@ -31,6 +31,13 @@ export interface UseSpeedReaderOptions {
   onIndexChange?: (next: number) => void;
   /** Autoplay on mount */
   autoPlay?: boolean;
+  /**
+   * Optional playback range. When provided, `play()` stops at `range.end`
+   * (inclusive) and `progress` is computed relative to the range.
+   */
+  range?: { start: number; end: number };
+  /** Called once when play reaches `range.end`. Fires with the end index. */
+  onRangeEnd?: (endIndex: number) => void;
 }
 
 export function buildTokens(words: string[]): SpeedReadToken[] {
@@ -119,6 +126,8 @@ export function useSpeedReader({
   index: controlledIndex,
   onIndexChange,
   autoPlay = false,
+  range,
+  onRangeEnd,
 }: UseSpeedReaderOptions): UseSpeedReaderResult {
   const tokens = useMemo(() => buildTokens(words), [words]);
   const [internalIndex, setInternalIndex] = useState(0);
@@ -126,13 +135,23 @@ export function useSpeedReader({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const index = controlledIndex ?? internalIndex;
+
+  // Effective playback bounds. When a range is provided, navigation and
+  // progress are scoped to it. The default bounds span the whole document.
+  const effectiveStart = range ? Math.max(0, range.start) : 0;
+  const effectiveEnd = range
+    ? Math.min(tokens.length - 1, range.end)
+    : tokens.length - 1;
+
   const setIndex = useCallback(
     (next: number) => {
-      const clamped = Math.max(0, Math.min(tokens.length - 1, next));
+      const lo = effectiveStart;
+      const hi = effectiveEnd;
+      const clamped = Math.max(lo, Math.min(hi, next));
       if (onIndexChange) onIndexChange(clamped);
       if (controlledIndex == null) setInternalIndex(clamped);
     },
-    [tokens.length, controlledIndex, onIndexChange]
+    [effectiveStart, effectiveEnd, controlledIndex, onIndexChange]
   );
 
   // Autoplay on mount if requested
@@ -143,25 +162,44 @@ export function useSpeedReader({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const rangeEndFiredRef = useRef(false);
+  useEffect(() => {
+    rangeEndFiredRef.current = false;
+  }, [range?.start, range?.end]);
+
   // Main tick — always advance by one word; ghost mode just affects rendering.
   useEffect(() => {
     if (!playing) {
       if (timerRef.current) clearTimeout(timerRef.current);
       return;
     }
-    if (index >= tokens.length - 1) {
+    if (index >= effectiveEnd) {
       setPlaying(false);
+      if (range && !rangeEndFiredRef.current) {
+        rangeEndFiredRef.current = true;
+        onRangeEnd?.(effectiveEnd);
+      }
       return;
     }
     const focal = tokens[index];
     const duration = focal ? wordDuration(focal, wpm, expressive) : 60_000 / wpm;
     timerRef.current = setTimeout(() => {
-      setIndex(Math.min(tokens.length - 1, index + 1));
+      setIndex(Math.min(effectiveEnd, index + 1));
     }, duration);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [playing, index, tokens, wpm, expressive, setIndex]);
+  }, [
+    playing,
+    index,
+    tokens,
+    wpm,
+    expressive,
+    setIndex,
+    effectiveEnd,
+    range,
+    onRangeEnd,
+  ]);
 
   const play = useCallback(() => setPlaying(true), []);
   const pause = useCallback(() => setPlaying(false), []);
@@ -171,12 +209,13 @@ export function useSpeedReader({
     [index, setIndex]
   );
   const seek = useCallback((to: number) => setIndex(to), [setIndex]);
-  const reset = useCallback(() => setIndex(0), [setIndex]);
+  const reset = useCallback(() => setIndex(effectiveStart), [setIndex, effectiveStart]);
 
   const focalToken = tokens[index] ?? null;
-  const prevToken = index > 0 ? tokens[index - 1] : null;
-  const nextToken = index < tokens.length - 1 ? tokens[index + 1] : null;
-  const progress = tokens.length > 0 ? index / Math.max(1, tokens.length - 1) : 0;
+  const prevToken = index > effectiveStart ? tokens[index - 1] : null;
+  const nextToken = index < effectiveEnd ? tokens[index + 1] : null;
+  const span = Math.max(1, effectiveEnd - effectiveStart);
+  const progress = tokens.length > 0 ? Math.max(0, Math.min(1, (index - effectiveStart) / span)) : 0;
 
   return {
     tokens,

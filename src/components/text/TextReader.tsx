@@ -34,9 +34,13 @@ import { getFeatureFlag } from '@/lib/feature-flags';
 import { getPreferences } from '@/lib/storage';
 import { trackEvent } from '@/lib/telemetry';
 import { ReaderContext } from '@/contexts/ReaderContext';
+import { useGoalContext } from '@/contexts/GoalContext';
 import { HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { SelectionActionBar } from './SelectionActionBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
+import { GoalChooserSheet } from '@/components/goal-read/GoalChooserSheet';
+import { getApiKey } from '@/lib/chat';
+import { MIN_FOCUS_WORDS, MAX_GOAL_WORDS, type GoalRange } from '@/lib/goal-read/types';
 
 interface TextReaderProps {
   documentId: string;
@@ -47,6 +51,7 @@ const PROGRESS_TICKS = 60;
 export function TextReader({ documentId }: TextReaderProps) {
   const router = useRouter();
   const readerCtx = useContext(ReaderContext);
+  const goal = useGoalContext();
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -55,7 +60,18 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
+  const [goalChooser, setGoalChooser] = useState<
+    | {
+        open: true;
+        selectionRange: GoalRange | null;
+        idleStartWordIndex: number | null;
+      }
+    | { open: false }
+  >({ open: false });
+  const [shortSelectionToast, setShortSelectionToast] = useState<string | null>(null);
+  const [apiKeyReady, setApiKeyReady] = useState(false);
   const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
+  const goalFlagEnabled = getFeatureFlag('goalBasedReading');
 
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const suppressScrollIndexRef = useRef(false);
@@ -65,10 +81,21 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [textSize, setTextSize] = useState<'sm' | 'md' | 'lg'>('md');
   useEffect(() => {
     const prefs = getPreferences();
-     
+
     setReadingFont(prefs.readingFont);
-     
+
     setTextSize(prefs.textSize);
+    setApiKeyReady(!!getApiKey());
+  }, []);
+
+  // Refresh API-key ready state whenever the chooser opens or window regains focus
+  useEffect(() => {
+    if (goalChooser.open) setApiKeyReady(!!getApiKey());
+  }, [goalChooser.open]);
+  useEffect(() => {
+    const onFocus = () => setApiKeyReady(!!getApiKey());
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   const bodyFontFamily =
@@ -309,6 +336,107 @@ export function TextReader({ documentId }: TextReaderProps) {
     [readerCtx, router, documentId, currentWordIndex]
   );
 
+  const flashShortToast = useCallback((msg: string) => {
+    setShortSelectionToast(msg);
+    setTimeout(() => setShortSelectionToast(null), 1800);
+  }, []);
+
+  const openGoalChooser = useCallback(
+    (opts: { selectionRange: GoalRange | null; idleStartWordIndex: number | null }) => {
+      setGoalChooser({
+        open: true,
+        selectionRange: opts.selectionRange,
+        idleStartWordIndex: opts.idleStartWordIndex,
+      });
+    },
+    []
+  );
+
+  const closeGoalChooser = useCallback(() => {
+    setGoalChooser({ open: false });
+  }, []);
+
+  const routeSpeedReadAction = useCallback(
+    (opts: { selectionRange: GoalRange | null; idleStart: number | null }) => {
+      if (!goalFlagEnabled) {
+        handleSpeedRead(opts.selectionRange?.startWord ?? opts.idleStart ?? undefined);
+        return;
+      }
+      if (opts.selectionRange) {
+        const length =
+          opts.selectionRange.endWord - opts.selectionRange.startWord + 1;
+        if (length > MAX_GOAL_WORDS) {
+          // Still open chooser so the user sees the soft-cap message and can
+          // fall back to plain speed-read.
+          openGoalChooser({
+            selectionRange: opts.selectionRange,
+            idleStartWordIndex: null,
+          });
+          return;
+        }
+        if (length < MIN_FOCUS_WORDS) {
+          flashShortToast('Selection too short for focus read — starting plain read');
+          handleSpeedRead(opts.selectionRange.startWord);
+          return;
+        }
+        openGoalChooser({
+          selectionRange: opts.selectionRange,
+          idleStartWordIndex: null,
+        });
+        return;
+      }
+      openGoalChooser({
+        selectionRange: null,
+        idleStartWordIndex: opts.idleStart,
+      });
+    },
+    [goalFlagEnabled, handleSpeedRead, openGoalChooser, flashShortToast]
+  );
+
+  // Register scroll-to-range for goal "Show source" action
+  const scrollToWordRange = useCallback(
+    (range: GoalRange) => {
+      const container = textContainerRef.current;
+      if (!container) return;
+      const spans: HTMLElement[] = [];
+      for (let i = range.startWord; i <= range.endWord; i++) {
+        const span = container.querySelector<HTMLElement>(
+          `[data-word-index="${i}"]`
+        );
+        if (span) spans.push(span);
+      }
+      if (spans.length === 0) return;
+      spans[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      spans.forEach((span) => {
+        span.style.backgroundColor = 'var(--accent-35)';
+        span.style.boxShadow = '0 0 0 3px var(--accent-20)';
+        span.style.borderRadius = '3px';
+        span.style.transition = 'background-color 160ms ease';
+      });
+      const clear = () => {
+        spans.forEach((span) => {
+          span.style.transition =
+            'background-color 500ms ease, box-shadow 500ms ease';
+          span.style.backgroundColor = '';
+          span.style.boxShadow = '';
+          setTimeout(() => {
+            span.style.transition = '';
+            span.style.borderRadius = '';
+          }, 500);
+        });
+      };
+      // Auto-clear after 4s
+      const timer = setTimeout(clear, 4000);
+      return () => clearTimeout(timer);
+    },
+    []
+  );
+
+  useEffect(() => {
+    goal.registerScrollToWordRange(scrollToWordRange);
+    return () => goal.registerScrollToWordRange(null);
+  }, [goal, scrollToWordRange]);
+
   const handleBookmarkToggle = useCallback(() => {
     if (isCurrentWordBookmarked) {
       toggleWordBookmark(currentWordIndex);
@@ -462,9 +590,13 @@ export function TextReader({ documentId }: TextReaderProps) {
 
   const handleSpeedReadSelection = useCallback(() => {
     if (!selection) return;
-    handleSpeedRead(selection.startWord);
+    const range: GoalRange = {
+      startWord: selection.startWord,
+      endWord: selection.endWord,
+    };
     handleCloseSelection();
-  }, [selection, handleSpeedRead, handleCloseSelection]);
+    routeSpeedReadAction({ selectionRange: range, idleStart: null });
+  }, [selection, handleCloseSelection, routeSpeedReadAction]);
 
   const handleBookmarkSelection = useCallback(() => {
     if (!selection) return;
@@ -903,7 +1035,12 @@ export function TextReader({ documentId }: TextReaderProps) {
         onCopy={handleCopySelection}
         onAsk={handleAskSelection}
         onDismiss={handleCloseSelection}
-        onIdleSpeedRead={() => handleSpeedRead(getFirstVisibleWordIndex())}
+        onIdleSpeedRead={() =>
+          routeSpeedReadAction({
+            selectionRange: null,
+            idleStart: getFirstVisibleWordIndex(),
+          })
+        }
       />
 
       <ChatPanel
@@ -914,6 +1051,50 @@ export function TextReader({ documentId }: TextReaderProps) {
         pendingQuote={pendingQuote}
         onQuoteConsumed={() => setPendingQuote(null)}
       />
+
+      {goalChooser.open && (
+        <GoalChooserSheet
+          open
+          onClose={closeGoalChooser}
+          selectionRange={goalChooser.selectionRange}
+          idleStartWordIndex={goalChooser.idleStartWordIndex}
+          words={words}
+          wpm={readerCtx?.speedReadWpm ?? 320}
+          apiKeyConfigured={apiKeyReady}
+          onPlainSpeedRead={(startAt) => {
+            closeGoalChooser();
+            handleSpeedRead(startAt);
+          }}
+          onFocusRead={(range) => {
+            closeGoalChooser();
+            goal.startFocusGoal(range);
+          }}
+        />
+      )}
+
+      {shortSelectionToast && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute',
+            top: 68,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 85,
+            padding: '8px 16px',
+            borderRadius: 999,
+            background: 'rgba(20,17,12,0.95)',
+            color: '#faf6ed',
+            fontSize: 11,
+            fontFamily: 'var(--font-mono), monospace',
+            letterSpacing: '0.14em',
+            textTransform: 'uppercase',
+            boxShadow: '0 8px 22px rgba(0,0,0,0.25)',
+          }}
+        >
+          {shortSelectionToast}
+        </div>
+      )}
 
       {/* Existing highlight edit popover */}
       {activeHighlight && (
