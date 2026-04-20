@@ -26,7 +26,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Glyph — read fast, read slow",
+  title: "Glyph — read at the speed of thought",
   description:
     "Speed reading, one word at a time. Knowledge accessible to everyone.",
 };

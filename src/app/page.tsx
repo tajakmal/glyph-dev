@@ -61,11 +61,11 @@ export default function HomePage() {
         {/* Hero wordmark */}
         <div style={{ marginTop: 16, marginBottom: 20 }}>
           <div className="hero-display">
-            read
+            read at the
             <br />
-            fast,
+            speed of
             <br />
-            <span style={{ color: 'var(--accent)' }}>read slow</span>.
+            <span style={{ color: 'var(--accent)' }}>thought</span>.
           </div>
         </div>
       </div>
