@@ -114,9 +114,9 @@ export function GoalProvider({ children }: GoalProviderProps) {
     finishChunk,
     answer,
     completeQuiz,
-    continueToNextChunk,
-    rereadChunk,
-    restartGoal,
+    continueToNextChunk: continueToNextChunkSession,
+    rereadChunk: rereadChunkSession,
+    restartGoal: restartGoalSession,
     exitGoal,
     markChunkFailed: _markChunkFailed,
   } = useGoalSession();
@@ -209,16 +209,32 @@ export function GoalProvider({ children }: GoalProviderProps) {
     reader.setViewMode('speed-read');
   }, [session, reader, beginReadingSession]);
 
-  // Each chunk transition should place the RSVP engine at the chunk's start
-  useEffect(() => {
+  // Chunk transitions set the RSVP engine index to the chunk's start word
+  // exactly once — at the moment of transition. An effect-driven reset would
+  // re-fire on every render because ReaderContext's value isn't memoized.
+  const continueToNextChunk = useCallback(() => {
     if (!session) return;
-    if (session.state.kind === 'reading') {
-      const chunk = session.chunks[session.state.chunkIndex];
-      if (chunk) {
-        reader.setCurrentWordIndex(chunk.range.startWord);
-      }
-    }
-  }, [session, reader]);
+    if (session.state.kind !== 'betweenChunks') return;
+    const nextIdx = session.state.chunkIndex + 1;
+    const next = session.chunks[nextIdx];
+    if (next) reader.setCurrentWordIndex(next.range.startWord);
+    continueToNextChunkSession();
+  }, [session, reader, continueToNextChunkSession]);
+
+  const rereadChunk = useCallback(
+    (chunkIndex: number) => {
+      const chunk = session?.chunks[chunkIndex];
+      if (chunk) reader.setCurrentWordIndex(chunk.range.startWord);
+      rereadChunkSession(chunkIndex);
+    },
+    [session, reader, rereadChunkSession]
+  );
+
+  const restartGoal = useCallback(() => {
+    const first = session?.chunks[0];
+    if (first) reader.setCurrentWordIndex(first.range.startWord);
+    restartGoalSession();
+  }, [session, reader, restartGoalSession]);
 
   const handleFinalDone = useCallback(() => {
     if (!session) return;
