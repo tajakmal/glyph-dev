@@ -293,6 +293,42 @@ export function SpeedReadPanel() {
     };
   }, [engine, autoPauseOnInterrupt]);
 
+  // Keep the screen awake while reading (iOS 16.4+, Android Chrome, desktop).
+  // The browser auto-releases the lock when the tab hides; re-acquire on return.
+  useEffect(() => {
+    if (!engine.playing) return;
+    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+
+    let sentinel: WakeLockSentinel | null = null;
+    let cancelled = false;
+
+    const acquire = async () => {
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (cancelled) {
+          lock.release().catch(() => {});
+          return;
+        }
+        sentinel = lock;
+      } catch {
+        // User gesture required, battery-saver, or unsupported — silently skip.
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible' && !sentinel) acquire();
+    };
+
+    acquire();
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibility);
+      if (sentinel) sentinel.release().catch(() => {});
+    };
+  }, [engine.playing]);
+
   // Keyboard shortcuts: Space hold, arrows, R reset, Esc close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

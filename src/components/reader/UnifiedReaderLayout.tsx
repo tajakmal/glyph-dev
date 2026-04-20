@@ -10,7 +10,7 @@ import { PrimerModal } from '@/components/goal-read/PrimerModal';
 import { QuizModal } from '@/components/goal-read/QuizModal';
 import { BetweenChunksScreen } from '@/components/goal-read/BetweenChunksScreen';
 import { FinalSummaryScreen } from '@/components/goal-read/FinalSummaryScreen';
-import { BackToQuizPill } from '@/components/goal-read/BackToQuizPill';
+import { SourceModal } from '@/components/goal-read/SourceModal';
 
 export function UnifiedReaderLayout() {
   const { viewMode, documentId, documentKind, error } = useReaderContext();
@@ -82,7 +82,7 @@ function GoalOverlays() {
       {activeState === 'quiz' && !showSource && <QuizModal />}
       {activeState === 'betweenChunks' && <BetweenChunksScreen />}
       {activeState === 'finalSummary' && <FinalSummaryScreen />}
-      {showSource && <BackToQuizPill />}
+      {showSource && <SourceModal />}
     </>
   );
 }

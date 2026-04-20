@@ -263,19 +263,13 @@ export function GoalProvider({ children }: GoalProviderProps) {
   const revealSource = useCallback<GoalContextValue['revealSource']>(
     (chunkIndex, question) => {
       setShowSource({ chunkIndex, question });
-      reader.setViewMode('pdf');
-      // Let the viewer mount/focus before scrolling.
-      requestAnimationFrame(() => {
-        scrollToRangeRef.current?.(question.source);
-      });
     },
-    [reader]
+    []
   );
 
   const backToQuiz = useCallback(() => {
     setShowSource(null);
-    reader.setViewMode('speed-read');
-  }, [reader]);
+  }, []);
 
   const registerScrollToWordRange = useCallback(
     (fn: ScrollToWordRangeFn | null) => {

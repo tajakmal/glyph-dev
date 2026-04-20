@@ -171,9 +171,10 @@ export function QuizModal() {
             padding: '12px 20px 0',
           }}
         >
-          {chunk.quiz.map((_, i) => {
-            const answered =
-              typeof session.answers[chunkIndex]?.[chunk.quiz[i].id] === 'number';
+          {chunk.quiz.map((q, i) => {
+            const chosen = session.answers[chunkIndex]?.[q.id];
+            const answered = typeof chosen === 'number';
+            const correct = answered && chosen === q.correctIndex;
             const isActive = i === safeIdx;
             return (
               <div
@@ -186,7 +187,9 @@ export function QuizModal() {
                   background: isActive
                     ? 'var(--accent)'
                     : answered
-                    ? 'rgba(134, 239, 172, 0.5)'
+                    ? correct
+                      ? 'rgba(134, 239, 172, 0.55)'
+                      : 'rgba(248, 113, 113, 0.6)'
                     : 'rgba(242,239,232,0.12)',
                 }}
               />
