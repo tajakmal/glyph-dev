@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { applyOperations } from "@/lib/api/mock-store";
 import type { SyncBatchRequest, SyncBatchResponse } from "@/types/api";
 
+// NOTE: this route is a development-only mock. See documents/route.ts for the
+// full caveat — no real auth, in-memory storage, no user isolation.
 function unauthorized(): NextResponse {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }

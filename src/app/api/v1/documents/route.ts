@@ -3,6 +3,11 @@ import { NextResponse } from "next/server";
 import { getMockStore, nextVersion } from "@/lib/api/mock-store";
 import type { CreateDocumentRequest, CreateDocumentResponse } from "@/types/api";
 
+// NOTE: this route is a development-only mock. It stores data in an in-memory
+// process-wide map (see src/lib/api/mock-store.ts) and performs NO real auth —
+// the presence check below only exists so client sync code can be wired up
+// ahead of the real backend. Do not deploy as-is: there's no user isolation,
+// no token validation, and no persistence.
 function unauthorized(): NextResponse {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }

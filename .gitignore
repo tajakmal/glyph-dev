@@ -32,6 +32,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.template
 
 # vercel
 .vercel
@@ -42,4 +43,12 @@ next-env.d.ts
 
 # Ralph (development task runner - not part of app)
 /ralph
+/.ralph
+RALPH_TASK.md
 specs/*
+
+# Internal planning docs
+PRD-*.md
+
+# Codex environment config
+/.codex
