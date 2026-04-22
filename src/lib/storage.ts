@@ -627,7 +627,7 @@ export function setPreferences(preferences: UserPreferences): void {
 // =============================================================================
 
 /**
- * Delete a document and all associated data (PDF/text content, bookmarks, highlights).
+ * Delete a document and all associated data (PDF/text content, bookmarks, highlights, archive).
  * Safely attempts to delete both PDF and text content regardless of document kind.
  */
 export async function deleteDocumentComplete(documentId: string): Promise<void> {
@@ -650,4 +650,13 @@ export async function deleteDocumentComplete(documentId: string): Promise<void> 
   // Remove associated highlights
   const highlights = getHighlights();
   setHighlights(highlights.filter((h) => h.documentId !== documentId));
+
+  // Remove archived sessions tied to this document. Lazy-imported to avoid
+  // pulling archive code into the load paths that don't touch it.
+  try {
+    const { deleteArchivedSessionsForDocument } = await import('@/lib/archive');
+    deleteArchivedSessionsForDocument(documentId);
+  } catch {
+    // non-fatal
+  }
 }

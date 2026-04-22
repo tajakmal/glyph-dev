@@ -1,14 +1,18 @@
 'use client';
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { DocumentMeta } from '@/types';
 import {
   getDocument,
   getText,
+  getPDF,
 } from '@/lib/storage';
+import { loadPDF, extractAllTextCached } from '@/lib/pdf-utils';
 import { tokenize } from '@/lib/tokenize';
 import { MicroLabel } from '@/components/shell/MicroLabel';
+import { PostReadQuizFlow } from '@/components/post-read/PostReadQuizFlow';
+import { MIN_POST_READ_WORDS } from '@/lib/post-read/types';
 
 interface SessionReceipt {
   documentId: string;
@@ -39,6 +43,10 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
   const [meta, setMeta] = useState<DocumentMeta | null>(null);
   const [text, setText] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const [words, setWords] = useState<string[] | null>(null);
+  const [loadingQuizWords, setLoadingQuizWords] = useState(false);
+  const [quizLoadError, setQuizLoadError] = useState<string | null>(null);
+  const [showQuiz, setShowQuiz] = useState(false);
 
   useEffect(() => {
     try {
@@ -72,6 +80,48 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
       router.replace(`/reader/${documentId}`);
     }
   }, [documentId, router]);
+
+  const ensureWords = useCallback(
+    async (doc: DocumentMeta): Promise<string[]> => {
+      if (doc.kind === 'text') {
+        const t = text ?? (await getText(documentId));
+        if (!t) throw new Error('Text content is missing.');
+        return tokenize(t);
+      }
+      if (doc.kind === 'pdf') {
+        const buf = await getPDF(documentId);
+        if (!buf) throw new Error('PDF content is missing.');
+        const pdf = await loadPDF(buf);
+        const fullText = await extractAllTextCached(pdf, documentId);
+        return tokenize(fullText);
+      }
+      throw new Error('Unsupported document type.');
+    },
+    [documentId, text]
+  );
+
+  const handleStartQuiz = useCallback(async () => {
+    if (!meta || !receipt) return;
+    setQuizLoadError(null);
+    if (words) {
+      setShowQuiz(true);
+      return;
+    }
+    setLoadingQuizWords(true);
+    try {
+      const tokenized = await ensureWords(meta);
+      setWords(tokenized);
+      setShowQuiz(true);
+    } catch (err) {
+      setQuizLoadError(
+        err instanceof Error
+          ? err.message
+          : 'Could not load the passage for quizzing.'
+      );
+    } finally {
+      setLoadingQuizWords(false);
+    }
+  }, [meta, receipt, words, ensureWords]);
 
   const excerpt = useMemo(() => {
     if (!receipt) return null;
@@ -317,8 +367,91 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
           </>
         )}
 
+        {/* Quiz CTA */}
+        {(() => {
+          const quizEligible = wordsRead >= MIN_POST_READ_WORDS;
+          return (
+            <div style={{ marginTop: 22 }}>
+              <button
+                onClick={handleStartQuiz}
+                disabled={!quizEligible || loadingQuizWords}
+                style={{
+                  width: '100%',
+                  height: 50,
+                  borderRadius: 25,
+                  background: quizEligible
+                    ? 'var(--accent)'
+                    : 'rgba(255,90,61,0.12)',
+                  color: quizEligible ? '#fff' : 'var(--paper-muted)',
+                  border: 0,
+                  fontSize: 11,
+                  letterSpacing: '0.2em',
+                  textTransform: 'uppercase',
+                  fontWeight: 700,
+                  cursor:
+                    quizEligible && !loadingQuizWords
+                      ? 'pointer'
+                      : 'not-allowed',
+                  fontFamily: 'var(--font-mono), monospace',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                }}
+              >
+                {loadingQuizWords ? (
+                  <>
+                    <span
+                      aria-hidden="true"
+                      style={{
+                        width: 14,
+                        height: 14,
+                        border: '2px solid rgba(255,255,255,0.35)',
+                        borderTopColor: '#fff',
+                        borderRadius: '50%',
+                        animation: 'spin 800ms linear infinite',
+                      }}
+                    />
+                    Preparing quiz…
+                  </>
+                ) : (
+                  <>✦ Get quizzed on this</>
+                )}
+              </button>
+              {!quizEligible && (
+                <div
+                  className="micro-label"
+                  style={{
+                    color: 'var(--paper-muted)',
+                    marginTop: 8,
+                    textAlign: 'center',
+                  }}
+                >
+                  Read at least {MIN_POST_READ_WORDS} words to unlock a quiz
+                </div>
+              )}
+              {quizLoadError && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    borderRadius: 10,
+                    background: 'rgba(255,90,61,0.1)',
+                    border: '1px solid rgba(255,90,61,0.3)',
+                    color: 'var(--paper-ink)',
+                    fontSize: 13,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  {quizLoadError}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* Actions */}
-        <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
           <button
             onClick={() => {
               router.replace(
@@ -363,6 +496,29 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
           </button>
         </div>
       </div>
+
+      {showQuiz && words && meta && (
+        <PostReadQuizFlow
+          documentId={documentId}
+          documentTitle={meta.title}
+          words={words}
+          range={{
+            startWord: receipt.startIndex,
+            endWord: Math.max(receipt.startIndex, receipt.endIndex - 1),
+          }}
+          wpm={receipt.wpm}
+          readDurationMs={duration}
+          readAvgWpm={receipt.avgWpm}
+          onClose={() => setShowQuiz(false)}
+          onReadAgain={() => {
+            setShowQuiz(false);
+            router.replace(
+              `/reader/${documentId}?mode=speed-read&start=${receipt.startIndex}`
+            );
+          }}
+          getArchiveUrl={(id) => `/archive/${id}`}
+        />
+      )}
     </div>
   );
 }

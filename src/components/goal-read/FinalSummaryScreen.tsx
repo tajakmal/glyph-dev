@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { useGoalContext } from '@/contexts/GoalContext';
 
 export function FinalSummaryScreen() {
@@ -11,6 +12,7 @@ export function FinalSummaryScreen() {
     totalQuestions,
     restartGoal,
     exitGoal,
+    archiveId,
   } = useGoalContext();
   if (!session || session.state.kind !== 'finalSummary') return null;
 
@@ -149,6 +151,29 @@ export function FinalSummaryScreen() {
           ) : (
             <div style={{ fontSize: 16, color: 'var(--muted-strong)' }}>
               No quiz questions were generated for this session.
+            </div>
+          )}
+
+          {archiveId && (
+            <div
+              style={{
+                marginTop: 24,
+                textAlign: 'center',
+              }}
+            >
+              <Link
+                href={`/archive/${archiveId}`}
+                style={{
+                  fontSize: 11,
+                  letterSpacing: '0.18em',
+                  textTransform: 'uppercase',
+                  color: 'var(--muted)',
+                  textDecoration: 'none',
+                  fontFamily: 'var(--font-mono), monospace',
+                }}
+              >
+                Saved to archive →
+              </Link>
             </div>
           )}
         </div>

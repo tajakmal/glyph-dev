@@ -9,6 +9,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 import { useReaderContext } from '@/contexts/ReaderContext';
 import { useGoalGeneration } from '@/hooks/useGoalGeneration';
 import {
@@ -21,6 +22,8 @@ import type {
   GoalRange,
   QuizQuestion,
 } from '@/lib/goal-read/types';
+import { saveArchivedSession } from '@/lib/archive';
+import type { ArchivedGoalSession } from '@/types/archive';
 
 /**
  * Show-source overlay state — when the user taps "Show source" on a quiz
@@ -65,6 +68,9 @@ interface GoalContextValue {
   /** Active question index inside the current chunk's quiz (0-based). */
   activeQuestionIndex: number;
   setActiveQuestionIndex: (i: number) => void;
+
+  /** Archive id for the current (or just-finished) session, if any. */
+  archiveId: string | null;
 
   // Actions
   startFocusGoal: (range: GoalRange) => void;
@@ -130,6 +136,13 @@ export function GoalProvider({ children }: GoalProviderProps) {
   const [activeQuestionIndex, setActiveQuestionIndex] = useState(0);
   const scrollToRangeRef = useRef<ScrollToWordRangeFn | null>(null);
 
+  // A single archive-entry id for the current goal session. Seeded on
+  // START_GOAL and cleared on exit/error, so the entry is written once and
+  // then updated in place as the user answers more questions.
+  // Mirrored into state so consumers (e.g. FinalSummaryScreen) can link to it.
+  const archiveIdRef = useRef<string | null>(null);
+  const [archiveId, setArchiveId] = useState<string | null>(null);
+
   // Reset the active question index whenever the active chunk changes
   // (storing-prev-render pattern — safer than an effect per React 19 lint).
   const currentChunkIdx =
@@ -148,6 +161,78 @@ export function GoalProvider({ children }: GoalProviderProps) {
       commitPayload(generation.payload);
     }
   }, [generation.payload, session, commitPayload]);
+
+  // Persist the goal session into the archive so primers + quizzes remain
+  // revisitable after the session ends. Seeds an entry on first reading
+  // state and updates it in place as the user progresses.
+  const documentId = reader.documentId;
+  const documentTitle = reader.documentMeta?.title ?? 'Untitled';
+  const readerWpm = reader.speedReadWpm;
+  useEffect(() => {
+    if (!session) return;
+    const kind = session.state.kind;
+    const archivable =
+      kind === 'reading' ||
+      kind === 'quiz' ||
+      kind === 'betweenChunks' ||
+      kind === 'finalSummary';
+    if (!archivable) return;
+    if (!documentId) return;
+
+    if (!archiveIdRef.current) {
+      archiveIdRef.current = uuidv4();
+      setArchiveId(archiveIdRef.current);
+    }
+    const entry: ArchivedGoalSession = {
+      kind: 'goal',
+      id: archiveIdRef.current,
+      documentId,
+      documentTitle,
+      createdAt: Date.now(),
+      range: session.range,
+      wpm: readerWpm,
+      summary: session.summary,
+      anchors: session.anchors.map((a) => ({ text: a.text })),
+      chunks: session.chunks.map((c) => ({
+        index: c.index,
+        range: c.range,
+        miniPrimer: c.miniPrimer,
+        questions: c.quiz.map((q) => ({
+          id: q.id,
+          question: q.question,
+          choices: q.choices,
+          correctIndex: q.correctIndex,
+          source: q.source,
+          explanation: q.explanation,
+          chosenIndex: (() => {
+            const choice = session.answers[c.index]?.[q.id];
+            return typeof choice === 'number' ? choice : null;
+          })(),
+        })),
+      })),
+      // Derived in save(), but kept here so the in-memory shape is coherent.
+      totalQuestions: 0,
+      totalCorrect: 0,
+    };
+    entry.totalQuestions = entry.chunks.reduce(
+      (n, c) => n + c.questions.length,
+      0
+    );
+    entry.totalCorrect = entry.chunks.reduce(
+      (n, c) =>
+        n +
+        c.questions.reduce(
+          (m, q) => m + (q.chosenIndex === q.correctIndex ? 1 : 0),
+          0
+        ),
+      0
+    );
+    try {
+      saveArchivedSession(entry);
+    } catch {
+      // Non-fatal — archiving is best-effort.
+    }
+  }, [session, documentId, documentTitle, readerWpm]);
 
   // Propagate generation errors to session state.
   useEffect(() => {
@@ -190,6 +275,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
     exitGoal();
     generation.reset();
     setPrimerOpen(false);
+    archiveIdRef.current = null;
+    setArchiveId(null);
   }, [generation, exitGoal]);
 
   const fallbackToPlainSpeedRead = useCallback(() => {
@@ -201,6 +288,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
     setPrimerOpen(false);
     reader.setCurrentWordIndex(startWord);
     reader.setViewMode('speed-read');
+    archiveIdRef.current = null;
+    setArchiveId(null);
   }, [session, generation, exitGoal, reader]);
 
   const beginReading = useCallback(() => {
@@ -247,6 +336,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
     generation.reset();
     reader.setViewMode('pdf');
     reader.setCurrentWordIndex(endWord);
+    archiveIdRef.current = null;
+    setArchiveId(null);
   }, [session, exitGoal, generation, reader]);
 
   const handleFullExit = useCallback(() => {
@@ -258,6 +349,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
     // view. Without this, the user lands on a speed-read panel with no goal
     // and has to press Close to exit.
     reader.setViewMode('pdf');
+    archiveIdRef.current = null;
+    setArchiveId(null);
   }, [exitGoal, generation, reader]);
 
   const revealSource = useCallback<GoalContextValue['revealSource']>(
@@ -316,6 +409,8 @@ export function GoalProvider({ children }: GoalProviderProps) {
       activeQuestionIndex,
       setActiveQuestionIndex,
 
+      archiveId,
+
       startFocusGoal,
       retryGeneration,
       cancelGeneration,
@@ -348,6 +443,7 @@ export function GoalProvider({ children }: GoalProviderProps) {
       revealSource,
       backToQuiz,
       activeQuestionIndex,
+      archiveId,
       startFocusGoal,
       retryGeneration,
       cancelGeneration,

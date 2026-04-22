@@ -48,6 +48,18 @@ export default function HomePage() {
                 <path d="M9.5 9.5L13 13" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
               </svg>
             </button>
+            <Link href="/archive" style={iconBtnStyle} aria-label="Archive">
+              <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                <path
+                  d="M2 3.5h10v2.2H2zM3 5.7v6.1h8V5.7M5.5 8h3"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </Link>
             <Link href="/settings" style={iconBtnStyle} aria-label="Settings">
               <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
                 <circle cx="7" cy="7" r="2" fill="currentColor" />
