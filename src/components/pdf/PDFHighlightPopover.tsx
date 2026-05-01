@@ -143,9 +143,7 @@ export function SelectionPopover({
   };
 
   const handleCreateWithNote = () => {
-    if (selectedColor) {
-      onCreateHighlight(selectedColor, note);
-    }
+    onCreateHighlight(selectedColor ?? 'yellow', note);
   };
 
   // Shared action bar content (used by both mobile and desktop)
@@ -169,7 +167,10 @@ export function SelectionPopover({
 
         {/* Note button */}
         <button
-          onClick={() => setShowNote(!showNote)}
+          onClick={() => {
+            setShowNote((value) => !value);
+            setSelectedColor((value) => value ?? 'yellow');
+          }}
           className={`${isMobile ? 'p-2' : 'p-1.5'} rounded hover:bg-zinc-700 transition-colors ${
             showNote ? 'text-red-500' : 'text-zinc-400'
           }`}
@@ -228,7 +229,6 @@ export function SelectionPopover({
       {/* Note input area */}
       {showNote && (
         <div className="px-2 pb-2">
-          <p className="text-zinc-500 text-xs mb-1">Select a color first, then add a note:</p>
           <textarea
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -238,14 +238,13 @@ export function SelectionPopover({
             maxLength={2000}
             autoFocus
           />
-          {selectedColor && (
-            <button
-              onClick={handleCreateWithNote}
-              className="mt-2 w-full py-1.5 bg-red-500 hover:bg-red-600 text-white text-sm rounded transition-colors"
-            >
-              Create Highlight
-            </button>
-          )}
+          <button
+            onClick={handleCreateWithNote}
+            disabled={!note.trim()}
+            className="mt-2 w-full py-1.5 bg-red-500 hover:bg-red-600 disabled:bg-zinc-600 disabled:text-zinc-400 text-white text-sm rounded transition-colors"
+          >
+            Save note
+          </button>
         </div>
       )}
     </>

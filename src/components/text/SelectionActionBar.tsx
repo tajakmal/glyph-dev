@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import type { HighlightColor } from '@/types';
-import { HIGHLIGHT_COLORS } from '@/types';
+import { HIGHLIGHT_COLORS, VALIDATION } from '@/types';
 
 export interface SelectionSummary {
   startWord: number;
@@ -15,6 +15,7 @@ interface SelectionActionBarProps {
   selection: SelectionSummary | null;
   onHighlight: (color: HighlightColor) => void;
   onSpeedRead: () => void;
+  onNote: (note: string) => void;
   onBookmark: () => void;
   onCopy: () => void;
   onAsk: () => void;
@@ -41,13 +42,15 @@ export function SelectionActionBar({
   selection,
   onHighlight,
   onSpeedRead,
+  onNote,
   onBookmark,
   onCopy,
   onAsk,
   onDismiss,
   onIdleSpeedRead,
 }: SelectionActionBarProps) {
-  const [mode, setMode] = useState<'primary' | 'colors'>('primary');
+  const [mode, setMode] = useState<'primary' | 'colors' | 'note'>('primary');
+  const [noteDraft, setNoteDraft] = useState('');
   const [toast, setToast] = useState<string | null>(null);
 
   // Reset mode to 'primary' when the selection changes (React's
@@ -59,6 +62,7 @@ export function SelectionActionBar({
   if (selectionKey !== lastKey) {
     setLastKey(selectionKey);
     if (mode !== 'primary') setMode('primary');
+    if (noteDraft) setNoteDraft('');
   }
 
   const flash = (msg: string) => {
@@ -76,6 +80,13 @@ export function SelectionActionBar({
   };
   const handleSpeedRead = () => {
     onSpeedRead();
+  };
+  const handleSaveNote = () => {
+    const note = noteDraft.trim();
+    if (!note) return;
+    onNote(note);
+    setNoteDraft('');
+    flash('Note saved');
   };
 
   // Idle state — compact FAB
@@ -188,7 +199,7 @@ export function SelectionActionBar({
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            flex: mode === 'colors' ? '0 0 auto' : '1 1 auto',
+            flex: mode === 'primary' ? '1 1 auto' : '0 0 auto',
             minWidth: 0,
           }}
         >
@@ -205,8 +216,62 @@ export function SelectionActionBar({
             />
             <ActionButton label="Speed-read" icon="⚡" onClick={handleSpeedRead} />
             <ActionButton label="Ask" icon="?" onClick={onAsk} />
-            <ActionButton label="Bookmark" icon="✎" onClick={handleBookmark} />
+            <ActionButton label="Note" icon="✎" onClick={() => setMode('note')} />
+            <ActionButton label="Bookmark" icon="▱" onClick={handleBookmark} />
             <ActionButton label="Copy" icon="⎘" onClick={handleCopy} />
+            <DismissButton onClick={onDismiss} />
+          </>
+        ) : mode === 'note' ? (
+          <>
+            <ActionButton
+              label="Back"
+              icon="‹"
+              onClick={() => setMode('primary')}
+            />
+            <textarea
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="Add a note..."
+              maxLength={VALIDATION.MAX_NOTE_LENGTH}
+              rows={1}
+              style={{
+                flex: 1,
+                minWidth: 0,
+                height: 38,
+                resize: 'none',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 12,
+                background: 'rgba(255,255,255,0.08)',
+                color: '#faf6ed',
+                font: 'inherit',
+                fontSize: 13,
+                lineHeight: 1.35,
+                padding: '9px 10px',
+                outline: 'none',
+              }}
+              autoFocus
+            />
+            <button
+              onClick={handleSaveNote}
+              disabled={!noteDraft.trim()}
+              aria-label="Save note"
+              style={{
+                height: 38,
+                padding: '0 12px',
+                borderRadius: 12,
+                background: noteDraft.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.08)',
+                color: noteDraft.trim() ? '#fff' : 'rgba(250,246,237,0.45)',
+                border: 0,
+                cursor: noteDraft.trim() ? 'pointer' : 'not-allowed',
+                fontSize: 10,
+                fontFamily: 'var(--font-mono), monospace',
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+              }}
+            >
+              Save
+            </button>
             <DismissButton onClick={onDismiss} />
           </>
         ) : (

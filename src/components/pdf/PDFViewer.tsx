@@ -16,6 +16,7 @@ import { PDFDock, type PDFDockAction } from './PDFDock';
 import { PDFViewSheet } from './PDFViewSheet';
 import { SelectionPopover, HighlightPopover } from './PDFHighlightPopover';
 import { MicroLabel } from '@/components/shell/MicroLabel';
+import { NoteComposer } from '@/components/reader/NoteComposer';
 import type { TextSelection } from './PDFTextLayer';
 import { normalizeRects } from '@/lib/highlight-utils';
 import { downloadAnnotations } from '@/lib/export';
@@ -94,6 +95,7 @@ export function PDFViewer({
 
   // View sheet (zoom/outline/bookmarks/highlights) — replaces old sidebar
   const [viewSheetOpen, setViewSheetOpen] = useState(false);
+  const [pageNoteOpen, setPageNoteOpen] = useState(false);
 
   // Highlights
   const {
@@ -567,6 +569,47 @@ export function PDFViewer({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleExport]);
 
+  const getPageNoteContext = useCallback((page: number): string => {
+    const docWords = readerCtx?.words ?? [];
+    const counts = readerCtx?.pageWordCounts ?? [];
+    if (docWords.length === 0 || counts.length === 0) {
+      return `Page ${page}`;
+    }
+
+    let startWord = 0;
+    for (let i = 0; i < page - 1; i++) {
+      startWord += counts[i] || 0;
+    }
+    const pageWordCount = counts[page - 1] || 0;
+    const endWord = Math.min(
+      docWords.length - 1,
+      startWord + Math.min(pageWordCount, 44) - 1
+    );
+    const excerpt = docWords.slice(startWord, endWord + 1).join(' ');
+    return excerpt || `Page ${page}`;
+  }, [readerCtx?.pageWordCounts, readerCtx?.words]);
+
+  const handleCreatePageNote = useCallback(
+    (note: string) => {
+      const text = getPageNoteContext(currentPage);
+      addHighlight({
+        documentId,
+        page: currentPage,
+        color: 'yellow',
+        text,
+        rects: [],
+        note,
+      });
+      trackEvent('pdf_reader_note_created', {
+        documentId,
+        page: currentPage,
+        source: 'page',
+      });
+      setPageNoteOpen(false);
+    },
+    [addHighlight, currentPage, documentId, getPageNoteContext]
+  );
+
   // Handle text selection from PDFPage
   const handleTextSelect = useCallback((selection: TextSelection) => {
     // Close any existing highlight popover
@@ -944,8 +987,9 @@ export function PDFViewer({
         handleSpeedReadDocument();
         break;
       case 'note':
-        // Hint the user to select text
-        alert('Select text on the page, then tap "Note" in the pill that appears.');
+        setSelectionPopover(null);
+        window.getSelection()?.removeAllRanges();
+        setPageNoteOpen(true);
         break;
       case 'find':
         setSearchOpen((v) => !v);
@@ -1204,6 +1248,15 @@ export function PDFViewer({
             }}
             onExport={handleExport}
             onClose={() => setViewSheetOpen(false)}
+          />
+        )}
+
+        {pageNoteOpen && (
+          <NoteComposer
+            title={`Note on page ${currentPage}`}
+            context={getPageNoteContext(currentPage)}
+            onSave={handleCreatePageNote}
+            onClose={() => setPageNoteOpen(false)}
           />
         )}
       </div>

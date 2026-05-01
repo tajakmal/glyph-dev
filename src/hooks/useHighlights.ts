@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Highlight, HighlightColor, PDFHighlight } from '@/types';
 import { VALIDATION } from '@/types';
@@ -31,6 +31,15 @@ interface UseHighlightsReturn {
   updateHighlightColor: (id: string, color: HighlightColor) => void;
   /** Get highlights for a specific page */
   getHighlightsForPage: (page: number) => PDFHighlight[];
+}
+
+const HIGHLIGHTS_CHANGED_EVENT = 'glyph:highlights-changed';
+
+function notifyHighlightsChanged(documentId: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(HIGHLIGHTS_CHANGED_EVENT, { detail: { documentId } })
+  );
 }
 
 // Helper to get highlights for a document
@@ -76,6 +85,17 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
     setLocalHighlights(getDocumentHighlights(currentDocId));
   }
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.documentId === documentId) {
+        setLocalHighlights(getDocumentHighlights(documentId));
+      }
+    };
+    window.addEventListener(HIGHLIGHTS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(HIGHLIGHTS_CHANGED_EVENT, handler);
+  }, [documentId]);
+
   // Compute highlights by page
   const highlightsByPage = useMemo(() => {
     const map = new Map<number, PDFHighlight[]>();
@@ -110,9 +130,10 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
       type: 'UPSERT_HIGHLIGHT',
       payload: highlight,
     });
+    notifyHighlightsChanged(documentId);
 
     return highlight;
-  }, [enqueueSync]);
+  }, [documentId, enqueueSync]);
 
   const removeHighlight = useCallback((id: string) => {
     // Update localStorage
@@ -126,7 +147,8 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
       type: 'DELETE_HIGHLIGHT',
       payload: { id },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const updateHighlightNote = useCallback((id: string, note: string) => {
     // Validate note length
@@ -150,7 +172,8 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
       type: 'UPSERT_HIGHLIGHT',
       payload: { id, note: safeNote },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const updateHighlightColor = useCallback((id: string, color: HighlightColor) => {
     // Update localStorage
@@ -171,7 +194,8 @@ export function useHighlights({ documentId }: UseHighlightsOptions): UseHighligh
       type: 'UPSERT_HIGHLIGHT',
       payload: { id, color },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const getHighlightsForPage = useCallback((page: number): PDFHighlight[] => {
     return highlights.filter(h => h.page === page);

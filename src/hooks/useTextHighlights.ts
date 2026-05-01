@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { Highlight, HighlightColor, TextHighlight } from '@/types';
 import { VALIDATION } from '@/types';
@@ -37,6 +37,15 @@ interface UseTextHighlightsReturn {
   updateHighlightColor: (id: string, color: HighlightColor) => void;
   /** Get highlight at a specific word index */
   getHighlightAtWord: (wordIndex: number) => TextHighlight | null;
+}
+
+const HIGHLIGHTS_CHANGED_EVENT = 'glyph:highlights-changed';
+
+function notifyHighlightsChanged(documentId: string) {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(
+    new CustomEvent(HIGHLIGHTS_CHANGED_EVENT, { detail: { documentId } })
+  );
 }
 
 // Type guard for text highlights
@@ -195,6 +204,17 @@ export function useTextHighlights({
     setLocalHighlights(getDocumentTextHighlights(currentDocId));
   }
 
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent).detail;
+      if (detail?.documentId === documentId) {
+        setLocalHighlights(getDocumentTextHighlights(documentId));
+      }
+    };
+    window.addEventListener(HIGHLIGHTS_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(HIGHLIGHTS_CHANGED_EVENT, handler);
+  }, [documentId]);
+
   const addHighlight = useCallback(
     (data: {
       startWord: number;
@@ -232,6 +252,7 @@ export function useTextHighlights({
         type: 'UPSERT_HIGHLIGHT',
         payload: merged,
       });
+      notifyHighlightsChanged(documentId);
 
       return merged;
     },
@@ -250,7 +271,8 @@ export function useTextHighlights({
       type: 'DELETE_HIGHLIGHT',
       payload: { id },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const updateHighlightNote = useCallback((id: string, note: string) => {
     // Validate note length
@@ -276,7 +298,8 @@ export function useTextHighlights({
       type: 'UPSERT_HIGHLIGHT',
       payload: { id, note: safeNote },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const updateHighlightColor = useCallback((id: string, color: HighlightColor) => {
     // Update localStorage
@@ -299,7 +322,8 @@ export function useTextHighlights({
       type: 'UPSERT_HIGHLIGHT',
       payload: { id, color },
     });
-  }, [enqueueSync]);
+    notifyHighlightsChanged(documentId);
+  }, [documentId, enqueueSync]);
 
   const getHighlightAtWord = useCallback(
     (wordIndex: number): TextHighlight | null => {

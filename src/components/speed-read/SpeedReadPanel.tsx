@@ -11,15 +11,25 @@ import { useRouter } from 'next/navigation';
 import { useReaderContext } from '@/contexts/ReaderContext';
 import { useGoalContext } from '@/contexts/GoalContext';
 import { useTextBookmarks } from '@/hooks/useTextBookmarks';
+import { useHighlights } from '@/hooks/useHighlights';
+import { useTextHighlights } from '@/hooks/useTextHighlights';
 import {
   useSpeedReader,
   formatRemaining,
 } from '@/hooks/useSpeedReader';
 import { getPreferences } from '@/lib/storage';
+import { mapWordIndexToPage } from '@/lib/word-mapping';
 import { ORPWord } from './ORPWord';
 import { ContextStrip } from './ContextStrip';
 import { DocMiniMap } from './DocMiniMap';
 import { PrimerPill } from '@/components/goal-read/PrimerPill';
+import { NoteComposer } from '@/components/reader/NoteComposer';
+import { PostReadQuizFlow } from '@/components/post-read/PostReadQuizFlow';
+import {
+  MIN_POST_READ_WORDS,
+  type PostReadRange,
+} from '@/lib/post-read/types';
+import { trackEvent } from '@/lib/telemetry';
 
 const HOLD_THRESHOLD = 200; // ms
 const DOUBLE_TAP_WINDOW = 300; // ms
@@ -36,6 +46,8 @@ export function SpeedReadPanel() {
     documentMeta,
     documentKind,
     documentId,
+    pageWordCounts,
+    currentPage,
     jumpToWordInPDF,
     setViewMode,
     speedReadWpm,
@@ -47,6 +59,12 @@ export function SpeedReadPanel() {
     isWordBookmarked,
     toggleBookmark,
   } = useTextBookmarks({ documentId });
+
+  const { addHighlight: addTextHighlight } = useTextHighlights({
+    documentId,
+    words,
+  });
+  const { addHighlight: addPdfHighlight } = useHighlights({ documentId });
 
   const { session: goalSession, finishChunk, openPrimer, showSource: goalShowSource } = useGoalContext();
 
@@ -86,9 +104,15 @@ export function SpeedReadPanel() {
     () => getPreferences().autoPauseOnInterrupt
   );
   const [showScrub, setShowScrub] = useState(false);
+  const [noteComposerOpen, setNoteComposerOpen] = useState(false);
+  const [postReadRequest, setPostReadRequest] = useState<{
+    range: PostReadRange;
+    durationMs: number;
+    avgWpm: number;
+  } | null>(null);
 
   const handleRangeEnd = useCallback(
-    (_endIndex: number) => {
+    () => {
       if (!goalSession) return;
       const s = goalSession.state;
       if (s.kind === 'reading') {
@@ -108,9 +132,9 @@ export function SpeedReadPanel() {
     onRangeEnd: handleRangeEnd,
   });
 
-  // Session tracking for the Return screen. The ref is seeded in a mount
+  // Session tracking for the Return screen. The timestamp is seeded in a mount
   // effect so Date.now() isn't called during render (React 19 purity rule).
-  const sessionStartIndexRef = useRef(currentWordIndex);
+  const [sessionStartIndex] = useState(currentWordIndex);
   const sessionStartedAtRef = useRef<number | null>(null);
   useEffect(() => {
     sessionStartedAtRef.current = Date.now();
@@ -131,11 +155,92 @@ export function SpeedReadPanel() {
     }
   }, [isBookmarked, toggleBookmark, currentWordIndex, words, addBookmark]);
 
+  const getSpeedNoteRange = useCallback(() => {
+    const center = Math.max(0, Math.min(words.length - 1, engine.index));
+    const startWord = Math.max(0, center - 6);
+    const endWord = Math.min(Math.max(0, words.length - 1), center + 10);
+    const text = words.slice(startWord, endWord + 1).join(' ');
+    return { startWord, endWord, text };
+  }, [engine.index, words]);
+
+  const handleOpenNoteComposer = useCallback(() => {
+    engine.pause();
+    setNoteComposerOpen(true);
+  }, [engine]);
+
+  const handleCreateSpeedNote = useCallback(
+    (note: string) => {
+      if (words.length === 0) return;
+      const range = getSpeedNoteRange();
+      const text = range.text || words[engine.index] || 'Speed-read note';
+
+      if (documentKind === 'pdf') {
+        const mapped =
+          pageWordCounts.length > 0
+            ? mapWordIndexToPage(range.startWord, pageWordCounts)
+            : { page: currentPage };
+        addPdfHighlight({
+          documentId,
+          page: mapped.page,
+          color: 'yellow',
+          text,
+          rects: [],
+          note,
+        });
+      } else {
+        addTextHighlight({
+          startWord: range.startWord,
+          endWord: range.endWord,
+          text,
+          color: 'yellow',
+          note,
+        });
+      }
+
+      trackEvent('speed_reader_note_created', {
+        documentId,
+        kind: documentKind,
+        startWord: range.startWord,
+        endWord: range.endWord,
+      });
+      setNoteComposerOpen(false);
+    },
+    [
+      addPdfHighlight,
+      addTextHighlight,
+      currentPage,
+      documentId,
+      documentKind,
+      engine.index,
+      getSpeedNoteRange,
+      pageWordCounts,
+      words,
+    ]
+  );
+
+  const getReviewRange = useCallback((): PostReadRange => {
+    const startWord = Math.max(0, sessionStartIndex);
+    const endWord = Math.max(startWord, Math.min(words.length - 1, engine.index));
+    return { startWord, endWord };
+  }, [engine.index, sessionStartIndex, words.length]);
+
+  const handleOpenPostRead = useCallback(() => {
+    const range = getReviewRange();
+    const wordsRead = Math.max(0, range.endWord - range.startWord + 1);
+    if (wordsRead < MIN_POST_READ_WORDS) return;
+
+    engine.pause();
+    const startedAt = sessionStartedAtRef.current ?? Date.now();
+    const durationMs = Math.max(1, Date.now() - startedAt);
+    const avgWpm = Math.round((wordsRead / durationMs) * 60_000);
+    setPostReadRequest({ range, durationMs, avgWpm });
+  }, [engine, getReviewRange]);
+
   // Hand off to the Return screen if the session was substantive.
   const emitSessionReceipt = useCallback(
     (reason: 'close' | 'end'): boolean => {
       const endIndex = engine.index;
-      const startIndex = sessionStartIndexRef.current;
+      const startIndex = sessionStartIndex;
       const wordsRead = Math.max(0, endIndex - startIndex);
       const startedAt = sessionStartedAtRef.current ?? Date.now();
       const duration = Date.now() - startedAt;
@@ -163,7 +268,7 @@ export function SpeedReadPanel() {
       }
       return true;
     },
-    [engine.index, documentId, speedReadWpm, readMode]
+    [engine.index, documentId, speedReadWpm, readMode, sessionStartIndex]
   );
 
   const { exitGoal: exitGoalSession } = useGoalContext();
@@ -413,6 +518,16 @@ export function SpeedReadPanel() {
   const scrubMax = activeChunkRange?.endWord ?? Math.max(0, words.length - 1);
   const remaining = Math.max(0, scrubMax - engine.index);
   const timeLeft = formatRemaining(remaining, speedReadWpm);
+  const reviewRange = getReviewRange();
+  const reviewWordCount = Math.max(
+    0,
+    reviewRange.endWord - reviewRange.startWord + 1
+  );
+  const showPausedReview =
+    !goalSession &&
+    !engine.playing &&
+    engine.index > sessionStartIndex;
+  const reviewWordsNeeded = Math.max(0, MIN_POST_READ_WORDS - reviewWordCount);
 
   return (
     <div
@@ -702,6 +817,77 @@ export function SpeedReadPanel() {
           zIndex: 10,
         }}
       >
+        {showPausedReview && (
+          <div
+            style={{
+              marginBottom: 16,
+              padding: 12,
+              borderRadius: 16,
+              border: '1px solid var(--rule)',
+              background: 'var(--bg-elevated)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                className="micro-label"
+                style={{ color: 'var(--accent)', marginBottom: 4 }}
+              >
+                Review paused read
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  lineHeight: 1.35,
+                  color: 'var(--muted)',
+                }}
+              >
+                Summary, thoughtful questions, and a quiz on the last{' '}
+                {reviewWordCount.toLocaleString()} words.
+              </div>
+            </div>
+            <button
+              onClick={handleOpenPostRead}
+              disabled={reviewWordCount < MIN_POST_READ_WORDS}
+              style={{
+                height: 42,
+                padding: '0 14px',
+                borderRadius: 21,
+                border: 0,
+                background:
+                  reviewWordCount >= MIN_POST_READ_WORDS
+                    ? 'var(--accent)'
+                    : 'var(--rule)',
+                color:
+                  reviewWordCount >= MIN_POST_READ_WORDS
+                    ? '#fff'
+                    : 'var(--muted)',
+                cursor:
+                  reviewWordCount >= MIN_POST_READ_WORDS
+                    ? 'pointer'
+                    : 'not-allowed',
+                fontFamily: 'var(--font-mono), monospace',
+                fontSize: 10,
+                letterSpacing: '0.14em',
+                textTransform: 'uppercase',
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}
+              aria-label={
+                reviewWordCount >= MIN_POST_READ_WORDS
+                  ? 'Generate review'
+                  : `Read ${reviewWordsNeeded} more words to unlock review`
+              }
+            >
+              {reviewWordCount >= MIN_POST_READ_WORDS
+                ? 'Review'
+                : `${reviewWordsNeeded} more`}
+            </button>
+          </div>
+        )}
+
         {showScrub && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ position: 'relative', height: 32 }}>
@@ -984,8 +1170,67 @@ export function SpeedReadPanel() {
             </svg>
             bookmark
           </button>
+          <button
+            onClick={handleOpenNoteComposer}
+            className="micro-label"
+            aria-label="Add note here"
+            style={{
+              background: 'transparent',
+              border: 0,
+              cursor: 'pointer',
+              color: 'var(--muted)',
+              padding: 0,
+              display: 'inline-flex',
+              gap: 6,
+              alignItems: 'center',
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true">
+              <path
+                d="M2 10.8l.6-2.6 6-6a1.3 1.3 0 011.8 1.8l-6 6-2.4.8z"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M8.2 2.6l2.2 2.2"
+                stroke="currentColor"
+                strokeWidth="1.1"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+            note
+          </button>
         </div>
       </div>
+      {noteComposerOpen && (
+        <NoteComposer
+          title="Speed-read note"
+          context={getSpeedNoteRange().text}
+          onSave={handleCreateSpeedNote}
+          onClose={() => setNoteComposerOpen(false)}
+        />
+      )}
+      {postReadRequest && (
+        <PostReadQuizFlow
+          documentId={documentId}
+          documentTitle={documentMeta?.title ?? 'Untitled'}
+          words={words}
+          range={postReadRequest.range}
+          wpm={speedReadWpm}
+          readDurationMs={postReadRequest.durationMs}
+          readAvgWpm={postReadRequest.avgWpm}
+          onClose={() => setPostReadRequest(null)}
+          onReadAgain={() => {
+            engine.seek(postReadRequest.range.startWord);
+            setPostReadRequest(null);
+          }}
+          getArchiveUrl={(id) => `/archive/${id}`}
+        />
+      )}
     </div>
   );
 }

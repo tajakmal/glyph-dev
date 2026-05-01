@@ -39,6 +39,7 @@ import { HighlightPopover } from '@/components/pdf/PDFHighlightPopover';
 import { SelectionActionBar } from './SelectionActionBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { GoalChooserSheet } from '@/components/goal-read/GoalChooserSheet';
+import { NoteComposer } from '@/components/reader/NoteComposer';
 import { getApiKey } from '@/lib/chat';
 import { MIN_FOCUS_WORDS, MAX_GOAL_WORDS, type GoalRange } from '@/lib/goal-read/types';
 
@@ -60,6 +61,7 @@ export function TextReader({ documentId }: TextReaderProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [pendingQuote, setPendingQuote] = useState<string | null>(null);
+  const [currentNoteOpen, setCurrentNoteOpen] = useState(false);
   const [goalChooser, setGoalChooser] = useState<
     | {
         open: true;
@@ -588,6 +590,60 @@ export function TextReader({ documentId }: TextReaderProps) {
     [selection, words, addHighlight, handleCloseSelection, documentId]
   );
 
+  const getCurrentNoteRange = useCallback(() => {
+    const startWord = Math.max(0, currentWordIndex - 6);
+    const endWord = Math.min(Math.max(0, words.length - 1), currentWordIndex + 10);
+    const text = words.slice(startWord, endWord + 1).join(' ');
+    return { startWord, endWord, text };
+  }, [currentWordIndex, words]);
+
+  const handleCreateCurrentNote = useCallback(
+    (note: string) => {
+      if (words.length === 0) return;
+      const range = getCurrentNoteRange();
+      addHighlight({
+        startWord: range.startWord,
+        endWord: range.endWord,
+        text: range.text || words[currentWordIndex] || 'Reader note',
+        color: 'yellow',
+        note,
+      });
+      trackEvent('text_reader_note_created', {
+        documentId,
+        startWord: range.startWord,
+        endWord: range.endWord,
+        source: 'current_position',
+      });
+      setCurrentNoteOpen(false);
+      setSheetTab('notes');
+    },
+    [words, getCurrentNoteRange, addHighlight, currentWordIndex, documentId]
+  );
+
+  const handleNoteSelection = useCallback(
+    (note: string) => {
+      if (!selection) return;
+      const selectedWords = words.slice(selection.startWord, selection.endWord + 1);
+      const text = selectedWords.join(' ');
+      addHighlight({
+        startWord: selection.startWord,
+        endWord: selection.endWord,
+        text,
+        color: 'yellow',
+        note,
+      });
+      trackEvent('text_reader_note_created', {
+        documentId,
+        startWord: selection.startWord,
+        endWord: selection.endWord,
+        source: 'selection',
+      });
+      handleCloseSelection();
+      setSheetTab('notes');
+    },
+    [selection, words, addHighlight, documentId, handleCloseSelection]
+  );
+
   const handleSpeedReadSelection = useCallback(() => {
     if (!selection) return;
     const range: GoalRange = {
@@ -662,13 +718,21 @@ export function TextReader({ documentId }: TextReaderProps) {
   );
   const handleHighlightColorChange = useCallback(
     (color: HighlightColor) => {
-      if (activeHighlight) updateHighlightColor(activeHighlight.highlight.id, color);
+      if (!activeHighlight) return;
+      updateHighlightColor(activeHighlight.highlight.id, color);
+      setActiveHighlight((prev) =>
+        prev ? { ...prev, highlight: { ...prev.highlight, color } } : null
+      );
     },
     [activeHighlight, updateHighlightColor]
   );
   const handleHighlightNoteUpdate = useCallback(
     (note: string) => {
-      if (activeHighlight) updateHighlightNote(activeHighlight.highlight.id, note);
+      if (!activeHighlight) return;
+      updateHighlightNote(activeHighlight.highlight.id, note);
+      setActiveHighlight((prev) =>
+        prev ? { ...prev, highlight: { ...prev.highlight, note } } : null
+      );
     },
     [activeHighlight, updateHighlightNote]
   );
@@ -909,6 +973,29 @@ export function TextReader({ documentId }: TextReaderProps) {
             </svg>
           </button>
           <button
+            onClick={() => setCurrentNoteOpen(true)}
+            aria-label="Add note at this position"
+            style={topIconStyle}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+              <path
+                d="M3 12.5l.7-3.1 6.8-6.8a1.5 1.5 0 012.1 2.1L5.8 11.5 3 12.5z"
+                stroke="var(--paper-ink)"
+                strokeWidth="1.2"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9.5 3.5l3 3"
+                stroke="var(--paper-ink)"
+                strokeWidth="1.2"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+          <button
             onClick={() => setSheetOpen((v) => !v)}
             aria-label="Open bookmarks and notes"
             style={topIconStyle}
@@ -1031,6 +1118,7 @@ export function TextReader({ documentId }: TextReaderProps) {
         selection={selection}
         onHighlight={handleCreateHighlight}
         onSpeedRead={handleSpeedReadSelection}
+        onNote={handleNoteSelection}
         onBookmark={handleBookmarkSelection}
         onCopy={handleCopySelection}
         onAsk={handleAskSelection}
@@ -1094,6 +1182,15 @@ export function TextReader({ documentId }: TextReaderProps) {
         >
           {shortSelectionToast}
         </div>
+      )}
+
+      {currentNoteOpen && (
+        <NoteComposer
+          title="Note"
+          context={getCurrentNoteRange().text}
+          onSave={handleCreateCurrentNote}
+          onClose={() => setCurrentNoteOpen(false)}
+        />
       )}
 
       {/* Existing highlight edit popover */}
