@@ -29,7 +29,7 @@ export default function HomePage() {
   return (
     <AppShell>
       {/* Header */}
-      <div style={{ padding: '58px 20px 0' }}>
+      <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
         <div
           style={{
             display: 'flex',
@@ -149,10 +149,11 @@ export default function HomePage() {
                 letterSpacing: '0.22em',
                 textTransform: 'uppercase',
                 fontSize: 10,
-                fontFamily: 'var(--font-mono), monospace',
-                padding: 0,
-              }}
-            >
+                    fontFamily: 'var(--font-mono), monospace',
+                    padding: '12px 0 12px 12px',
+                    minHeight: 44,
+                  }}
+                >
               {showAll ? 'less ↑' : 'all ↓'}
             </button>
           )}
@@ -185,11 +186,11 @@ export default function HomePage() {
                   aria-label="Card options"
                   style={{
                     position: 'absolute',
-                    top: 8,
-                    right: 8,
-                    width: 24,
-                    height: 24,
-                    borderRadius: 6,
+                    top: 0,
+                    right: 0,
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
                     background: 'var(--bg-elevated)',
                     border: '1px solid var(--rule)',
                     color: 'var(--ink)',
@@ -264,9 +265,9 @@ export default function HomePage() {
 }
 
 const iconBtnStyle: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  borderRadius: 18,
+  width: 44,
+  height: 44,
+  borderRadius: 22,
   background: 'var(--bg-elevated)',
   border: '1px solid var(--rule)',
   color: 'var(--ink)',

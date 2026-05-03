@@ -60,7 +60,7 @@ export function ContinueCard({ document }: ContinueCardProps) {
         style={{
           fontSize: 17,
           fontWeight: 600,
-          letterSpacing: '-0.01em',
+          letterSpacing: 0,
           color: 'var(--ink)',
         }}
       >

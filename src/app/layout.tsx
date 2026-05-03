@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Space_Grotesk, JetBrains_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
@@ -26,9 +26,41 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Glyph — read at the speed of thought",
+  title: {
+    default: "Glyph",
+    template: "%s · Glyph",
+  },
   description:
     "Speed reading, one word at a time. Knowledge accessible to everyone.",
+  applicationName: "Glyph",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Glyph",
+    statusBarStyle: "black-translucent",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+  icons: {
+    icon: [
+      { url: "/icons/glyph-icon.svg", type: "image/svg+xml" },
+      { url: "/icons/glyph-icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+    ],
+  },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf6ed" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 const themeScript = `
@@ -36,8 +68,12 @@ const themeScript = `
   try {
     const storageKey = 'glyph:theme';
     const stored = localStorage.getItem(storageKey);
-    // Glyph default is dark ("kinetic"). Paper is an opt-in mode.
-    const theme = stored === 'light' || stored === 'dark' ? stored : 'dark';
+    const theme =
+      stored === 'light' || stored === 'dark'
+        ? stored
+        : window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
     const root = document.documentElement;
     root.dataset.theme = theme;
     root.style.colorScheme = theme;

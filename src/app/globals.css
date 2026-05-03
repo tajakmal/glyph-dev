@@ -93,12 +93,20 @@
    ============================================ */
 html,
 body {
+  min-height: 100%;
   background: var(--bg);
   color: var(--ink);
   font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  margin: 0;
 }
 
 button,
@@ -106,6 +114,12 @@ input,
 textarea,
 select {
   font-family: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button:focus-visible,
@@ -150,10 +164,24 @@ a:focus-visible {
 .hero-display {
   font-family: var(--font-sans), system-ui, sans-serif;
   font-weight: 700;
-  font-size: 88px;
-  line-height: 0.88;
-  letter-spacing: -0.06em;
+  font-size: 76px;
+  line-height: 0.94;
+  letter-spacing: 0;
   color: var(--ink);
+}
+
+@media (min-width: 390px) {
+  .hero-display {
+    font-size: 88px;
+    line-height: 0.9;
+  }
+}
+
+@media (max-width: 374px) {
+  .hero-display {
+    font-size: 64px;
+    line-height: 0.96;
+  }
 }
 
 .serif-body {
@@ -486,6 +514,28 @@ input[type="range"].glyph-range::-moz-range-thumb {
 
 .safe-bottom {
   padding-bottom: max(env(safe-area-inset-bottom), 0px);
+}
+
+.app-viewport {
+  min-height: 100vh;
+  min-height: 100svh;
+}
+
+.app-fixed-viewport {
+  height: 100vh;
+  height: 100svh;
+}
+
+@supports (min-height: 100dvh) {
+  .app-viewport {
+    min-height: 100dvh;
+  }
+}
+
+@supports (height: 100dvh) {
+  .app-fixed-viewport {
+    height: 100dvh;
+  }
 }
 
 /* Marquee/ticker animations can go here if needed */

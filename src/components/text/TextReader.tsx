@@ -75,8 +75,10 @@ export function TextReader({ documentId }: TextReaderProps) {
   const isProgressTrackingEnabled = getFeatureFlag('reader_progress_unified');
   const goalFlagEnabled = getFeatureFlag('goalBasedReading');
 
-  const [currentWordIndex, setCurrentWordIndex] = useState(0);
+  const initialWordIndexRef = useRef(readerCtx?.currentWordIndex ?? 0);
+  const [currentWordIndex, setCurrentWordIndex] = useState(initialWordIndexRef.current);
   const suppressScrollIndexRef = useRef(false);
+  const didScrollToInitialWordRef = useRef(false);
 
   // Read typography preferences once on mount
   const [readingFont, setReadingFont] = useState<'fraunces' | 'space-grotesk' | 'system'>('fraunces');
@@ -236,6 +238,36 @@ export function TextReader({ documentId }: TextReaderProps) {
       }, 2500);
     });
   }, [isLoading, textContent, documentId]);
+
+  // Scroll to a direct word anchor from /reader/:id?start=N.
+  useEffect(() => {
+    if (didScrollToInitialWordRef.current || isLoading || !textContent) return;
+    const wordIndex = initialWordIndexRef.current;
+    if (wordIndex <= 0) return;
+    didScrollToInitialWordRef.current = true;
+    suppressScrollIndexRef.current = true;
+    setCurrentWordIndex(wordIndex);
+
+    requestAnimationFrame(() => {
+      const wordSpan = textContainerRef.current?.querySelector(
+        `[data-word-index="${wordIndex}"]`
+      ) as HTMLElement | null;
+      if (!wordSpan) {
+        suppressScrollIndexRef.current = false;
+        return;
+      }
+      wordSpan.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      wordSpan.style.backgroundColor = 'var(--accent-35)';
+      wordSpan.style.boxShadow = '0 0 0 4px var(--accent-20)';
+      wordSpan.style.borderRadius = '3px';
+      setTimeout(() => {
+        wordSpan.style.transition = 'background-color 0.6s ease-out, box-shadow 0.6s ease-out';
+        wordSpan.style.backgroundColor = '';
+        wordSpan.style.boxShadow = '';
+        suppressScrollIndexRef.current = false;
+      }, 900);
+    });
+  }, [isLoading, textContent]);
 
   // Persist live reading position
   useEffect(() => {
@@ -1044,7 +1076,7 @@ export function TextReader({ documentId }: TextReaderProps) {
             fontSize: 30,
             fontWeight: 500,
             margin: '0 0 18px',
-            letterSpacing: '-0.03em',
+            letterSpacing: 0,
             lineHeight: 1.05,
             color: 'var(--paper-ink)',
           }}

@@ -80,7 +80,7 @@ export function BetweenChunksScreen() {
                 style={{
                   fontSize: 56,
                   fontWeight: 700,
-                  letterSpacing: '-0.04em',
+                  letterSpacing: 0,
                   lineHeight: 1,
                   color: lowScore ? 'var(--ink)' : 'var(--accent)',
                 }}

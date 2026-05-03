@@ -10,7 +10,7 @@ interface ReturnPageProps {
 export default function ReturnPage({ params }: ReturnPageProps) {
   const { id } = use(params);
   return (
-    <main style={{ minHeight: '100vh', background: 'var(--paper)' }}>
+    <main className="app-viewport" style={{ background: 'var(--paper)' }}>
       <ReturnScreen documentId={id} />
     </main>
   );

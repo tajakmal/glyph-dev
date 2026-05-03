@@ -82,6 +82,8 @@ interface ReaderProviderProps {
   initialMode?: ViewMode;
   /** Optional override for starting word index (e.g. from ?start= param) */
   initialWordIndex?: number;
+  /** Optional override for starting PDF page (e.g. from ?page= param) */
+  initialPage?: number;
   children: React.ReactNode;
 }
 
@@ -90,12 +92,13 @@ export function ReaderProvider({
   documentKind,
   initialMode = 'pdf',
   initialWordIndex: overrideWordIndex,
+  initialPage: overridePage,
   children,
 }: ReaderProviderProps) {
   // Load saved progress for resume
   const savedDoc = getDocumentMeta(documentId);
   const initialWordIndex = overrideWordIndex ?? savedDoc?.lastWordIndex ?? 0;
-  const initialPage = savedDoc?.lastReadPage ?? 1;
+  const initialPage = overridePage ?? savedDoc?.lastReadPage ?? 1;
   const initialWpm =
     savedDoc?.speedReadWpm ??
     (typeof window !== 'undefined' ? getPreferences().defaultWpm : 320);

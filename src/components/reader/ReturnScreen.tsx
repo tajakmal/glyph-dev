@@ -61,7 +61,6 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
         return;
       }
       sessionStorage.removeItem('glyph:speedread-session-receipt');
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating from sessionStorage is a client-only read
       setReceipt(parsed);
 
       const docMeta = getDocument(documentId);
@@ -179,9 +178,9 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
 
   return (
     <div
+      className="app-viewport"
       style={{
         width: '100%',
-        minHeight: '100vh',
         background: 'var(--paper)',
         color: 'var(--paper-ink)',
         display: 'flex',
@@ -272,7 +271,7 @@ export function ReturnScreen({ documentId }: ReturnScreenProps) {
                   style={{
                     fontSize: 22,
                     fontWeight: 700,
-                    letterSpacing: '-0.02em',
+                    letterSpacing: 0,
                     color: 'var(--paper-ink)',
                   }}
                 >

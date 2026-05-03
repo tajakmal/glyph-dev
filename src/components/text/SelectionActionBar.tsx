@@ -147,16 +147,17 @@ export function SelectionActionBar({
         if ((e.target as HTMLElement).closest('button')) return;
         e.preventDefault();
       }}
-      style={{
-        position: 'absolute',
-        left: 12,
-        right: 12,
+        style={{
+          position: 'absolute',
+          left: 12,
+          right: 12,
         bottom: 'calc(26px + env(safe-area-inset-bottom))',
         zIndex: 35,
-        display: 'flex',
-        justifyContent: 'center',
-      }}
-    >
+          display: 'flex',
+          justifyContent: 'center',
+          pointerEvents: 'none',
+        }}
+      >
       {toast && (
         <div
           style={{
@@ -175,22 +176,24 @@ export function SelectionActionBar({
         className="sheet-in"
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
+          justifyContent: 'center',
           gap: 6,
           padding: 8,
-          borderRadius: 28,
+          borderRadius: 24,
           background: '#14110c',
           color: '#faf6ed',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 16px 40px rgba(0,0,0,0.35)',
           maxWidth: 416,
           width: '100%',
+          pointerEvents: 'auto',
         }}
       >
         <div
           style={{
-            paddingLeft: 10,
-            paddingRight: 4,
+            padding: '2px 10px 4px',
             fontSize: 10,
             fontFamily: 'var(--font-mono), monospace',
             color: 'rgba(250,246,237,0.55)',
@@ -199,8 +202,9 @@ export function SelectionActionBar({
             whiteSpace: 'nowrap',
             overflow: 'hidden',
             textOverflow: 'ellipsis',
-            flex: mode === 'primary' ? '1 1 auto' : '0 0 auto',
+            flex: mode === 'primary' ? '1 0 100%' : '0 0 auto',
             minWidth: 0,
+            textAlign: mode === 'primary' ? 'center' : 'left',
           }}
         >
           {selection.endWord - selection.startWord + 1} word
@@ -237,14 +241,14 @@ export function SelectionActionBar({
               style={{
                 flex: 1,
                 minWidth: 0,
-                height: 38,
+                height: 44,
                 resize: 'none',
                 border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 12,
                 background: 'rgba(255,255,255,0.08)',
                 color: '#faf6ed',
                 font: 'inherit',
-                fontSize: 13,
+                fontSize: 16,
                 lineHeight: 1.35,
                 padding: '9px 10px',
                 outline: 'none',
@@ -256,7 +260,7 @@ export function SelectionActionBar({
               disabled={!noteDraft.trim()}
               aria-label="Save note"
               style={{
-                height: 38,
+                minHeight: 44,
                 padding: '0 12px',
                 borderRadius: 12,
                 background: noteDraft.trim() ? 'var(--accent)' : 'rgba(255,255,255,0.08)',
@@ -290,8 +294,8 @@ export function SelectionActionBar({
                   flash('Highlighted');
                 }}
                 style={{
-                  width: 34,
-                  height: 34,
+                  width: 44,
+                  height: 44,
                   borderRadius: 10,
                   background: 'transparent',
                   border: 0,
@@ -335,8 +339,8 @@ function ActionButton({ label, icon, accent, onClick }: ActionButtonProps) {
       title={label}
       onClick={onClick}
       style={{
-        width: 38,
-        height: 34,
+        width: 44,
+        height: 44,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
@@ -362,8 +366,8 @@ function DismissButton({ onClick }: { onClick: () => void }) {
       aria-label="Dismiss selection"
       onClick={onClick}
       style={{
-        width: 30,
-        height: 34,
+        width: 44,
+        height: 44,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

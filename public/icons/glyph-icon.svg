@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Glyph app icon</title>
+  <desc id="desc">A dark rounded square with three reading columns and an accent focal mark.</desc>
+  <rect width="512" height="512" rx="112" fill="#0a0a0a"/>
+  <rect x="112" y="120" width="76" height="272" rx="22" fill="#f2efe8"/>
+  <rect x="216" y="120" width="76" height="272" rx="22" fill="#f2efe8" opacity=".86"/>
+  <rect x="320" y="120" width="76" height="272" rx="22" fill="#f2efe8" opacity=".58"/>
+  <rect x="224" y="116" width="60" height="280" rx="18" fill="#ff5a3d"/>
+  <circle cx="254" cy="256" r="13" fill="#0a0a0a"/>
+</svg>

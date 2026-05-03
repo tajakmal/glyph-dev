@@ -23,9 +23,11 @@ export function NewScreen() {
   const router = useRouter();
   const { documents, addDocument, addTextDocument } = useDocumentLibrary();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
   const [expanded, setExpanded] = useState<OptionKey | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [textError, setTextError] = useState<string | null>(null);
 
   const [textTitle, setTextTitle] = useState('');
   const [textContent, setTextContent] = useState('');
@@ -67,6 +69,7 @@ export function NewScreen() {
 
   const handleSaveText = async () => {
     setIsSavingText(true);
+    setTextError(null);
     try {
       const doc = await addTextDocument({
         title: textTitle.trim() || undefined,
@@ -76,6 +79,8 @@ export function NewScreen() {
       setTextTitle('');
       setTextContent('');
       router.push(`/reader/${doc.id}`);
+    } catch (e) {
+      setTextError(e instanceof Error ? e.message : 'Failed to save text');
     } finally {
       setIsSavingText(false);
     }
@@ -84,7 +89,7 @@ export function NewScreen() {
   const options: Option[] = [
     {
       key: 'pdf',
-      title: 'Upload PDF or EPUB',
+      title: 'Upload PDF',
       sub: 'up to 50 MB · works offline',
       glyph: (
         <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 11, fontWeight: 600 }}>
@@ -107,7 +112,7 @@ export function NewScreen() {
     {
       key: 'text',
       title: 'Paste text',
-      sub: 'cmd+v into the editor',
+      sub: 'paste into the editor',
       glyph: (
         <span style={{ fontFamily: 'var(--font-mono), monospace', fontSize: 11, fontWeight: 600 }}>
           Tt
@@ -135,7 +140,16 @@ export function NewScreen() {
     if (o.key === 'pdf') {
       fileInputRef.current?.click();
     } else if (o.key === 'text') {
-      setExpanded((curr) => (curr === 'text' ? null : 'text'));
+      setExpanded((curr) => {
+        const next = curr === 'text' ? null : 'text';
+        if (next === 'text') {
+          requestAnimationFrame(() => {
+            textAreaRef.current?.focus({ preventScroll: true });
+            textAreaRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+          });
+        }
+        return next;
+      });
     }
   };
 
@@ -144,7 +158,7 @@ export function NewScreen() {
       <input
         ref={fileInputRef}
         type="file"
-        accept="application/pdf"
+        accept="application/pdf,.pdf"
         style={{ display: 'none' }}
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -154,7 +168,7 @@ export function NewScreen() {
       />
 
       {/* Header */}
-      <div style={{ padding: '58px 20px 0' }}>
+      <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
         <div
           style={{
             display: 'flex',
@@ -174,7 +188,8 @@ export function NewScreen() {
               alignItems: 'center',
               gap: 6,
               fontSize: 14,
-              padding: 0,
+              padding: '10px 8px 10px 0',
+              minHeight: 44,
               fontFamily: 'inherit',
             }}
           >
@@ -198,14 +213,14 @@ export function NewScreen() {
             fontSize: 34,
             fontWeight: 600,
             margin: '28px 0 6px',
-            letterSpacing: '-0.03em',
+            letterSpacing: 0,
             lineHeight: 1.05,
           }}
         >
           What are you reading?
         </h1>
         <div style={{ fontSize: 14, color: 'var(--muted)' }}>
-          Drop a file, paste a link, or type.
+          Choose a PDF, paste text, or add a link.
         </div>
       </div>
 
@@ -314,6 +329,7 @@ export function NewScreen() {
                   borderRadius: 14,
                   background: 'var(--bg-elevated)',
                   border: '1px solid var(--rule)',
+                  scrollMarginBottom: 'calc(120px + env(safe-area-inset-bottom))',
                 }}
               >
                 <input
@@ -326,9 +342,25 @@ export function NewScreen() {
                 <textarea
                   placeholder="Paste your text here…"
                   value={textContent}
-                  onChange={(e) => setTextContent(e.target.value)}
+                  onChange={(e) => {
+                    setTextContent(e.target.value);
+                    if (textError) setTextError(null);
+                  }}
+                  ref={textAreaRef}
                   style={{ ...inputStyle, minHeight: 120, resize: 'vertical', marginTop: 8 }}
                 />
+                {textError && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      color: 'var(--accent)',
+                      fontSize: 12,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {textError}
+                  </div>
+                )}
                 <div
                   style={{
                     marginTop: 10,
@@ -353,6 +385,7 @@ export function NewScreen() {
                     disabled={isSaveDisabled}
                     style={{
                       padding: '8px 16px',
+                      minHeight: 44,
                       borderRadius: 999,
                       background: isSaveDisabled ? 'var(--bg-elevated)' : 'var(--accent)',
                       color: isSaveDisabled ? 'var(--muted)' : '#fff',
@@ -452,7 +485,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%',
   background: 'var(--bg)',
   color: 'var(--ink)',
-  fontSize: 14,
+  fontSize: 16,
   borderRadius: 10,
   padding: '10px 12px',
   border: '1px solid var(--rule)',

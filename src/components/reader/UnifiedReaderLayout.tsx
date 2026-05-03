@@ -13,7 +13,7 @@ import { FinalSummaryScreen } from '@/components/goal-read/FinalSummaryScreen';
 import { SourceModal } from '@/components/goal-read/SourceModal';
 
 export function UnifiedReaderLayout() {
-  const { viewMode, documentId, documentKind, error } = useReaderContext();
+  const { viewMode, documentId, documentKind, currentPage, error } = useReaderContext();
 
   if (error) {
     return (
@@ -53,7 +53,7 @@ export function UnifiedReaderLayout() {
           aria-hidden={viewMode !== 'pdf'}
         >
           {documentKind === 'pdf' ? (
-            <PDFViewer documentId={documentId} />
+            <PDFViewer documentId={documentId} initialPage={currentPage} />
           ) : (
             <TextReader documentId={documentId} />
           )}

@@ -62,7 +62,7 @@ export function SettingsScreen() {
   if (!prefs) {
     return (
       <AppShell>
-        <div style={{ padding: 58 }}>
+        <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
           <MicroLabel>Settings</MicroLabel>
         </div>
       </AppShell>
@@ -71,7 +71,7 @@ export function SettingsScreen() {
 
   return (
     <AppShell>
-      <div style={{ padding: '58px 20px 0' }}>
+      <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
         <MicroLabel>Settings</MicroLabel>
         <HeroHeading size="md" style={{ marginTop: 10 }}>
           Tune the
@@ -331,9 +331,9 @@ function ClaudeSection({
             padding: '10px 12px',
             borderRadius: 10,
             border: '1px solid var(--rule)',
-            background: 'var(--paper)',
+            background: 'var(--bg-elevated)',
             color: 'var(--ink)',
-            fontSize: 13,
+            fontSize: 16,
             fontFamily: 'var(--font-mono), monospace',
             outline: 'none',
           }}
@@ -393,6 +393,7 @@ function actionBtnStyle(
 ): React.CSSProperties {
   const base: React.CSSProperties = {
     padding: '8px 14px',
+    minHeight: 44,
     borderRadius: 8,
     fontSize: 10,
     fontFamily: 'var(--font-mono), monospace',
@@ -466,9 +467,9 @@ function SettingRow({ title, value, toggle, toggleValue, onToggle, children }: S
             aria-label={`Toggle ${title}`}
             onClick={() => onToggle?.(!toggleValue)}
             style={{
-              width: 40,
-              height: 22,
-              borderRadius: 11,
+              width: 58,
+              height: 44,
+              borderRadius: 22,
               background: toggleValue ? 'var(--accent)' : 'var(--rule-strong)',
               position: 'relative',
               border: 0,
@@ -480,10 +481,10 @@ function SettingRow({ title, value, toggle, toggleValue, onToggle, children }: S
             <div
               style={{
                 position: 'absolute',
-                top: 2,
-                left: toggleValue ? 20 : 2,
-                width: 18,
-                height: 18,
+                top: 8,
+                left: toggleValue ? 26 : 4,
+                width: 28,
+                height: 28,
                 borderRadius: '50%',
                 background: '#fff',
                 transition: 'left 180ms ease',
@@ -511,7 +512,8 @@ function SettingRow({ title, value, toggle, toggleValue, onToggle, children }: S
 function segmentBtnStyle(active: boolean): React.CSSProperties {
   return {
     flex: 1,
-    padding: '7px 0',
+    padding: '9px 0',
+    minHeight: 44,
     textAlign: 'center',
     borderRadius: 8,
     background: active ? 'var(--accent)' : 'transparent',

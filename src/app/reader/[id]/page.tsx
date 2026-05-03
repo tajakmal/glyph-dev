@@ -34,6 +34,13 @@ function ReaderContent({ id }: { id: string }) {
       ? Number.parseInt(startParam, 10)
       : undefined;
 
+  // Support ?page=N when entering from a PDF bookmark/highlight.
+  const pageParam = searchParams.get('page');
+  const initialPage =
+    pageParam != null && /^\d+$/.test(pageParam)
+      ? Number.parseInt(pageParam, 10)
+      : undefined;
+
   // Loading state (matches on both server and client)
   if (documentMeta === undefined) {
     return (
@@ -109,6 +116,7 @@ function ReaderContent({ id }: { id: string }) {
       documentKind={documentMeta.kind}
       initialMode={initialMode}
       initialWordIndex={initialWordIndex}
+      initialPage={initialPage}
     >
       <UnifiedReaderLayout />
     </ReaderProvider>
@@ -120,8 +128,8 @@ export default function ReaderPage({ params }: ReaderPageProps) {
 
   return (
     <main
+      className="app-fixed-viewport"
       style={{
-        height: '100vh',
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--bg)',

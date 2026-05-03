@@ -123,13 +123,19 @@ export function MarksScreen() {
   }, []);
 
   const handleMarkClick = (m: UnifiedMark) => {
-    const url = `/reader/${m.documentId}`;
-    router.push(url);
+    const params = new URLSearchParams();
+    if (typeof m.wordIndex === 'number') {
+      params.set('start', String(m.wordIndex));
+    } else if (typeof m.page === 'number') {
+      params.set('page', String(m.page));
+    }
+    const query = params.toString();
+    router.push(`/reader/${m.documentId}${query ? `?${query}` : ''}`);
   };
 
   return (
     <AppShell>
-      <div style={{ padding: '58px 20px 0' }}>
+      <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
         <MicroLabel>
           Your marks · {mounted ? marks.length : '—'}
         </MicroLabel>
@@ -166,7 +172,8 @@ export function MarksScreen() {
               onClick={() => setFilter(c.key)}
               aria-pressed={active}
               style={{
-                padding: '5px 12px',
+                padding: '9px 14px',
+                minHeight: 44,
                 borderRadius: 20,
                 background: active ? 'var(--ink)' : 'transparent',
                 color: active ? 'var(--bg)' : 'var(--ink)',
@@ -197,7 +204,9 @@ export function MarksScreen() {
               textAlign: 'center',
             }}
           >
-            Nothing saved yet. Highlight text or bookmark a page to see it here.
+            {marks.length === 0
+              ? 'Nothing saved yet. Highlight text or bookmark a page to see it here.'
+              : `No ${filter} yet.`}
           </div>
         ) : (
           filtered.map((m, i) => {
@@ -211,11 +220,11 @@ export function MarksScreen() {
                   width: '100%',
                   textAlign: 'left',
                   padding: '14px 0',
+                  border: 'none',
                   borderTop: i === 0 ? '1px solid var(--rule)' : 'none',
                   borderBottom: '1px solid var(--rule)',
                   background: 'transparent',
-                  border: 0,
-                  borderTopColor: i === 0 ? 'var(--rule)' : undefined,
+                  minHeight: 58,
                   cursor: 'pointer',
                   color: 'var(--ink)',
                   fontFamily: 'inherit',

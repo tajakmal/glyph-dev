@@ -80,15 +80,17 @@ export function BottomTabBar() {
         left: 0,
         right: 0,
         zIndex: 40,
-        padding: '10px 10px calc(10px + env(safe-area-inset-bottom))',
+        padding:
+          '10px max(10px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left))',
         background:
           'linear-gradient(180deg, rgba(10,10,10,0) 0%, var(--bg) 60%)',
         pointerEvents: 'none',
+        boxSizing: 'border-box',
       }}
     >
       <div
         style={{
-          maxWidth: 440,
+          width: 'min(440px, 100%)',
           margin: '0 auto',
           display: 'flex',
           background: 'var(--bg-glass)',
@@ -110,6 +112,7 @@ export function BottomTabBar() {
               style={{
                 flex: 1,
                 padding: '10px 6px',
+                minHeight: 58,
                 borderRadius: 20,
                 display: 'flex',
                 flexDirection: 'column',

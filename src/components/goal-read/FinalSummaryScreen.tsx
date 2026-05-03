@@ -63,7 +63,7 @@ export function FinalSummaryScreen() {
                 style={{
                   fontSize: 72,
                   fontWeight: 700,
-                  letterSpacing: '-0.04em',
+                  letterSpacing: 0,
                   lineHeight: 0.92,
                   color: 'var(--accent)',
                 }}

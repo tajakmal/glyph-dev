@@ -67,6 +67,8 @@ export function PDFViewer({
   const readerCtx = useContext(ReaderContext);
   const [zoom, setZoom] = useState(initialZoom);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const didApplyMobileFitZoomRef = useRef(false);
+  const didScrollToInitialPageRef = useRef(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pageWordCountsRef = useRef<number[] | null>(null);
@@ -173,6 +175,32 @@ export function PDFViewer({
       readerCtx.registerPdfScrollToPage(handlePageChange);
     }
   }, [readerCtx, handlePageChange]);
+
+  useEffect(() => {
+    if (!pdf || didApplyMobileFitZoomRef.current || initialZoom !== 1) return;
+    const container = containerRef.current;
+    if (!container || typeof window === 'undefined') return;
+    if (!window.matchMedia('(max-width: 640px)').matches) return;
+
+    didApplyMobileFitZoomRef.current = true;
+    let cancelled = false;
+    pdf
+      .getPage(1)
+      .then((page) => {
+        if (cancelled || !containerRef.current) return;
+        const viewport = page.getViewport({ scale: 1 });
+        const availableWidth = Math.max(280, containerRef.current.clientWidth - 32);
+        const fitZoom = Math.min(1, Math.max(0.5, availableWidth / viewport.width));
+        setZoom(fitZoom);
+      })
+      .catch(() => {
+        didApplyMobileFitZoomRef.current = false;
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdf, initialZoom]);
 
   // Highlight the target word when returning from speed-read.
   // Uses an overlay div (rendered by VirtualizedPDFPage) instead of inline styles,
@@ -414,6 +442,7 @@ export function PDFViewer({
   useEffect(() => {
     const container = containerRef.current;
     if (!container || pageCount === 0) return;
+    let rafId: number | null = null;
 
     const updateVisibleRange = () => {
       const scrollTop = container.scrollTop;
@@ -458,9 +487,19 @@ export function PDFViewer({
     // Initial calculation
     updateVisibleRange();
 
-    // Update on scroll (passive for performance)
-    container.addEventListener('scroll', updateVisibleRange, { passive: true });
-    return () => container.removeEventListener('scroll', updateVisibleRange);
+    const scheduleVisibleRange = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        updateVisibleRange();
+      });
+    };
+
+    container.addEventListener('scroll', scheduleVisibleRange, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', scheduleVisibleRange);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [pageCount, pageHeights, estimatedPageHeight, getPageOffset]);
 
   // Handle page dimensions update from VirtualizedPDFPage
@@ -498,11 +537,20 @@ export function PDFViewer({
     }
   }, [documentId, pageCount]);
 
+  useEffect(() => {
+    if (didScrollToInitialPageRef.current || pageCount === 0 || initialPage <= 1) return;
+    didScrollToInitialPageRef.current = true;
+    requestAnimationFrame(() => {
+      handlePageChange(Math.min(initialPage, pageCount), { instant: true });
+    });
+  }, [handlePageChange, initialPage, pageCount]);
+
   // Track current page on scroll using scrollTop-based calculation
   // This works reliably even when pages are virtualized (not rendered in DOM)
   useEffect(() => {
     const container = containerRef.current;
     if (!container || pageCount === 0) return;
+    let rafId: number | null = null;
 
     const calculateCurrentPage = () => {
       const scrollTop = container.scrollTop;
@@ -534,11 +582,22 @@ export function PDFViewer({
       }
     };
 
+    const schedulePageUpdate = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        handleScroll();
+      });
+    };
+
     // Calculate initial page
     handleScroll();
 
-    container.addEventListener('scroll', handleScroll, { passive: true });
-    return () => container.removeEventListener('scroll', handleScroll);
+    container.addEventListener('scroll', schedulePageUpdate, { passive: true });
+    return () => {
+      container.removeEventListener('scroll', schedulePageUpdate);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, [currentPage, pageCount, pageHeights, estimatedPageHeight, onPageChange]);
 
   const handleSidebarHighlightClick = useCallback((highlight: PDFHighlight) => {

@@ -171,7 +171,7 @@ export function ArchiveDetail({ archiveId }: ArchiveDetailProps) {
           style={{
             fontSize: 24,
             fontWeight: 700,
-            letterSpacing: '-0.02em',
+            letterSpacing: 0,
             lineHeight: 1.2,
             marginBottom: 8,
           }}
@@ -216,7 +216,7 @@ export function ArchiveDetail({ archiveId }: ArchiveDetailProps) {
               style={{
                 fontSize: 40,
                 fontWeight: 700,
-                letterSpacing: '-0.03em',
+                letterSpacing: 0,
                 lineHeight: 1,
                 color: 'var(--ink)',
               }}

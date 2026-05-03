@@ -44,7 +44,7 @@ export function ShelfCard({ document }: ShelfCardProps) {
           fontSize: 40,
           fontWeight: 700,
           lineHeight: 1,
-          letterSpacing: '-0.05em',
+          letterSpacing: 0,
           color: hasProgress ? 'var(--accent)' : 'var(--ink)',
         }}
       >
@@ -74,7 +74,7 @@ export function ShelfCard({ document }: ShelfCardProps) {
             fontSize: 11,
             fontWeight: 500,
             lineHeight: 1.15,
-            letterSpacing: '-0.01em',
+            letterSpacing: 0,
             color: 'var(--ink)',
             display: '-webkit-box',
             WebkitLineClamp: 2,

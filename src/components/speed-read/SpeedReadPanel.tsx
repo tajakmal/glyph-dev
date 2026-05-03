@@ -620,9 +620,9 @@ export function SpeedReadPanel() {
           <div style={{ minWidth: 0 }}>
             <div
               style={{
-                fontSize: 16,
-                fontWeight: 600,
-                letterSpacing: '-0.01em',
+                  fontSize: 16,
+                  fontWeight: 600,
+                  letterSpacing: 0,
                 color: 'var(--ink)',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -723,8 +723,10 @@ export function SpeedReadPanel() {
               minHeight: 76,
               display: 'flex',
               alignItems: 'baseline',
-              gap: 18,
+              gap: 12,
               justifyContent: 'center',
+              maxWidth: '100%',
+              minWidth: 0,
             }}
             aria-live="polite"
             aria-atomic="true"
@@ -737,8 +739,12 @@ export function SpeedReadPanel() {
                   fontWeight: 400,
                   color: 'var(--ink)',
                   opacity: 0.22,
-                  letterSpacing: '-0.01em',
+                  letterSpacing: 0,
                   fontFamily: 'var(--font-sans), system-ui, sans-serif',
+                  maxWidth: '24%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {prev.word}
@@ -753,8 +759,12 @@ export function SpeedReadPanel() {
                   fontWeight: 400,
                   color: 'var(--ink)',
                   opacity: 0.22,
-                  letterSpacing: '-0.01em',
+                  letterSpacing: 0,
                   fontFamily: 'var(--font-sans), system-ui, sans-serif',
+                  maxWidth: '24%',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 {next.word}

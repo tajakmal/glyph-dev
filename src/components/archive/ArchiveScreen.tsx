@@ -57,7 +57,7 @@ export function ArchiveScreen() {
 
   return (
     <AppShell>
-      <div style={{ padding: '58px 20px 0' }}>
+      <div style={{ padding: 'max(58px, calc(20px + env(safe-area-inset-top))) 20px 0' }}>
         <MicroLabel>
           Your archive · {mounted ? sessions.length : '—'}
         </MicroLabel>
@@ -93,7 +93,8 @@ export function ArchiveScreen() {
               onClick={() => setFilter(c.key)}
               aria-pressed={active}
               style={{
-                padding: '5px 12px',
+                padding: '9px 14px',
+                minHeight: 44,
                 borderRadius: 20,
                 background: active ? 'var(--ink)' : 'transparent',
                 color: active ? 'var(--bg)' : 'var(--ink)',
@@ -125,9 +126,15 @@ export function ArchiveScreen() {
               lineHeight: 1.5,
             }}
           >
-            Nothing archived yet.
+            {sessions.length === 0
+              ? 'Nothing archived yet.'
+              : filter === 'goal'
+              ? 'No primer archives yet.'
+              : 'No recap archives yet.'}
             <br />
-            Start a focused read or ask for a quiz after a session.
+            {sessions.length === 0
+              ? 'Start a focused read or ask for a quiz after a session.'
+              : 'Try a different archive filter.'}
           </div>
         ) : (
           filtered.map((s, i) => {
@@ -148,10 +155,11 @@ export function ArchiveScreen() {
                   width: '100%',
                   textAlign: 'left',
                   padding: '14px 0',
+                  border: 'none',
                   borderTop: i === 0 ? '1px solid var(--rule)' : 'none',
                   borderBottom: '1px solid var(--rule)',
                   background: 'transparent',
-                  border: 0,
+                  minHeight: 58,
                   cursor: 'pointer',
                   color: 'var(--ink)',
                   fontFamily: 'inherit',

@@ -24,7 +24,9 @@ export function NoteComposer({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    textareaRef.current?.focus();
+    if (window.matchMedia('(pointer: fine)').matches) {
+      textareaRef.current?.focus({ preventScroll: true });
+    }
   }, []);
 
   useEffect(() => {
@@ -50,7 +52,10 @@ export function NoteComposer({
         display: 'flex',
         alignItems: 'flex-end',
         justifyContent: 'center',
-        padding: '20px 12px calc(20px + env(safe-area-inset-bottom))',
+        padding:
+          '20px max(12px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))',
+        overflowY: 'auto',
+        overscrollBehavior: 'contain',
       }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -67,6 +72,7 @@ export function NoteComposer({
           border: '1px solid var(--paper-rule)',
           boxShadow: '0 22px 60px rgba(20,17,12,0.32)',
           overflow: 'hidden',
+          maxHeight: 'min(82dvh, 640px)',
         }}
       >
         <div
@@ -95,8 +101,8 @@ export function NoteComposer({
             onClick={onClose}
             aria-label="Close note composer"
             style={{
-              width: 30,
-              height: 30,
+              width: 44,
+              height: 44,
               borderRadius: 8,
               border: 0,
               background: 'transparent',
@@ -143,7 +149,7 @@ export function NoteComposer({
               color: 'var(--paper-ink)',
               padding: '12px 14px',
               font: 'inherit',
-              fontSize: 15,
+              fontSize: 16,
               lineHeight: 1.45,
               outline: 'none',
             }}
@@ -170,7 +176,7 @@ export function NoteComposer({
             <button
               onClick={onClose}
               style={{
-                height: 42,
+                height: 44,
                 padding: '0 16px',
                 borderRadius: 21,
                 border: '1px solid var(--paper-rule)',
@@ -192,7 +198,7 @@ export function NoteComposer({
               }}
               disabled={!trimmed}
               style={{
-                height: 42,
+                height: 44,
                 padding: '0 18px',
                 borderRadius: 21,
                 border: 0,

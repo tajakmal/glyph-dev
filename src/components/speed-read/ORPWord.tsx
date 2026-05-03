@@ -23,16 +23,20 @@ export function ORPWord({
 }: ORPWordProps) {
   if (!word) return null;
   const orp = orpIndex(word);
+  const effectiveSize = word.length > 18 ? Math.max(38, size - 16) : word.length > 12 ? Math.max(44, size - 8) : size;
   const before = word.slice(0, orp);
   const focal = word[orp] || '';
   const after = word.slice(orp + 1);
   return (
     <span
       style={{
-        fontSize: size,
+        fontSize: effectiveSize,
         fontWeight: weight,
-        letterSpacing: '-0.02em',
+        letterSpacing: 0,
         display: 'inline-block',
+        maxWidth: '100%',
+        overflowWrap: 'anywhere',
+        textAlign: 'center',
         fontVariantLigatures: 'none',
         fontFamily: 'var(--font-sans), system-ui, sans-serif',
         lineHeight: 1,

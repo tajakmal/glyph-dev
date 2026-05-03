@@ -16,22 +16,23 @@ interface AppShellProps {
 export function AppShell({ children, hideTabBar, background }: AppShellProps) {
   return (
     <div
+      className="app-viewport"
       style={{
-        minHeight: '100vh',
         background: background || 'var(--bg)',
         color: 'var(--ink)',
         position: 'relative',
       }}
     >
       <div
+        className="app-viewport"
         style={{
-          maxWidth: 440,
+          width: 'min(440px, 100%)',
           margin: '0 auto',
-          minHeight: '100vh',
           position: 'relative',
           paddingBottom: hideTabBar
             ? 'env(safe-area-inset-bottom)'
             : 'calc(96px + env(safe-area-inset-bottom))',
+          boxSizing: 'border-box',
         }}
       >
         {children}

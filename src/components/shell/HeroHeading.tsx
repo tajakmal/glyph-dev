@@ -9,9 +9,9 @@ interface HeroHeadingProps {
 }
 
 const SIZE: Record<NonNullable<HeroHeadingProps['size']>, React.CSSProperties> = {
-  xl: { fontSize: 88, lineHeight: 0.88, letterSpacing: '-0.06em' },
-  lg: { fontSize: 56, lineHeight: 0.95, letterSpacing: '-0.04em' },
-  md: { fontSize: 36, lineHeight: 1, letterSpacing: '-0.035em' },
+  xl: { fontSize: 76, lineHeight: 0.94, letterSpacing: 0 },
+  lg: { fontSize: 52, lineHeight: 0.98, letterSpacing: 0 },
+  md: { fontSize: 36, lineHeight: 1.04, letterSpacing: 0 },
 };
 
 export function HeroHeading({

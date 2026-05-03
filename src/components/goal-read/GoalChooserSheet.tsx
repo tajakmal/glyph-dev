@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   DEFAULT_NEXT_MIN,
   MAX_GOAL_WORDS,
-  MIN_FOCUS_WORDS,
   NEXT_MIN_PRESETS,
   type GoalRange,
 } from '@/lib/goal-read/types';
@@ -341,7 +340,7 @@ function ChooserCard({
               fontSize: 15,
               fontWeight: 600,
               color: 'var(--paper-ink)',
-              letterSpacing: '-0.01em',
+              letterSpacing: 0,
             }}
           >
             {title}
