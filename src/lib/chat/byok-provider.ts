@@ -6,37 +6,25 @@ import type {
   ChatErrorKind,
 } from './provider';
 import { ChatError } from './provider';
+import { classifyProviderError, providerErrorMessage } from '@/lib/ai/errors';
+import { ANTHROPIC_CHAT_MODEL } from '@/lib/ai/models';
 
-export const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+export const DEFAULT_MODEL = ANTHROPIC_CHAT_MODEL;
 const MAX_OUTPUT_TOKENS = 1024;
 const HISTORY_TURN_CAP = 6;
 // Haiku prompt-cache minimum is 2048 tokens; ~4 chars/token → 8192 char threshold.
 const CACHE_MIN_CHARS = 8192;
 
 function classifyError(err: unknown): ChatErrorKind {
-  if (err instanceof DOMException && err.name === 'AbortError') return 'aborted';
-  const anyErr = err as { status?: number; name?: string; message?: string };
-  if (anyErr?.status === 401 || anyErr?.status === 403) return 'invalid_key';
-  if (anyErr?.status === 429) return 'rate_limit';
-  if (anyErr?.name === 'APIConnectionError' || anyErr?.message?.includes('fetch')) {
-    return 'network';
-  }
-  return 'unknown';
+  return classifyProviderError(err);
 }
 
 function errorMessage(kind: ChatErrorKind): string {
-  switch (kind) {
-    case 'invalid_key':
-      return 'Your Anthropic API key was rejected. Check it in Settings.';
-    case 'rate_limit':
-      return 'Rate limited by Anthropic. Wait a moment and try again.';
-    case 'network':
-      return 'Network error reaching Anthropic.';
-    case 'aborted':
-      return 'Request aborted.';
-    default:
-      return 'Something went wrong talking to Claude.';
-  }
+  return providerErrorMessage(
+    'anthropic',
+    kind,
+    'Something went wrong talking to Anthropic.'
+  );
 }
 
 export class BYOKProvider implements ChatProvider {

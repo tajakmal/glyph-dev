@@ -161,7 +161,7 @@ export function GoalChooserSheet({
         >
           {!apiKeyConfigured && keyCalloutOpen && (
             <div style={calloutStyle}>
-              Configure your Anthropic API key in Settings
+              Configure an Anthropic or OpenAI API key in Settings
               <button
                 style={{
                   marginLeft: 8,

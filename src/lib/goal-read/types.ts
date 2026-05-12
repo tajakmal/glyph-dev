@@ -1,3 +1,5 @@
+import { ANTHROPIC_GOAL_MODEL } from '@/lib/ai/models';
+
 /**
  * Shared types for the goal-based reading feature.
  *
@@ -79,8 +81,8 @@ export const CHUNK_TRIGGER_MIN = 10;
 export const CHUNK_TARGET_MIN = 5;
 export const MIN_CHUNK_WORDS = 200;
 
-/** Model used for all goal-based reading calls. */
-export const GOAL_MODEL = 'claude-sonnet-4-6';
+/** Anthropic model used for goal-based reading calls. */
+export const GOAL_MODEL = ANTHROPIC_GOAL_MODEL;
 
 /** Preset chip options (minutes) for "Next N minutes" goals. */
 export const NEXT_MIN_PRESETS = [3, 5, 10, 15] as const;

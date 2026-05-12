@@ -40,7 +40,7 @@ import { SelectionActionBar } from './SelectionActionBar';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { GoalChooserSheet } from '@/components/goal-read/GoalChooserSheet';
 import { NoteComposer } from '@/components/reader/NoteComposer';
-import { getApiKey } from '@/lib/chat';
+import { hasActiveProviderApiKey } from '@/lib/chat';
 import { MIN_FOCUS_WORDS, MAX_GOAL_WORDS, type GoalRange } from '@/lib/goal-read/types';
 
 interface TextReaderProps {
@@ -89,15 +89,15 @@ export function TextReader({ documentId }: TextReaderProps) {
     setReadingFont(prefs.readingFont);
 
     setTextSize(prefs.textSize);
-    setApiKeyReady(!!getApiKey());
+    setApiKeyReady(hasActiveProviderApiKey());
   }, []);
 
   // Refresh API-key ready state whenever the chooser opens or window regains focus
   useEffect(() => {
-    if (goalChooser.open) setApiKeyReady(!!getApiKey());
+    if (goalChooser.open) setApiKeyReady(hasActiveProviderApiKey());
   }, [goalChooser.open]);
   useEffect(() => {
-    const onFocus = () => setApiKeyReady(!!getApiKey());
+    const onFocus = () => setApiKeyReady(hasActiveProviderApiKey());
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, []);

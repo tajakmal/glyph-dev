@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getChatProvider, CHAT_SYSTEM_PROMPT } from '@/lib/chat';
+import {
+  getChatProvider,
+  getMissingApiKeyMessage,
+  CHAT_SYSTEM_PROMPT,
+} from '@/lib/chat';
 import type { ChatTurn } from '@/lib/chat';
 
 export interface DisplayTurn {
@@ -67,7 +71,7 @@ export function useChat(documentId: string, docText: string | null) {
       }
       const provider = getChatProvider();
       if (!provider) {
-        setError('Add your Anthropic API key in Settings.');
+        setError(getMissingApiKeyMessage());
         return;
       }
       setError(null);

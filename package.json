@@ -13,6 +13,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "secrets:scan": "bash scripts/check-secrets.sh",
     "type-check": "tsc --noEmit",
     "postinstall": "cp node_modules/pdfjs-dist/build/pdf.worker.min.mjs public/ && cp -r node_modules/pdfjs-dist/cmaps public/"
   },
@@ -20,6 +21,7 @@
     "@anthropic-ai/sdk": "^0.90.0",
     "epubjs": "^0.3.93",
     "next": "^16.1.6",
+    "openai": "^6.37.0",
     "pdfjs-dist": "^5.4.530",
     "react": "19.2.3",
     "react-dom": "19.2.3",

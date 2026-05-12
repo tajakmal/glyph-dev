@@ -244,6 +244,8 @@ export interface PDFOutlineItem {
 // User Preferences Types
 // =============================================================================
 
+export type AiProviderId = 'anthropic' | 'openai';
+
 /**
  * User preferences for the application.
  * Persisted to localStorage for consistent experience across sessions.
@@ -267,8 +269,12 @@ export interface UserPreferences {
   readingFont: 'fraunces' | 'space-grotesk' | 'system';
   /** Text size multiplier for reader body */
   textSize: 'sm' | 'md' | 'lg';
-  /** Anthropic API key for BYOK chat (stored device-local only) */
+  /** Globally selected BYOK AI provider */
+  aiProvider?: AiProviderId;
+  /** Anthropic API key for BYOK AI features (stored device-local only) */
   anthropicApiKey?: string;
+  /** OpenAI API key for BYOK AI features (stored device-local only) */
+  openaiApiKey?: string;
 }
 
 // =============================================================================

@@ -1,12 +1,17 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import type { UserPreferences } from '@/types';
+import type { AiProviderId, UserPreferences } from '@/types';
 import { getPreferences, setPreferences } from '@/lib/storage';
 import { AppShell } from '@/components/shell/AppShell';
 import { MicroLabel } from '@/components/shell/MicroLabel';
 import { HeroHeading } from '@/components/shell/HeroHeading';
-import { testApiKey, ChatError } from '@/lib/chat';
+import {
+  AI_PROVIDER_IDS,
+  AI_PROVIDER_LABELS,
+  testProviderApiKey,
+  ChatError,
+} from '@/lib/chat';
 
 type ThemeChoice = 'dark' | 'paper' | 'auto';
 
@@ -226,10 +231,19 @@ export function SettingsScreen() {
           </div>
         </SettingRow>
 
-        <SectionLabel>Claude</SectionLabel>
-        <ClaudeSection
-          apiKey={prefs.anthropicApiKey ?? ''}
-          onSave={(key) => update({ anthropicApiKey: key || undefined })}
+        <SectionLabel>AI Provider</SectionLabel>
+        <AIProviderSection
+          provider={prefs.aiProvider === 'openai' ? 'openai' : 'anthropic'}
+          anthropicApiKey={prefs.anthropicApiKey ?? ''}
+          openaiApiKey={prefs.openaiApiKey ?? ''}
+          onProviderChange={(provider) => update({ aiProvider: provider })}
+          onSaveKey={(provider, key) =>
+            update(
+              provider === 'anthropic'
+                ? { anthropicApiKey: key || undefined }
+                : { openaiApiKey: key || undefined }
+            )
+          }
         />
 
         <SectionLabel>About</SectionLabel>
@@ -241,21 +255,108 @@ export function SettingsScreen() {
   );
 }
 
-type ClaudeStatus =
+type KeyStatus =
   | { kind: 'idle' }
   | { kind: 'testing' }
   | { kind: 'ok' }
   | { kind: 'error'; message: string };
 
-function ClaudeSection({
+function AIProviderSection({
+  provider,
+  anthropicApiKey,
+  openaiApiKey,
+  onProviderChange,
+  onSaveKey,
+}: {
+  provider: AiProviderId;
+  anthropicApiKey: string;
+  openaiApiKey: string;
+  onProviderChange: (provider: AiProviderId) => void;
+  onSaveKey: (provider: AiProviderId, key: string) => void;
+}) {
+  return (
+    <div style={{ padding: '14px 0', borderTop: '1px solid var(--rule)' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
+        }}
+      >
+        <div style={{ fontSize: 14, color: 'var(--ink)' }}>Active provider</div>
+        <div
+          style={{
+            fontSize: 12,
+            fontFamily: 'var(--font-mono), monospace',
+            color: 'var(--muted)',
+            letterSpacing: '0.1em',
+          }}
+        >
+          {AI_PROVIDER_LABELS[provider]}
+        </div>
+      </div>
+
+      <div style={{ marginTop: 10, display: 'flex', gap: 4 }}>
+        {AI_PROVIDER_IDS.map((id) => {
+          const active = provider === id;
+          return (
+            <button
+              key={id}
+              onClick={() => onProviderChange(id)}
+              style={segmentBtnStyle(active)}
+              aria-pressed={active}
+            >
+              {AI_PROVIDER_LABELS[id]}
+            </button>
+          );
+        })}
+      </div>
+
+      <div style={{ marginTop: 14 }}>
+        <ProviderKeySection
+          provider="anthropic"
+          apiKey={anthropicApiKey}
+          placeholder="sk-ant-..."
+          onSave={(key) => onSaveKey('anthropic', key)}
+        />
+        <ProviderKeySection
+          provider="openai"
+          apiKey={openaiApiKey}
+          placeholder="sk-..."
+          onSave={(key) => onSaveKey('openai', key)}
+        />
+      </div>
+
+      <div
+        style={{
+          fontSize: 11,
+          color: 'var(--muted)',
+          lineHeight: 1.5,
+          marginTop: 10,
+        }}
+      >
+        Your keys are stored on this device only. Glyph calls the selected AI
+        provider directly from your browser - your keys and reading never touch
+        our servers.
+      </div>
+    </div>
+  );
+}
+
+function ProviderKeySection({
+  provider,
   apiKey,
+  placeholder,
   onSave,
 }: {
+  provider: AiProviderId;
   apiKey: string;
+  placeholder: string;
   onSave: (key: string) => void;
 }) {
   const [draft, setDraft] = useState(apiKey);
-  const [status, setStatus] = useState<ClaudeStatus>({ kind: 'idle' });
+  const [status, setStatus] = useState<KeyStatus>({ kind: 'idle' });
   const dirty = draft !== apiKey;
 
   const handleSave = () => {
@@ -277,7 +378,7 @@ function ClaudeSection({
     }
     setStatus({ kind: 'testing' });
     try {
-      await testApiKey(key);
+      await testProviderApiKey(provider, key);
       setStatus({ kind: 'ok' });
     } catch (err) {
       const msg =
@@ -300,7 +401,9 @@ function ClaudeSection({
           gap: 10,
         }}
       >
-        <div style={{ fontSize: 14, color: 'var(--ink)' }}>Anthropic API key</div>
+        <div style={{ fontSize: 14, color: 'var(--ink)' }}>
+          {AI_PROVIDER_LABELS[provider]} API key
+        </div>
         {apiKey && !dirty && (
           <div
             style={{
@@ -318,7 +421,7 @@ function ClaudeSection({
       <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <input
           type="password"
-          placeholder="sk-ant-…"
+          placeholder={placeholder}
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -370,18 +473,6 @@ function ClaudeSection({
         {status.kind === 'error' && (
           <div style={statusStyle('error')}>{status.message}</div>
         )}
-
-        <div
-          style={{
-            fontSize: 11,
-            color: 'var(--muted)',
-            lineHeight: 1.5,
-            marginTop: 2,
-          }}
-        >
-          Your key is stored on this device only. Glyph calls Anthropic directly
-          from your browser — your key and reading never touch our servers.
-        </div>
       </div>
     </div>
   );

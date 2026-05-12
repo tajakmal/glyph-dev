@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getApiKey } from '@/lib/chat';
+import {
+  getAiProviderId,
+  getMissingApiKeyMessage,
+  getProviderApiKey,
+} from '@/lib/chat';
 import { streamGoalGeneration } from '@/lib/goal-read/provider';
 import type {
   GoalPayload,
@@ -52,9 +56,10 @@ export function useGoalGeneration(): UseGoalGenerationState & UseGoalGenerationA
 
   const start = useCallback<UseGoalGenerationActions['start']>(
     ({ words, range, chunks }) => {
-      const apiKey = getApiKey();
+      const provider = getAiProviderId();
+      const apiKey = getProviderApiKey(provider);
       if (!apiKey) {
-        setError('Add your Anthropic API key in Settings.');
+        setError(getMissingApiKeyMessage(provider));
         return;
       }
       if (chunks.length === 0 || range.endWord < range.startWord) {
@@ -75,6 +80,7 @@ export function useGoalGeneration(): UseGoalGenerationState & UseGoalGenerationA
       (async () => {
         try {
           const iter = streamGoalGeneration({
+            provider,
             apiKey,
             words,
             range,

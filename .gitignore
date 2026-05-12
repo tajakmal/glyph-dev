@@ -52,3 +52,7 @@ PRD-*.md
 
 # Codex environment config
 /.codex
+
+# Local AI/browser tooling state
+/.claude
+/.playwright-mcp

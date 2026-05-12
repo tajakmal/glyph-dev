@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getApiKey } from '@/lib/chat';
+import { hasActiveProviderApiKey } from '@/lib/chat';
 import { useChat, type DisplayTurn } from './useChat';
 
 interface ChatPanelProps {
@@ -45,7 +45,7 @@ export function ChatPanel({
   useEffect(() => {
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrating from localStorage is a client-only read
-    setHasKey(!!getApiKey());
+    setHasKey(hasActiveProviderApiKey());
   }, [open]);
 
   useEffect(() => {
@@ -132,7 +132,7 @@ export function ChatPanel({
           }}
         />
       )}
-      <div className="sheet-in" style={panelStyle} role="dialog" aria-label="Ask Claude">
+      <div className="sheet-in" style={panelStyle} role="dialog" aria-label="Ask AI">
         <Header
           onClose={onClose}
           onReset={turns.length > 0 ? reset : undefined}
@@ -220,7 +220,7 @@ function Header({
           fontWeight: 700,
         }}
       >
-        Ask Claude
+        Ask AI
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
         {onReset && (
@@ -509,10 +509,10 @@ function SetupCTA({ onOpenSettings }: { onOpenSettings: () => void }) {
           color: 'var(--muted)',
         }}
       >
-        Set up Claude
+        Set up AI
       </div>
       <div style={{ fontSize: 14, color: 'var(--paper-ink)', lineHeight: 1.5 }}>
-        Glyph uses your own Anthropic API key — your key and your reading stay on this device and never touch our servers.
+        Glyph uses your own Anthropic or OpenAI API key. Your key and your reading stay on this device and never touch our servers.
       </div>
       <button
         onClick={onOpenSettings}

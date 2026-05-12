@@ -16,7 +16,7 @@ Most reading apps optimize for one thing: either speed (RSVP tools) or comprehen
 - **Speed-read** a dense chapter to find the interesting parts.
 - **Switch** to the full PDF/text view to highlight, bookmark, and re-read slowly.
 - **Start a goal** — "give me the key arguments from pages 40–80" — and Glyph generates a primer, splits the range into chunks, and quizzes you after each one.
-- **Chat** with any document using your own Anthropic API key, with quotes you select automatically piped into the conversation.
+- **Chat** with any document using your own Anthropic or OpenAI API key, with quotes you select automatically piped into the conversation.
 
 Everything is stored locally in your browser. There's no login, no account, no cloud by default — just your library on your device.
 
@@ -54,7 +54,7 @@ Pick a range — a selection, a page span, or "the next N minutes of reading" �
 4. **Between-chunks screen** — a breather with score feedback before the next chunk.
 5. **Final summary** — an overview of what you covered and how you did.
 
-Powered by `claude-sonnet-4-6` via the Anthropic SDK. Goals up to 5,000 words; shorter selections auto-route to plain speed-read.
+Powered by the selected BYOK AI provider. Goals up to 5,000 words; shorter selections auto-route to plain speed-read.
 
 ### Marks (highlights, bookmarks, notes)
 
@@ -64,7 +64,7 @@ Powered by `claude-sonnet-4-6` via the Anthropic SDK. Goals up to 5,000 words; s
 
 ### Chat with your document
 
-- **Bring-your-own-key** (Anthropic) or subscription provider abstraction — pluggable via `src/lib/chat/`.
+- **Bring-your-own-key** with Anthropic or OpenAI — pluggable via `src/lib/chat/`.
 - **Quote-to-chat** — select a passage in the reader, hit "Ask" in the action bar, and the quote is pre-loaded into the chat composer.
 - **Full-document context** — the doc is injected as context so answers are grounded in what you're actually reading.
 - **Streaming responses** with abort support.
@@ -91,7 +91,7 @@ Powered by `claude-sonnet-4-6` via the Anthropic SDK. Goals up to 5,000 words; s
 ### Requirements
 
 - Node.js 20+
-- An Anthropic API key (only required for Chat and Goal-based Reading)
+- An Anthropic or OpenAI API key (only required for Chat and Goal-based Reading)
 
 ### Install & run
 
@@ -116,7 +116,7 @@ A `postinstall` step copies the `pdfjs-dist` worker and cmaps into `public/` so 
 
 ### Configuring the AI features
 
-Open **Settings** in the app and paste an Anthropic API key. The key is stored in `localStorage` on your device and used for:
+Open **Settings** in the app, choose Anthropic or OpenAI as the active AI provider, and paste the corresponding API key. Keys are stored in `localStorage` on your device and used for:
 
 - Goal-based reading (primer, quiz, summary generation)
 - Chat with document
@@ -218,5 +218,5 @@ Things in the code today as scaffolding, or planned:
 - **RSVP / ORP** technique popularized by Spritz.
 - **PDF rendering** by [pdf.js](https://mozilla.github.io/pdf.js/).
 - **EPUB parsing** by [epub.js](https://github.com/futurepress/epub.js).
-- **AI features** powered by the [Anthropic API](https://docs.anthropic.com/).
+- **AI features** powered by the selected BYOK provider: [Anthropic API](https://docs.anthropic.com/) or [OpenAI API](https://platform.openai.com/docs).
 - Built on [Next.js](https://nextjs.org) and [React](https://react.dev).

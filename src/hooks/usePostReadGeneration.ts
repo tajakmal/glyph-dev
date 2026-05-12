@@ -1,7 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getApiKey } from '@/lib/chat';
+import {
+  getAiProviderId,
+  getMissingApiKeyMessage,
+  getProviderApiKey,
+} from '@/lib/chat';
 import { streamPostReadGeneration } from '@/lib/post-read/provider';
 import type {
   PostReadPayload,
@@ -46,9 +50,10 @@ export function usePostReadGeneration(): UsePostReadGenerationState &
 
   const start = useCallback<UsePostReadGenerationActions['start']>(
     ({ words, range }) => {
-      const apiKey = getApiKey();
+      const provider = getAiProviderId();
+      const apiKey = getProviderApiKey(provider);
       if (!apiKey) {
-        setError('Add your Anthropic API key in Settings.');
+        setError(getMissingApiKeyMessage(provider));
         return;
       }
       if (range.endWord < range.startWord) {
@@ -69,6 +74,7 @@ export function usePostReadGeneration(): UsePostReadGenerationState &
       (async () => {
         try {
           const iter = streamPostReadGeneration({
+            provider,
             apiKey,
             words,
             range,

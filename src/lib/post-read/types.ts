@@ -1,3 +1,5 @@
+import { ANTHROPIC_POST_READ_MODEL } from '@/lib/ai/models';
+
 /**
  * Shared types for the post-session quiz feature — triggered after a plain
  * speed-read finishes. The user was reading freely (no pre-read primer), and
@@ -33,8 +35,8 @@ export interface PostReadPayload {
   quiz: PostReadQuestion[];
 }
 
-/** Model used for all post-read calls — kept identical to goal-read for cache. */
-export const POST_READ_MODEL = 'claude-sonnet-4-6';
+/** Anthropic model used for post-read calls — kept identical to goal-read for cache. */
+export const POST_READ_MODEL = ANTHROPIC_POST_READ_MODEL;
 
 /** Minimum words a session needs before we bother offering a quiz. */
 export const MIN_POST_READ_WORDS = 80;
